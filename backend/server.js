@@ -39,11 +39,25 @@ app.get('/', (req, res) => {
   res.send('WanderVibe Backend is running!');
 });
 
-// Placeholder for auth middleware (Phase 2)
+app.get('/api/test-auth', authMiddleware, (req, res) => res.json({ msg: 'Auth works!', userId: req.user.id }));
+
+const jwt = require('jsonwebtoken');
+
+// Auth middleware
 const authMiddleware = (req, res, next) => {
-  // TODO: JWT verification
-  next();
+  const token = req.header('Authorization')?.replace('Bearer ', '');
+  if (!token) return res.status(401).json({ msg: 'No token, authorization denied' });
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = decoded;  // Adds user ID to req
+    next();
+  } catch (err) {
+    res.status(401).json({ msg: 'Token is not valid' });
+  }
 };
+
+// Apply to routes later, e.g., app.use('/api', authMiddleware);
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
