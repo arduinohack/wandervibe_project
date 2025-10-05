@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 
 const invitationSchema = new mongoose.Schema({
-  _id: { type: String, required: true, unique: true }, // UUID
+  _id: { type: String, required: true }, // UUID
   tripId: { type: String, required: true },
   userId: { type: String, required: true },
   invitedBy: { type: String, required: true },

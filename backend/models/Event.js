@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 
 const eventSchema = new mongoose.Schema({
-  _id: { type: String, required: true, unique: true }, // UUID
+  _id: { type: String, required: true }, // UUID
   tripId: { type: String, required: true },
   title: { type: String, required: true },
   location: { type: String },
