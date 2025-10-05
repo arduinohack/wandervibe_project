@@ -1,6 +1,15 @@
+# Node.js
 node_modules/
-.flutter-plugins
-.flutter-plugins-dependencies
+.env
+*.log
+
+# Flutter
 build/
 .dart_tool/
-.env
+.flutter-plugins
+.packages
+pubspec.lock
+
+# OS
+.DS_Store
+Thumbs.db
