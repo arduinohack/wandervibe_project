@@ -16,6 +16,49 @@ mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('MongoDB connected'))
   .catch(err => console.error('MongoDB connection error:', err));
 
+// TEMP: One-time test users creation (uncomment to run, then comment out after)
+const User = require('./models/User');
+const { v4: uuidv4 } = require('uuid');
+
+async function createTestUsers() {
+  try {
+    // First user (trip creator/VibeCoordinator)
+    const testUser = await User.findOne({ email: 'test@example.com' });
+    if (!testUser) {
+      const newTestUser = new User({
+        _id: uuidv4(),
+        firstName: 'Test',
+        lastName: 'User',
+        email: 'test@example.com',
+        phoneNumber: '+1234567890',
+        notificationPreferences: { email: true, sms: false }
+      });
+      await newTestUser.save();
+      console.log('Test user created with ID:', newTestUser._id);
+    }
+
+    // Second user (for inviting as VibePlanner/Wanderer)
+    const janeUser = await User.findOne({ email: 'jane@example.com' });
+    if (!janeUser) {
+      const newJaneUser = new User({
+        _id: uuidv4(),
+        firstName: 'Jane',
+        lastName: 'Doe',
+        email: 'jane@example.com',
+        phoneNumber: '+1987654321',
+        notificationPreferences: { email: true, sms: false }
+      });
+      await newJaneUser.save();
+      console.log('Jane Doe test user created with ID:', newJaneUser._id);
+    }
+  } catch (err) {
+    console.error('Test user creation error:', err);
+  }
+}
+
+// Uncomment the line below to run once
+// createTestUsers();
+
 // Auth middleware definition (protects routes by checking JWT token)
 const authMiddleware = (req, res, next) => {
   const token = req.header('Authorization')?.replace('Bearer ', '');
@@ -33,8 +76,11 @@ const authMiddleware = (req, res, next) => {
 // Mount auth routes (e.g., POST /api/auth/login)
 app.use('/api/auth', require('./routes/auth'));
 
-// NEW: Mount trips routes WITH authMiddleware (protects all /api/trips/*)
+// Mount trips routes WITH authMiddleware (protects all /api/trips/*)
 app.use('/api/trips', authMiddleware, require('./routes/trips'));
+
+// NEW: Mount invites routes WITH authMiddleware (protects all /api/invites/*)
+app.use('/api/invites', authMiddleware, require('./routes/invites'));
 
 // Temp test routes for auth (remove after Phase 2 testing)
 app.get('/api/test-auth', authMiddleware, (req, res) => {
