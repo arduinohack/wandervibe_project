@@ -2,6 +2,7 @@ const express = require('express');
 const Trip = require('../models/Trip');  // Our Trip schema
 const TripUser = require('../models/TripUser');  // Role assignments
 const { v4: uuidv4 } = require('uuid');  // For unique IDs
+const { notifyUsers } = require('../utils/notifications');  // Import the function
 const router = express.Router();
 
 // POST /api/trips (Protected: Creates trip and assigns VibeCoordinator role)
@@ -39,6 +40,9 @@ router.post('/', async (req, res) => {
     });
     await tripUser.save();
 
+    // NEW: Notify the creator
+    await notifyUsers([req.user.id], `Your trip "${name}" has been created! ID: ${tripId}`);
+    
     // Success response
     res.status(201).json({ 
       msg: 'Trip created successfully!', 
