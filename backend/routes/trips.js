@@ -54,4 +54,44 @@ router.post('/', async (req, res) => {
   }
 });
 
+// GET /api/trips/:tripId/users (Protected: Lists trip participants with roles)
+router.get('/:tripId/users', async (req, res) => {  // Note: auth already on mount, but explicit for clarity
+  const { tripId } = req.params;
+
+  try {
+    // Check caller is participant
+    const callerTripUser = await TripUser.findOne({ tripId, userId: req.user.id });
+    if (!callerTripUser) {
+      return res.status(403).json({ msg: 'Access denied: Not a trip participant' });
+    }
+
+    // Fetch all trip users, populate with full user details
+    const tripUsers = await TripUser.find({ tripId }).populate('userId', 'firstName lastName email');  // Joins user fields
+
+    // Format response (group by role for easy UI)
+    const formatted = tripUsers.map(tu => ({
+      userId: tu.userId._id,
+      name: `${tu.userId.firstName} ${tu.userId.lastName}`,
+      email: tu.userId.email,
+      role: tu.role
+    }));
+
+    // Group for display (e.g., frontend can use this)
+    const grouped = {
+      VibeCoordinator: formatted.filter(u => u.role === 'VibeCoordinator'),
+      VibePlanners: formatted.filter(u => u.role === 'VibePlanner'),
+      Wanderers: formatted.filter(u => u.role === 'Wanderer')
+    };
+
+    res.json({ 
+      msg: 'Trip users fetched!', 
+      users: formatted,  // Flat list
+      grouped  // Role-grouped for UI
+    });
+  } catch (err) {
+    console.error('List users error:', err);
+    res.status(500).json({ msg: 'Server error' });
+  }
+});
+
 module.exports = router;
