@@ -1,6 +1,7 @@
 const express = require('express');
 const Trip = require('../models/Trip');  // Our Trip schema
 const TripUser = require('../models/TripUser');  // Role assignments
+const User = require('../models/User');  // FIXED: Import for fetching user details in notifications
 const { v4: uuidv4 } = require('uuid');  // For unique IDs
 const { notifyUsers } = require('../utils/notifications');  // Import the function
 const router = express.Router();
@@ -67,7 +68,10 @@ router.get('/:tripId/users', async (req, res) => {  // Note: auth already on mou
 
     // Fetch all trip users, populate with full user details
     const tripUsers = await TripUser.find({ tripId }).populate('userId', 'firstName lastName email');  // Joins user fields
-
+    console.log('Raw tripUsers after populate:', JSON.stringify(tripUsers, null, 2));  // DEBUG: See if names are there
+    console.log('Populated tripUsers:', JSON.stringify(tripUsers, null, 2));  // DEBUG: Log raw data
+    console.log('After populate - tripUsers[0].userId:', tripUsers[0]?.userId);  // DEBUG: See if it's object or string
+    
     // Format response (group by role for easy UI)
     const formatted = tripUsers.map(tu => ({
       userId: tu.userId._id,
@@ -90,6 +94,59 @@ router.get('/:tripId/users', async (req, res) => {  // Note: auth already on mou
     });
   } catch (err) {
     console.error('List users error:', err);
+    res.status(500).json({ msg: 'Server error' });
+  }
+});
+
+// POST /api/trips/:tripId/remove-user (Protected: Removes user by ID)
+router.post('/:tripId/remove-user', async (req, res) => {
+  const { tripId } = req.params;
+  const { userId: targetUserId } = req.body;  // ID of user to remove
+
+  // Validate
+  if (!targetUserId) {
+    return res.status(400).json({ msg: 'Missing userId to remove' });
+  }
+
+  try {
+    // Check caller is participant and has permission
+    const callerTripUser = await TripUser.findOne({ tripId, userId: req.user.id });
+    if (!callerTripUser) {
+      return res.status(403).json({ msg: 'Access denied: Not a trip participant' });
+    }
+
+    // Prevent self-removal
+    if (targetUserId === req.user.id) {
+      return res.status(400).json({ msg: 'Cannot remove yourself' });
+    }
+
+    // Role-based permission (reuse logic similar to roleCheck)
+    const targetTripUser = await TripUser.findOne({ tripId, userId: targetUserId });
+    if (!targetTripUser) {
+      return res.status(404).json({ msg: 'Target user not found on trip' });
+    }
+
+    // VibeCoordinator can remove anyone; VibePlanner only Wanderers
+    if (callerTripUser.role !== 'VibeCoordinator' && targetTripUser.role !== 'Wanderer') {
+      return res.status(403).json({ msg: 'Insufficient permissions to remove this user' });
+    }
+
+    // Cannot remove VibeCoordinator (only reassign)
+    if (targetTripUser.role === 'VibeCoordinator') {
+      return res.status(400).json({ msg: 'Cannot remove VibeCoordinator—use reassign instead' });
+    }
+
+    // Remove from trip_users
+    await TripUser.deleteOne({ tripId, userId: targetUserId });
+
+    // Notify removed user and caller
+    const removedUser = await User.findById(targetUserId);  // Get name for msg
+    await notifyUsers([targetUserId], `You\'ve been removed from "${req.trip?.name || 'the trip'}" by ${callerTripUser.userId}.`, 'email');
+    await notifyUsers([req.user.id], `Removed ${removedUser.firstName} ${removedUser.lastName} from the trip.`, 'email');
+
+    res.json({ msg: 'User removed successfully!' });
+  } catch (err) {
+    console.error('Remove user error:', err);
     res.status(500).json({ msg: 'Server error' });
   }
 });
