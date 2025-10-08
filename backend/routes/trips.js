@@ -55,6 +55,31 @@ router.post('/', async (req, res) => {
   }
 });
 
+// GET /api/trips (Protected: Lists user's trips as owner or participant)
+router.get('/', async (req, res) => {
+  try {
+    // Find trips where user is owner
+    const ownedTrips = await Trip.find({ ownerId: req.user.id }).select('name destination startDate endDate planningState timeZone');
+
+    // Find trips where user is participant (via trip_users)
+    const participantTrips = await TripUser.find({ userId: req.user.id }).populate('tripId', 'name destination startDate endDate planningState timeZone');
+    const participantTripObjs = participantTrips.filter(pt => pt.tripId).map(pt => pt.tripId);  // FIXED: Filter undefined, map to objects
+    // Combine and dedupe (owned might overlap if owner is also in trip_users)
+    const allTrips = [...ownedTrips, ...participantTrips.map(pt => pt.tripId)];
+    const uniqueTrips = Array.from(new Set(allTrips.map(t => t._id))).map(id => 
+      allTrips.find(t => t._id.toString() === id)
+    );
+
+    res.json({ 
+      msg: 'User trips fetched!', 
+      trips: uniqueTrips.sort((a, b) => new Date(a.startDate) - new Date(b.startDate))  // Sort by startDate
+    });
+  } catch (err) {
+    console.error('List trips error:', err);
+    res.status(500).json({ msg: 'Server error' });
+  }
+});
+
 // GET /api/trips/:tripId/users (Protected: Lists trip participants with roles)
 router.get('/:tripId/users', async (req, res) => {  // Note: auth already on mount, but explicit for clarity
   const { tripId } = req.params;
@@ -143,6 +168,61 @@ router.post('/:tripId/remove-user', async (req, res) => {
     const removedUser = await User.findById(targetUserId);  // Get name for msg
     await notifyUsers([targetUserId], `You\'ve been removed from "${req.trip?.name || 'the trip'}" by ${callerTripUser.userId}.`, 'email');
     await notifyUsers([req.user.id], `Removed ${removedUser.firstName} ${removedUser.lastName} from the trip.`, 'email');
+
+    res.json({ msg: 'User removed successfully!' });
+  } catch (err) {
+    console.error('Remove user error:', err);
+    res.status(500).json({ msg: 'Server error' });
+  }
+});
+
+// POST /api/trips/:tripId/remove-user (Protected: Removes user by ID)
+router.post('/:tripId/remove-user', async (req, res) => {
+  const { tripId } = req.params;
+  const { userId: targetUserId } = req.body;  // ID of user to remove
+
+  // Validate input
+  if (!targetUserId) {
+    return res.status(400).json({ msg: 'Missing userId to remove' });
+  }
+
+  try {
+    // Check caller is participant
+    const callerTripUser = await TripUser.findOne({ tripId, userId: req.user.id });
+    if (!callerTripUser) {
+      return res.status(403).json({ msg: 'Access denied: Not a trip participant' });
+    }
+
+    // Prevent self-removal
+    if (targetUserId === req.user.id) {
+      return res.status(400).json({ msg: 'Cannot remove yourself' });
+    }
+
+    // Fetch target
+    const targetTripUser = await TripUser.findOne({ tripId, userId: targetUserId });
+    if (!targetTripUser) {
+      return res.status(404).json({ msg: 'Target user not found on trip' });
+    }
+
+    // Role checks: Coordinator can remove anyone (except Coordinator); Planner only Wanderers
+    if (callerTripUser.role !== 'VibeCoordinator') {
+      if (targetTripUser.role !== 'Wanderer') {
+        return res.status(403).json({ msg: 'VibePlanners can only remove Wanderers' });
+      }
+    } else if (targetTripUser.role === 'VibeCoordinator') {
+      return res.status(400).json({ msg: 'Cannot remove VibeCoordinator—use reassign instead' });
+    }
+
+    // Delete from trip_users
+    await TripUser.deleteOne({ tripId, userId: targetUserId });
+
+    // Fetch removed user's name for notification
+    const removedUser = await User.findById(targetUserId).select('firstName lastName');
+    const trip = await Trip.findById(tripId).select('name');
+
+    // Notify removed user and caller
+    await notifyUsers([targetUserId], `You've been removed from "${trip.name}" by ${callerTripUser.userId}.`, 'email');
+    await notifyUsers([req.user.id], `Removed ${removedUser.firstName} ${removedUser.lastName} from "${trip.name}".`, 'email');
 
     res.json({ msg: 'User removed successfully!' });
   } catch (err) {
