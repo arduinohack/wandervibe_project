@@ -249,7 +249,7 @@ router.post('/:tripId/reassign-coordinator', async (req, res) => {
 
     // Validate target is VibePlanner
     const targetTripUser = await TripUser.findOne({ tripId, userId: targetUserId }).populate('userId', 'firstName lastName');
-    console.log('Target query result:', targetTripUser ? { userId: targetTripUser.userId, role: targetTripUser.role } : 'Not found');  // DEBUG: See what query returns
+    // console.log('Target query result:', targetTripUser ? { userId: targetTripUser.userId, role: targetTripUser.role } : 'Not found');  // DEBUG: See what query returns
     if (!targetTripUser || targetTripUser.role !== 'VibePlanner') {
       return res.status(400).json({ msg: 'Target must be a VibePlanner' });
     }
