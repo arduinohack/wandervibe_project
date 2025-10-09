@@ -79,6 +79,9 @@ app.use('/api/auth', require('./routes/auth'));
 // Mount trips routes WITH authMiddleware (protects all /api/trips/*)
 app.use('/api/trips', authMiddleware, require('./routes/trips'));
 
+// Mount events under /api/events (uses events.js handler)
+app.use('/api/events', authMiddleware, require('./routes/events'));
+
 // NEW: Mount invites routes WITH authMiddleware (protects all /api/invites/*)
 app.use('/api/invites', authMiddleware, require('./routes/invites'));
 
