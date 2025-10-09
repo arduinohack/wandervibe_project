@@ -3,9 +3,9 @@ const Trip = require('../models/Trip');
 const TripUser = require('../models/TripUser');
 const User = require('../models/User');
 const Event = require('../models/Event');
+const { DateTime } = require('luxon');  // For time zone/DST in Day Numbers
 const { v4: uuidv4 } = require('uuid');
 const { notifyUsers } = require('../utils/notifications');
-const { DateTime } = require('luxon');  // For time zone/DST in Day Numbers
 const router = express.Router();
 
 // POST /api/trips (Protected: Creates trip and assigns VibeCoordinator role)
@@ -215,22 +215,26 @@ router.get('/:tripId/itinerary', async (req, res) => {
   const { tripId } = req.params;
 
   try {
+    // Check caller is participant
     const callerTripUser = await TripUser.findOne({ tripId, userId: req.user.id });
     if (!callerTripUser) {
       return res.status(403).json({ msg: 'Access denied: Not a trip participant' });
     }
 
+    // Fetch trip for timeZone
     const trip = await Trip.findById(tripId);
     if (!trip) {
       return res.status(404).json({ msg: 'Trip not found' });
     }
 
+    // Fetch and sort events by startTime
     let events = await Event.find({ tripId }).sort({ startTime: 1 });
     events = events.map(event => ({
       ...event.toObject(),
       relevantTimeZone: event.type === 'flight' ? event.destinationTimeZone : trip.timeZone
     }));
 
+    // Compute Day Numbers (loop, compare to previous)
     let dayNumber = 1;
     let previousEnd = null;
     events.forEach(event => {
@@ -241,6 +245,7 @@ router.get('/:tripId/itinerary', async (req, res) => {
       previousEnd = event.endTime;
     });
 
+    // Group by dayNumber
     const grouped = events.reduce((acc, event) => {
       const day = event.dayNumber;
       acc[day] = acc[day] || [];
@@ -258,6 +263,5 @@ router.get('/:tripId/itinerary', async (req, res) => {
     res.status(500).json({ msg: 'Server error' });
   }
 });
-
 
 module.exports = router;
