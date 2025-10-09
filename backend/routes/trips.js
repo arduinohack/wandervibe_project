@@ -231,4 +231,51 @@ router.post('/:tripId/remove-user', async (req, res) => {
   }
 });
 
+// POST /api/trips/:tripId/reassign-coordinator (Protected: Transfers ownership to VibePlanner)
+router.post('/:tripId/reassign-coordinator', async (req, res) => {
+  const { tripId } = req.params;
+  const { targetUserId } = req.body;  // VibePlanner to promote
+
+  if (!targetUserId) {
+    return res.status(400).json({ msg: 'Missing targetUserId' });
+  }
+
+  try {
+    // Check caller is current Coordinator
+    const callerTripUser = await TripUser.findOne({ tripId, userId: req.user.id });
+    if (!callerTripUser || callerTripUser.role !== 'VibeCoordinator') {
+      return res.status(403).json({ msg: 'Only VibeCoordinator can reassign' });
+    }
+
+    // Validate target is VibePlanner
+    const targetTripUser = await TripUser.findOne({ tripId, userId: targetUserId }).populate('userId', 'firstName lastName');
+    console.log('Target query result:', targetTripUser ? { userId: targetTripUser.userId, role: targetTripUser.role } : 'Not found');  // DEBUG: See what query returns
+    if (!targetTripUser || targetTripUser.role !== 'VibePlanner') {
+      return res.status(400).json({ msg: 'Target must be a VibePlanner' });
+    }
+
+    // Swap roles
+    callerTripUser.role = 'VibePlanner';
+    targetTripUser.role = 'VibeCoordinator';
+    await callerTripUser.save();
+    await targetTripUser.save();
+
+    // Update trips ownerId
+    const trip = await Trip.findById(tripId);
+    trip.ownerId = targetUserId;
+    await trip.save();
+
+    // Notify all participants
+    const allParticipants = await TripUser.find({ tripId }).select('userId');
+    const participantIds = allParticipants.map(tu => tu.userId);
+    const reassignMsg = `Ownership transferred to ${targetTripUser.userId.firstName} ${targetTripUser.userId.lastName}—new VibeCoordinator!`;
+    await notifyUsers(participantIds, reassignMsg, 'email');
+
+    res.json({ msg: 'Ownership reassigned!', newCoordinator: targetTripUser.userId });
+  } catch (err) {
+    console.error('Reassign error:', err);
+    res.status(500).json({ msg: 'Server error' });
+  }
+});
+
 module.exports = router;
