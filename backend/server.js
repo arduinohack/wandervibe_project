@@ -1,77 +1,127 @@
 require('dotenv').config();  // Loads .env vars (e.g., JWT_SECRET, MONGODB_URI)
 const express = require('express');
-const mongoose = require('mongoose');
-const cors = require('cors');
 const jwt = require('jsonwebtoken');  // For JWT token handling
+const { authMiddleware } = require('./middleware/auth');  // This line
+const mongoose = require('mongoose');
+const morgan = require('morgan');  // Add this line
+const winston = require('winston');  // For app logs
+const bcrypt = require('bcryptjs');  // For password hashing
+const cors = require('cors');
+const logger = require('./utils/logger');  // Add this import
+const redis = require('redis');  // Optional for blacklist
 
 const app = express();
-const PORT = process.env.PORT || 3000;
 
 // Middleware (runs on every request)
 app.use(cors());  // Allows frontend to connect (e.g., from localhost:8080)
 app.use(express.json());  // Parses JSON bodies from requests (e.g., { name: 'Paris Trip' })
+app.use(cors());  // Allows frontend from localhost:8080 or emulator to call backend
+app.use(morgan('dev'));  // Add this line: Logs requests to console
+
+const PORT = process.env.PORT || 3000;
+
+// Example: Startup log
+logger.info('Server starting up', { port: process.env.PORT || 3000 });
 
 // Connect to MongoDB
 mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('MongoDB connected'))
-  .catch(err => console.error('MongoDB connection error:', err));
+  .then(() => logger.info('MongoDB connected'))
+  .catch(err => logger.error('MongoDB connection error:', err));
+
+// NEW: Async startup for Redis
+
+(async () => {
+  const redis = require('redis');
+  const client = redis.createClient({ url: 'redis://localhost:6379' });
+  client.on('error', err => console.log('Redis Client Error', err));
+
+  await client.connect();  // Now safe in async
+  console.log('Redis connected');
+
+  global.redisClient = client;
+
+});
+
 
 // TEMP: One-time test users creation (uncomment to run, then comment out after)
 const User = require('./models/User');
 const { v4: uuidv4 } = require('uuid');
 
-async function createTestUsers() {
-  try {
-    // First user (trip creator/VibeCoordinator)
-    const testUser = await User.findOne({ email: 'test@example.com' });
-    if (!testUser) {
-      const newTestUser = new User({
-        _id: uuidv4(),
-        firstName: 'Test',
-        lastName: 'User',
-        email: 'test@example.com',
-        phoneNumber: '+1234567890',
-        notificationPreferences: { email: true, sms: false }
-      });
-      await newTestUser.save();
-      console.log('Test user created with ID:', newTestUser._id);
-    }
+async function seedTestUsers() {
+  const usersToSeed = [
+    {
+      email: 'test@example.com',
+      password: 'testpass',
+      firstName: 'Test',
+      lastName: 'User',
+      phoneNumber: '+1-555-0000',
+      address: {
+        street: '123 Test St',
+        city: 'Test City',
+        state: 'TC',
+        country: 'USA',
+        postalCode: '12345',
+      },
+      notificationPreferences: {
+        email: true,
+        sms: false,
+      },
+      role: 'VibeCoordinator',  // Default for test user
+    },
+    {
+      email: 'jane@example.com',
+      password: 'janepass',
+      firstName: 'Jane',
+      lastName: 'Doe',
+      phoneNumber: '+1-555-0001',
+      address: {
+        street: '456 Jane Ave',
+        city: 'Sample Town',
+        state: 'ST',
+        country: 'USA',
+        postalCode: '67890',
+      },
+      notificationPreferences: {
+        email: true,
+        sms: true,
+      },
+      role: 'VibePlanner',  // Assigned role for Jane
+    },
+  ];
 
-    // Second user (for inviting as VibePlanner/Wanderer)
-    const janeUser = await User.findOne({ email: 'jane@example.com' });
-    if (!janeUser) {
-      const newJaneUser = new User({
-        _id: uuidv4(),
-        firstName: 'Jane',
-        lastName: 'Doe',
-        email: 'jane@example.com',
-        phoneNumber: '+1987654321',
-        notificationPreferences: { email: true, sms: false }
+  for (const userData of usersToSeed) {
+    try {
+      const existingUser = await User.findOne({ email: userData.email });
+      if (existingUser) {
+        logger.info(`User ${userData.email} already exists—skipping`);
+        continue;
+      }
+
+      const hashedPassword = await bcrypt.hash(userData.password, 12);  // Hash password (12 rounds for security)
+      const userId = uuidv4();
+      const newUser = new User({
+        _id: userId,  // Removed: MongoDB handles _id automatically
+        firstName: userData.firstName,
+        lastName: userData.lastName,
+        email: userData.email,
+        phoneNumber: userData.phoneNumber,
+        address: userData.address,
+        notificationPreferences: userData.notificationPreferences,
+        role: userData.role,
+        password: hashedPassword,  // Set hashed password
+        createdAt: new Date(),
       });
-      await newJaneUser.save();
-      console.log('Jane Doe test user created with ID:', newJaneUser._id);
+
+      await newUser.save();
+      logger.info(`Added test user: ${userData.email} / ${userData.password}`);
+    } catch (err) {
+      logger.error.error('Test user creation error:', err);
     }
-  } catch (err) {
-    console.error('Test user creation error:', err);
   }
 }
 
 // Uncomment the line below to run once
-// createTestUsers();
-
-// Auth middleware definition (protects routes by checking JWT token)
-const authMiddleware = (req, res, next) => {
-  const token = req.header('Authorization')?.replace('Bearer ', '');
-  if (!token) return res.status(401).json({ msg: 'No token, authorization denied' });
-
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded;  // Attaches { id: 'user-uuid' } to req for use in routes
-    next();  // Proceeds to the actual route handler
-  } catch (err) {
-    res.status(401).json({ msg: 'Token is not valid' });
-  }
-};
+// seedTestUsers();
 
 // Mount auth routes (e.g., POST /api/auth/login)
 app.use('/api/auth', require('./routes/auth'));
@@ -100,5 +150,5 @@ app.get('/', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  logger.info(`Server running on port ${PORT}`);
 });
