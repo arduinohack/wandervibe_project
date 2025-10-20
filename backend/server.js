@@ -31,14 +31,18 @@ mongoose.connect(process.env.MONGODB_URI)
 // NEW: Async startup for Redis
 
 (async () => {
-  const redis = require('redis');
-  const client = redis.createClient({ url: 'redis://localhost:6379' });
-  client.on('error', err => console.log('Redis Client Error', err));
-
-  await client.connect();  // Now safe in async
-  console.log('Redis connected');
-
-  global.redisClient = client;
+  try {
+    const redis = require('redis');
+    const client = redis.createClient({ url: 'redis://localhost:6379' });
+    client.on('error', err => console.log('Redis Client Error', err));
+    await client.connect();  // Now safe in async
+    logger.info('Redis connected successfully');
+    global.redisClient = client;
+  } catch (err) {
+    logger.error('Redis connection failed:', err);
+    // Optional: Graceful fallback (e.g., disable blacklisting)
+    global.redisClient = null;
+  }
 
 });
 
