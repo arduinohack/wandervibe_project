@@ -1,0 +1,20 @@
+{
+    "keep": {
+        "days": true,
+        "amount": 14
+    },
+    "auditLog": "C:\\Users\\wk_al\\wandervibe_project\\logs\\.482145d304245de3200dee73b29fd068e6e7903e-audit.json",
+    "files": [
+        {
+            "date": 1760928051862,
+            "name": "C:\\Users\\wk_al\\wandervibe_project\\logs\\app-2025-10-19.log",
+            "hash": "76ae34a20ffe6bd2e7d19af1e044d29b204a9729ec3b6186a7744e9215217074"
+        },
+        {
+            "date": 1760966204632,
+            "name": "C:\\Users\\wk_al\\wandervibe_project\\logs\\app-2025-10-20.log",
+            "hash": "15eafb6bce39353177ace9010a20686e3356d4a81f2b639eed6297ed8ceec4bb"
+        }
+    ],
+    "hashType": "sha256"
+}

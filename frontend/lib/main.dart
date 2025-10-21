@@ -4,7 +4,7 @@ import 'providers/user_provider.dart';
 import 'providers/invitation_provider.dart';
 import 'providers/trip_provider.dart';
 import 'screens/login_screen.dart'; // Login if no token
-import 'screens/home_screen.dart'; // Home if logged in
+//import 'screens/home_screen.dart'; // Home if logged in
 
 void main() {
   runApp(

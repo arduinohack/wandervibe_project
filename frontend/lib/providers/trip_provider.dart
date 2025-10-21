@@ -3,6 +3,7 @@ import 'package:http/http.dart'
     as http; // For API calls (add to pubspec.yaml if not there)
 import 'dart:convert'; // For JSON
 import 'package:provider/provider.dart'; // Added for Provider.of (token from UserProvider)
+import '../config/constants.dart'; // Add this line for backendBaseUrl
 import '../providers/user_provider.dart'; // Add this line for UserProvider (token)
 import '../models/trip.dart'; // Your Trip model
 import '../models/event.dart'; // Your Event model
@@ -22,15 +23,37 @@ class TripProvider extends ChangeNotifier {
 
   String? _currentTripId; // Track current trip for itinerary
 
-  // Fetch itinerary for a trip (events + day numbers; mock for now; replace with GET /api/trips/:tripId/itinerary)
-  Future<void> fetchItinerary(String tripId) async {
+  // Fetch itinerary for a trip (real API with token passed as param)
+  Future<void> fetchItinerary(String tripId, String? token) async {
     _currentTripId = tripId;
     _isLoading = true;
     notifyListeners();
 
     try {
-      // Mock data (replace with http.get('http://localhost:3000/api/trips/$tripId/itinerary'))
-      await Future.delayed(const Duration(seconds: 1));
+      if (token == null) throw Exception('No token—log in first');
+
+      final response = await http.get(
+        Uri.parse(
+          (await backendBaseUrl) +
+              apiTripsItinerary.replaceAll('{tripId}', tripId),
+        ),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(response.body);
+        _events = data.map((json) => Event.fromJson(json)).toList();
+        _computeDayNumbers(tripId); // Calculate day numbers
+        print('Fetched ${_events.length} events for trip $tripId from backend');
+      } else {
+        throw Exception('Failed to load itinerary: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error fetching itinerary: $e');
+      // Fallback to mock
       _events = [
         Event(
           id: 'event1',
@@ -59,15 +82,13 @@ class TripProvider extends ChangeNotifier {
           costType: CostType.actual,
           startTime: DateTime.now().add(const Duration(days: 1)),
           endTime: DateTime.now().add(const Duration(days: 8)),
-          originTimeZone: null, // Uses trip TZ
+          originTimeZone: null,
           destinationTimeZone: null,
           resourceLinks: {'maps': 'https://maps.example.com/hotel'},
           createdAt: DateTime.now(),
         ),
       ];
-      _computeDayNumbers(tripId); // Calculate day numbers
-    } catch (e) {
-      print('Error fetching itinerary: $e');
+      _computeDayNumbers(tripId);
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -128,7 +149,7 @@ class TripProvider extends ChangeNotifier {
       }
 
       final response = await http.get(
-        Uri.parse('http://localhost:3000/api/trips'),
+        Uri.parse((await backendBaseUrl) + apiTrips),
         headers: {'Authorization': 'Bearer $token'},
       );
 
@@ -160,30 +181,71 @@ class TripProvider extends ChangeNotifier {
     }
   }
 
-  // Create trip (mock; replace with POST /api/trips)
-  Future<void> createTrip(Trip newTrip) async {
+  // Create trip (real API POST /api/trips with token passed as param)
+  Future<void> createTrip(Trip newTrip, String? token) async {
     try {
-      // Mock (replace with http.post('http://localhost:3000/api/trips', body: newTrip.toJson()))
-      await Future.delayed(const Duration(seconds: 1));
-      _trips.add(newTrip);
-      notifyListeners();
-      print('Created trip: ${newTrip.name}');
+      if (token == null) throw Exception('No token—log in first');
+
+      final response = await http.post(
+        Uri.parse(await backendBaseUrl + apiTrips),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode(newTrip.toJson()),
+      );
+
+      if (response.statusCode == 201) {
+        final data = json.decode(response.body);
+        final createdTrip = Trip.fromJson(
+          data['trip'],
+        ); // Backend returns the created trip
+        _trips.add(createdTrip);
+        notifyListeners();
+        print('Created trip: ${createdTrip.name} from backend');
+      } else {
+        throw Exception('Failed to create trip: ${response.statusCode}');
+      }
     } catch (e) {
       print('Error creating trip: $e');
+      // Fallback: Add mock
+      _trips.add(newTrip);
+      notifyListeners();
     }
   }
 
-  // Add event to trip (mock; replace with POST /api/events)
-  Future<void> addEvent(Event newEvent) async {
+  // Add event to trip (real API POST /api/events with token passed as param)
+  Future<void> addEvent(Event newEvent, String? token) async {
     try {
-      // Mock (replace with http.post('http://localhost:3000/api/events', body: newEvent.toJson()))
-      await Future.delayed(const Duration(seconds: 1));
-      _events.add(newEvent);
-      _computeDayNumbers(newEvent.tripId); // Recalculate days
-      notifyListeners();
-      print('Added event: ${newEvent.title}');
+      if (token == null) throw Exception('No token—log in first');
+
+      final response = await http.post(
+        Uri.parse(await backendBaseUrl + apiEvents),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode(newEvent.toJson()),
+      );
+
+      if (response.statusCode == 201) {
+        final data = json.decode(response.body);
+        final createdEvent = Event.fromJson(
+          data['event'],
+        ); // Backend returns the created event
+        _events.add(createdEvent);
+        _computeDayNumbers(newEvent.tripId); // Recalculate days
+        notifyListeners();
+        print('Added event: ${createdEvent.title} from backend');
+      } else {
+        throw Exception('Failed to add event: ${response.statusCode}');
+      }
     } catch (e) {
       print('Error adding event: $e');
+      // Fallback: Add mock
+      _events.add(newEvent);
+      _computeDayNumbers(newEvent.tripId);
+      notifyListeners();
     }
   }
 }

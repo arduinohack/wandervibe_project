@@ -2,6 +2,9 @@ import 'package:flutter/foundation.dart'; // For ChangeNotifier
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart'; // For JWT storage
+import '../utils/logger.dart';
+import 'user_provider.dart'; // Add this line for UserProvider (token)
+import '../config/constants.dart'; // Add this line for backendBaseUrl
 import '../models/user.dart'; // Your User model with Address/Preferences
 
 class UserProvider extends ChangeNotifier {
@@ -19,17 +22,18 @@ class UserProvider extends ChangeNotifier {
   // Login with real backend (POST /api/auth/login)
   Future<void> login(String email, String password) async {
     try {
-      print(
+      logger.i('Flutter sending login: email=$email, password=$password');
+      logger.i(
         'Flutter sending login: email=$email, password=$password',
       ); // Log input
       final response = await http.post(
-        Uri.parse('http://10.0.2.2:3000/api/auth/login'),
+        Uri.parse((await backendBaseUrl) + apiAuthLogin),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({'email': email, 'password': password}),
       );
 
-      print('Flutter received status: ${response.statusCode}'); // Log status
-      print(
+      logger.i('Flutter received status: ${response.statusCode}');
+      logger.i(
         'Flutter received body: ${response.body}',
       ); // Log response (JSON or error)
       if (response.statusCode == 200) {
@@ -44,16 +48,20 @@ class UserProvider extends ChangeNotifier {
             UserRole.vibeCoordinator; // Stub; later from data['user']['role']
         _currentUser = User.fromJson(data['user']); // Parse full user
         notifyListeners();
-        print(
+        logger.i(
           'Logged in as $email with token: ${_jwtToken!.substring(0, 20)}...',
         );
       } else {
+        final data = json.decode(response.body);
+        final errorMessage =
+            data['message'] ??
+            'Login failed: ${response.statusCode}'; // Extract message from backend
         throw Exception(
-          'Login failed: ${response.statusCode} - ${response.body}',
-        );
+          errorMessage,
+        ); // Throw with backend message for UI to show
       }
     } catch (e) {
-      print('Login error: $e');
+      logger.e('Login error: $e');
       rethrow; // Pass error to UI for SnackBar
     }
   }
@@ -70,7 +78,7 @@ class UserProvider extends ChangeNotifier {
   ) async {
     try {
       final response = await http.post(
-        Uri.parse('http://localhost:3000/api/auth/register'),
+        Uri.parse((await backendBaseUrl) + apiAuthRegister),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'firstName': firstName,
@@ -85,7 +93,7 @@ class UserProvider extends ChangeNotifier {
 
       if (response.statusCode == 201) {
         final data = json.decode(response.body);
-        print('Signup successful: ${data['message']}');
+        logger.i('Signup successful: ${data['message']}');
         // Navigate to login (handled in screen)
       } else {
         throw Exception(
@@ -93,56 +101,98 @@ class UserProvider extends ChangeNotifier {
         );
       }
     } catch (e) {
-      print('Signup error: $e');
+      logger.e('Signup error: $e');
       rethrow; // Pass to UI for SnackBar
     }
   }
 
-  // Logout (clear token)
+  // Logout (clear token locally and call backend)
   Future<void> logout() async {
+    try {
+      final token = _jwtToken;
+      if (token != null) {
+        // Call backend logout (optional, for blacklisting)
+        final response = await http.post(
+          Uri.parse((await backendBaseUrl) + apiAuthLogout),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+        );
+        if (response.statusCode != 200) {
+          logger.i(
+            'Backend logout failed: ${response.statusCode}',
+          ); // Non-fatal—local clear anyway
+        }
+      }
+    } catch (e) {
+      logger.e('Logout API error: $e'); // Non-fatal
+    }
+
+    // Always clear local storage
     await _storage.delete(key: 'jwt_token');
     _jwtToken = null;
     currentUserId = null;
     _currentUserRole = null;
     _currentUser = null;
     notifyListeners();
-    print('Logged out');
+    logger.i('Logged out—cleared local storage');
   }
 
-  // Load stored token on app start (for persistent login)
+  // Load stored token and verify user (real API POST /api/auth/verify-token)
   Future<void> loadStoredToken() async {
     try {
       _jwtToken = await _storage.read(key: 'jwt_token');
       if (_jwtToken != null) {
-        // Mock: Assume valid, load user (later verify with backend /api/verify-token)
-        currentUserId = 'user123';
-        _currentUserRole = UserRole.vibeCoordinator;
-        _currentUser = User(
-          id: 'user123',
-          firstName: 'Alex',
-          lastName: 'Vander',
-          email: 'alex@vandervibe.com',
-          phoneNumber: '+1-555-1234',
-          address: Address(
-            street: '123 Wander St',
-            city: 'New York',
-            state: 'NY',
-            country: 'USA',
-            postalCode: '10001',
-          ),
-          notificationPreferences: NotificationPreferences(
-            email: true,
-            sms: false,
-          ),
-          createdAt: DateTime.now(),
+        // Verify token with backend
+        final response = await http.post(
+          Uri.parse((await backendBaseUrl) + apiAuthVerifyToken),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $_jwtToken',
+          },
         );
-        notifyListeners(); // Update UI
-        print('Loaded stored token');
+
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          currentUserId = data['user']['_id'];
+          _currentUserRole = _roleFromString(
+            data['user']['role'],
+          ); // Parse real role from backend
+          _currentUser = User.fromJson(
+            data['user'],
+          ); // Parse real user from backend
+          notifyListeners();
+          logger.i(
+            'Loaded and verified user from backend: ${data['user']['firstName']} (${_currentUserRole})',
+          );
+        } else {
+          logger.i('Token invalid—clearing');
+          await logout(); // Clear invalid token
+        }
       } else {
-        print('No stored token—user not logged in');
+        logger.i('No stored token—user not logged in');
       }
     } catch (e) {
-      print('Error loading stored token: $e');
+      logger.e('Error loading stored token: $e');
+      await logout(); // Clear on error
+    }
+  }
+
+  // Helper: Convert backend role string to Dart enum
+  UserRole? _roleFromString(String roleString) {
+    switch (roleString) {
+      case 'VibeCoordinator':
+        return UserRole.vibeCoordinator;
+      case 'VibePlanner':
+        return UserRole.vibePlanner;
+      case 'Wanderer':
+        return UserRole.wanderer;
+      case 'admin':
+        return UserRole
+            .vibeCoordinator; // Map admin to coordinator for trip functions (or add AdminRole enum)
+      default:
+        return UserRole.wanderer; // Default fallback
     }
   }
 
@@ -157,6 +207,70 @@ class UserProvider extends ChangeNotifier {
     _currentUser = user;
     currentUserId = user.id;
     notifyListeners();
-    print('Set current user: ${user.firstName} ${user.lastName}');
+    logger.i('Set current user: ${user.firstName} ${user.lastName}');
+  }
+
+  // Update user (real API PATCH /api/auth/users/:id with token)
+  Future<void> updateUser(Map<String, dynamic> updates) async {
+    logger.i('At Update User API');
+    try {
+      final token = _jwtToken;
+      if (token == null) throw Exception('No token—log in first');
+
+      final response = await http.patch(
+        Uri.parse(
+          (await backendBaseUrl) +
+              apiUsersUpdate.replaceAll('{id}', currentUserId!),
+        ),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode(updates),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        _currentUser = User.fromJson(data['user']); // Reload updated user
+        notifyListeners();
+        logger.i('User updated from backend');
+      } else {
+        throw Exception('Failed to update user: ${response.statusCode}');
+      }
+    } catch (e) {
+      logger.e('Error updating user: $e');
+      // Fallback: Optimistic local update
+      if (_currentUser != null) {
+        _currentUser = _currentUser!.copyWith(
+          firstName: updates['firstName'] ?? _currentUser!.firstName,
+          notificationPreferences: updates['notificationPreferences'] != null
+              ? NotificationPreferences.fromJson(
+                  updates['notificationPreferences'],
+                )
+              : _currentUser!.notificationPreferences,
+        );
+        notifyListeners();
+      }
+    }
+  }
+
+  // Forgot password (stub: POST /api/auth/forgot-password)
+  Future<void> forgotPassword(String email) async {
+    try {
+      final response = await http.post(
+        Uri.parse((await backendBaseUrl) + apiAuthForgotPassword),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({'email': email}),
+      );
+
+      if (response.statusCode == 200) {
+        print('Forgot password email sent for $email');
+      } else {
+        throw Exception('Failed to send reset email: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Forgot password error: $e');
+      rethrow;
+    }
   }
 }

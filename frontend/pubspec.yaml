@@ -31,13 +31,15 @@ dependencies:
   flutter:
     sdk: flutter
   provider: ^6.1.2  # State management
+  shared_preferences: ^2.3.2  # Add this for local settings storage
   http: ^1.2.1      # API calls
   flutter_secure_storage: ^9.2.2  # Store JWT tokens
   sqflite: ^2.3.3   # Local DB caching
   socket_io_client: ^3.1.2  # Real-time
   intl: ^0.20.2     # Dates/formatting
   flutter_timezone: ^5.0.0  # Time zones
-  timezone: ^0.9.2 
+  timezone: ^0.9.2
+  logger: ^2.4.0
  
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.

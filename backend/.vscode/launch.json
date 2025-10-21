@@ -1,0 +1,18 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Debug Backend (server.js)",
+      "program": "${workspaceFolder}/server.js",  // Points to server.js in backend folder
+      "envFile": "${workspaceFolder}/.env",  // Loads .env from backend
+      "env": {
+        "NODE_ENV": "development"  // For verbose logging
+        },
+      "console": "integratedTerminal",
+      "runtimeArgs": ["--inspect"],
+      "port": 9229
+    }
+  ]
+}

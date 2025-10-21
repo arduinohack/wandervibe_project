@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/trip_provider.dart'; // Your provider
+import '../providers/user_provider.dart'; // Your provider
 import '../models/trip.dart'; // Trip model
 import '../models/event.dart'; // Event model
 import '../models/user.dart'; // User model
@@ -22,7 +23,14 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
     // Load data when screen opens
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final tripProvider = Provider.of<TripProvider>(context, listen: false);
-      tripProvider.fetchItinerary(widget.tripId);
+      final userProvider = Provider.of<UserProvider>(
+        context,
+        listen: false,
+      ); // Added: Get token
+      tripProvider.fetchItinerary(
+        widget.tripId,
+        userProvider.token,
+      ); // Fixed: Pass token
       tripProvider.fetchTripUsers(widget.tripId);
     });
   }

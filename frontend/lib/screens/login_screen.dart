@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/user_provider.dart'; // For login
 import 'home_screen.dart'; // Navigate to home on success
+import 'signup_screen.dart'; // For sign up navigation
+import 'forgot_password_screen.dart'; // For forgot password navigation
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -41,7 +43,9 @@ class _LoginScreenState extends State<LoginScreen> {
           _showError('Login failed—try again');
         }
       } catch (e) {
-        _showError('Login error: $e');
+        _showError(
+          e.toString(),
+        ); // Fixed: Shows backend message (e.g., "Invalid email or password")
       } finally {
         setState(() => _isLoading = false);
       }
@@ -54,6 +58,17 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
+  // Helper: Compute onPressed based on fields (enable/disable logic)
+  VoidCallback? _getOnPressed() {
+    final emailValid = _emailController.text.trim().isNotEmpty;
+    final passwordValid = _passwordController.text.trim().isNotEmpty;
+    final condition = emailValid && passwordValid && !_isLoading;
+    //print(
+    //  'Condition: $condition (email: $emailValid, password: $passwordValid, loading: $_isLoading)',
+    //); // Debug optional
+    return condition ? _login : null; // Return _login if true, null if false
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -61,70 +76,121 @@ class _LoginScreenState extends State<LoginScreen> {
         title: const Text('Login to WanderVibe'),
         backgroundColor: Colors.blue,
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.travel_explore, size: 80, color: Colors.blue),
-              const SizedBox(height: 32),
-              TextFormField(
-                controller: _emailController,
-                decoration: const InputDecoration(
-                  labelText: 'Email',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.email),
-                ),
-                keyboardType: TextInputType.emailAddress,
-                validator: (value) {
-                  if (value == null || value.isEmpty) return 'Email required';
-                  if (!RegExp(
-                    r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
-                  ).hasMatch(value))
-                    return 'Invalid email';
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _passwordController,
-                decoration: const InputDecoration(
-                  labelText: 'Password',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.lock),
-                ),
-                obscureText: true,
-                validator: (value) =>
-                    value?.isEmpty ?? true ? 'Password required' : null,
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _isLoading ? null : _login, // Disable during load
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
+      body: Builder(
+        builder: (context) {
+          return Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.travel_explore,
+                    size: 80,
+                    color: Colors.blue,
                   ),
-                  child: _isLoading
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              Colors.white,
-                            ),
-                          ),
-                        )
-                      : const Text('Login', style: TextStyle(fontSize: 18)),
-                ),
+                  const SizedBox(height: 32),
+                  TextFormField(
+                    controller: _emailController,
+                    decoration: const InputDecoration(
+                      labelText: 'Email',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.email),
+                    ),
+                    keyboardType: TextInputType.emailAddress,
+                    validator: (value) {
+                      if (value == null || value.isEmpty)
+                        return 'Email required';
+                      if (!RegExp(
+                        r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
+                      ).hasMatch(value)) {
+                        return 'Invalid email';
+                      }
+                      return null;
+                    },
+                    onChanged: (value) {
+                      setState(() {}); // Rebuild to re-check condition
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _passwordController,
+                    decoration: const InputDecoration(
+                      labelText: 'Password',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.lock),
+                    ),
+                    obscureText: true,
+                    validator: (value) {
+                      final trimmedValue = value?.trim();
+                      if (trimmedValue == null || trimmedValue.isEmpty) {
+                        return 'Password required';
+                      }
+                      if (trimmedValue.length < 6) {
+                        return 'Password must be at least 6 characters';
+                      }
+                      return null;
+                    },
+                    onChanged: (value) {
+                      setState(() {}); // Rebuild to re-check condition
+                    },
+                  ),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed:
+                          _getOnPressed(), // Fixed: Calls the helper (evaluates condition outside)
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                      ),
+                      child: _isLoading
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Colors.white,
+                                ),
+                              ),
+                            )
+                          : const Text('Login', style: TextStyle(fontSize: 18)),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextButton(
+                    // Added: Sign Up link
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const SignupScreen(),
+                        ),
+                      );
+                    },
+                    child: const Text('Don\'t have an account? Sign up'),
+                  ),
+                  const SizedBox(height: 16),
+                  TextButton(
+                    // Added: Forgot Password link
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const ForgotPasswordScreen(),
+                        ),
+                      );
+                    },
+                    child: const Text('Forgot Password?'),
+                  ),
+                ],
               ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
   }

@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/trip_provider.dart'; // For addEvent
+import '../providers/user_provider.dart'; // For addEvent
 import '../models/event.dart'; // Event model
-import '../models/trip.dart'; // For tripId
+//import '../models/trip.dart'; // For tripId
 
 class AddEventScreen extends StatefulWidget {
   final String tripId; // Passed from TripDetailScreen
@@ -90,7 +91,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
 
                 // Type Dropdown
                 DropdownButtonFormField<EventType>(
-                  value: _type,
+                  initialValue: _type,
                   decoration: const InputDecoration(
                     labelText: 'Type',
                     border: OutlineInputBorder(),
@@ -140,7 +141,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
 
                 // Cost Type Dropdown
                 DropdownButtonFormField<CostType>(
-                  value: _costType,
+                  initialValue: _costType,
                   decoration: const InputDecoration(
                     labelText: 'Cost Type',
                     border: OutlineInputBorder(),
@@ -251,7 +252,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
                 if (_isFlight) ...[
                   // Origin TZ Dropdown (stub common TZ; later full picker)
                   DropdownButtonFormField<String>(
-                    value: _originTimeZone,
+                    initialValue: _originTimeZone,
                     decoration: const InputDecoration(
                       labelText: 'Origin Time Zone (required for flight)',
                       border: OutlineInputBorder(),
@@ -269,7 +270,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
                   const SizedBox(height: 16),
                   // Destination TZ Dropdown
                   DropdownButtonFormField<String>(
-                    value: _destinationTimeZone,
+                    initialValue: _destinationTimeZone,
                     decoration: const InputDecoration(
                       labelText: 'Destination Time Zone (required for flight)',
                       border: OutlineInputBorder(),
@@ -312,6 +313,10 @@ class _AddEventScreenState extends State<AddEventScreen> {
   void _submitForm() {
     if (_formKey.currentState!.validate()) {
       final tripProvider = Provider.of<TripProvider>(context, listen: false);
+      final userProvider = Provider.of<UserProvider>(
+        context,
+        listen: false,
+      ); // Get token
       final newEvent = Event(
         id: DateTime.now().millisecondsSinceEpoch.toString(), // Mock ID
         tripId: widget.tripId,
@@ -329,7 +334,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
         createdAt: DateTime.now(),
       );
 
-      tripProvider.addEvent(newEvent); // Save via provider
+      tripProvider.addEvent(newEvent, userProvider.token); // Fixed: Pass token
       Navigator.pop(
         context,
         newEvent,

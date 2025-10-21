@@ -5,6 +5,7 @@ import 'signup_screen.dart'; // Add this line for SignupScreen navigation
 import '../providers/user_provider.dart'; // For role check
 import 'coordinator_dashboard_screen.dart'; // Navigation to dashboard
 import 'user_profile_screen.dart'; // Navigation to profile
+import 'settings_screen.dart';
 import '../models/user.dart'; // For UserRole enum
 
 class HomeScreen extends StatelessWidget {
@@ -14,8 +15,35 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('WanderVibe Home'), // App title
+        title: const Text('WanderVibe'), // App title
         backgroundColor: Colors.blue, // Matches theme
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const SettingsScreen()),
+              );
+            },
+            tooltip: 'App Settings',
+          ),
+          IconButton(
+            icon: const Icon(Icons.logout),
+            onPressed: () async {
+              final userProvider = Provider.of<UserProvider>(
+                context,
+                listen: false,
+              );
+              await userProvider.logout();
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(builder: (context) => const LoginScreen()),
+              );
+            },
+            tooltip: 'Logout',
+          ),
+        ],
       ),
       body: Center(
         child: Column(
@@ -62,25 +90,6 @@ class HomeScreen extends StatelessWidget {
                 );
               },
               child: const Text('Edit Profile'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => SignupScreen()),
-                );
-              },
-              child: const Text('Sign Up'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Provider.of<UserProvider>(context, listen: false).logout();
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(builder: (context) => LoginScreen()),
-                );
-              },
-              child: const Text('Logout'),
             ),
           ],
         ),

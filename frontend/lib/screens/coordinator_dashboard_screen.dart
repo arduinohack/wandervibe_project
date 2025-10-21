@@ -33,9 +33,13 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
       final userProvider = Provider.of<UserProvider>(
         context,
         listen: false,
-      ); // Added for token
-      tripProvider.fetchTrips(userProvider.token); // Fixed: Pass token
-      invitationProvider.fetchInvitations();
+      ); // Added: Get token
+      tripProvider.fetchTrips(
+        userProvider.token,
+      ); // Pass token (if not already)
+      invitationProvider.fetchInvitations(
+        userProvider.token,
+      ); // Fixed: Pass token
     });
   }
 
@@ -79,7 +83,6 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
     );
   }
 
-  // Tab 1: My Trips (owned trips)
   Widget _buildMyTripsTab(BuildContext context) {
     return Consumer<TripProvider>(
       builder: (context, tripProvider, child) {
@@ -92,31 +95,76 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
         if (myTrips.isEmpty) {
           return const Center(child: Text('No trips yet—create one!'));
         }
-        return ListView.builder(
-          itemCount: myTrips.length,
-          itemBuilder: (context, index) {
-            final trip = myTrips[index];
-            return Card(
-              child: ListTile(
-                leading: const Icon(Icons.flight_takeoff),
-                title: Text(trip.name),
-                subtitle: Text(
-                  '${trip.destination} | Budget: \$${trip.budget} | State: ${trip.planningState}',
-                ),
-                trailing: IconButton(
-                  icon: const Icon(Icons.edit),
-                  onPressed: () {
-                    print('Edit trip ${trip.id}');
-                    // Later: Navigate to edit screen
-                  },
-                ),
-                onTap: () {
-                  print('View trip ${trip.id}');
-                  // Later: Navigate to TripDetailScreen
+        return Column(
+          children: [
+            Expanded(
+              // Makes list scrollable
+              child: ListView.builder(
+                itemCount: myTrips.length,
+                itemBuilder: (context, index) {
+                  final trip = myTrips[index];
+                  return Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.flight_takeoff),
+                      title: Text(trip.name),
+                      subtitle: Text(
+                        '${trip.destination} | Budget: \$${trip.budget} | State: ${trip.planningState}',
+                      ),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.edit),
+                        onPressed: () {
+                          print('Edit trip ${trip.id}');
+                          // Later: Navigate to edit screen
+                        },
+                      ),
+                      onTap: () {
+                        print('View trip ${trip.id}');
+                        // Later: Navigate to TripDetailScreen
+                      },
+                    ),
+                  );
                 },
               ),
-            );
-          },
+            ),
+            Padding(
+              padding: const EdgeInsets.all(16.0), // Spacing around button
+              child: ElevatedButton.icon(
+                onPressed: () async {
+                  final userProvider = Provider.of<UserProvider>(
+                    context,
+                    listen: false,
+                  ); // Get token for auth
+                  final tripProvider = Provider.of<TripProvider>(
+                    context,
+                    listen: false,
+                  );
+                  final newTrip = Trip(
+                    id: 'temp_id', // Backend generates real ID
+                    name: 'New Test Trip', // Stub name; later from form
+                    destination: 'New York, USA', // Stub
+                    startDate: DateTime.now(),
+                    endDate: DateTime.now().add(const Duration(days: 7)),
+                    budget: 1500.0,
+                    planningState: 'initial',
+                    timeZone: 'America/New_York',
+                    ownerId:
+                        userProvider.currentUserId ??
+                        'user123', // From provider
+                  );
+                  await tripProvider.createTrip(
+                    newTrip,
+                    userProvider.token,
+                  ); // Pass token for auth
+                },
+                icon: const Icon(Icons.add),
+                label: const Text('Create New Trip'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  minimumSize: const Size(double.infinity, 50), // Full width
+                ),
+              ),
+            ),
+          ],
         );
       },
     );
@@ -152,10 +200,15 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
                     IconButton(
                       icon: const Icon(Icons.check, color: Colors.green),
                       onPressed: () async {
+                        final userProvider = Provider.of<UserProvider>(
+                          context,
+                          listen: false,
+                        ); // Added: Get token
                         await invitationProvider.respondToInvitation(
                           invite.id,
                           InvitationStatus.accepted,
-                        );
+                          userProvider.token,
+                        ); // Pass token
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(content: Text('Invite accepted!')),
                         );
@@ -164,16 +217,21 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
                     IconButton(
                       icon: const Icon(Icons.close, color: Colors.red),
                       onPressed: () async {
+                        final userProvider = Provider.of<UserProvider>(
+                          context,
+                          listen: false,
+                        ); // Added: Get token
                         await invitationProvider.respondToInvitation(
                           invite.id,
-                          InvitationStatus.rejected,
-                        );
+                          InvitationStatus.accepted,
+                          userProvider.token,
+                        ); // Pass token
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Invite rejected!')),
+                          const SnackBar(content: Text('Invite accepted!')),
                         );
                       },
-                    ),
-                  ],
+                    ), // Pass token if needed
+                  ], // Single closing ] for Row children—no duplicate
                 ),
               ),
             );

@@ -24,9 +24,25 @@ const PORT = process.env.PORT || 3000;
 logger.info('Server starting up', { port: process.env.PORT || 3000 });
 
 // Connect to MongoDB
-mongoose.connect(process.env.MONGODB_URI)
-  .then(() => logger.info('MongoDB connected'))
-  .catch(err => logger.error('MongoDB connection error:', err));
+logger.info(process.env.MONGODB_URI);
+mongoose.connect(process.env.MONGODB_URI, {  // Fixed: URI first, options second
+  bufferTimeoutMS: 5000,  // 5s timeout for buffering (fails fast if DB slow)
+  serverSelectionTimeoutMS: 5000,  // 5s for server selection (quick detect if DB down)
+  maxPoolSize: 10,  // Limit connections to 10 (prevents overload)
+}).then(() => {
+  logger.info('Connected to MongoDB');  // Success log
+}).catch((err) => {
+  logger.error('MongoDB connection error:', err);  // Error log
+  // process.exit(1);  // Uncomment to crash server if DB down (optional for prod)
+});
+
+// Connection events for debugging
+mongoose.connection.on('connected', () => logger.info('Mongoose connected'));
+mongoose.connection.on('error', (err) => logger.error('Mongoose error:', err));
+mongoose.connection.on('disconnected', () => {
+  logger.info('Mongoose disconnected—reconnecting...');
+  setTimeout(() => mongoose.connect(process.env.MONGODB_URI), 5000);  // Reconnect after 5s
+});
 
 // NEW: Async startup for Redis
 

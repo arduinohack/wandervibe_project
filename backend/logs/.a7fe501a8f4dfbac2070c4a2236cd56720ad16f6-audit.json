@@ -1,0 +1,30 @@
+{
+    "keep": {
+        "days": true,
+        "amount": 14
+    },
+    "auditLog": "C:\\Users\\wk_al\\wandervibe_project\\backend\\logs\\.a7fe501a8f4dfbac2070c4a2236cd56720ad16f6-audit.json",
+    "files": [
+        {
+            "date": 1760757509891,
+            "name": "C:\\Users\\wk_al\\wandervibe_project\\backend\\logs\\app-2025-10-17.log",
+            "hash": "289560755ea40f7f6a04d08a5ae582614b40aef872b9eab5982b0d5ea89e1696"
+        },
+        {
+            "date": 1760902773235,
+            "name": "C:\\Users\\wk_al\\wandervibe_project\\backend\\logs\\app-2025-10-19.log",
+            "hash": "5bfc3951b62687e0ae68de7e5943a9729e3f32a24637f0a47a33cf1248be1ede"
+        },
+        {
+            "date": 1760947249971,
+            "name": "C:\\Users\\wk_al\\wandervibe_project\\backend\\logs\\app-2025-10-20.log",
+            "hash": "ebd0904263321fc478450f567714442d0da38dcd7f7179a2e36e4e8e9da99e92"
+        },
+        {
+            "date": 1761030217776,
+            "name": "C:\\Users\\wk_al\\wandervibe_project\\backend\\logs\\app-2025-10-21.log",
+            "hash": "d08bfcdfd98f44fa962c1b6882fb874e6fa5dfcc4b0f22929c220f48dd0d7030"
+        }
+    ],
+    "hashType": "sha256"
+}

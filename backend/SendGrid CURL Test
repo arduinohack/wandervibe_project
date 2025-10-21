@@ -1,0 +1,21 @@
+curl --request POST \
+--url https://api.sendgrid.com/v3/mail/send \
+--header 'Authorization: Bearer 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' \
+--header 'Content-Type: application/json' \
+--data '{
+  "personalizations": [
+    {
+      "to": [{"email": "w.ken.allen@gmail.com"}],
+      "subject": "WanderVibe Test Email"
+    }
+  ],
+  "from": {
+    "email": "ken@eratespecialists.com"
+  },
+  "content": [
+    {
+      "type": "text/plain",
+      "value": "Hello! This is a test from your WanderVibe backend setup. If you see this, notifications will work great!"
+    }
+  ]
+}'
