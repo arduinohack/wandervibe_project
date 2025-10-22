@@ -12,21 +12,24 @@ const authMiddleware = async (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_secret_key');
+    logger.info('decoded: ', decoded);
 
     if (!token) {
       return res.status(401).json({ message: 'No token, authorization denied' });
     }
 
     // Check Redis blacklist
-    if (global.redisClient) {
-      const isBlacklisted = await global.redisClient.get(token);
-      if (isBlacklisted) {
-        return res.status(401).json({ msg: 'Token has been blacklisted' });
-      }
-    }
+    //if (global.redisClient) {
+    //  const isBlacklisted = await global.redisClient.get(token);
+    //  if (isBlacklisted) {
+    //    return res.status(401).json({ msg: 'Token has been blacklisted' });
+    //  }
+    //}
 
-      req.user = decoded;
-      next();
+    req.user = decoded;
+    logger.info('decoded: ', decoded);
+    next();
+
   } catch (err) {
     logger.error('Token is not valid', {
       userId: 'not present',
