@@ -146,8 +146,8 @@ async function seedTestUsers() {
 // Mount auth routes (e.g., POST /api/auth/login)
 app.use('/api/auth', require('./routes/auth'));
 
-// Mount trips routes WITH authMiddleware (protects all /api/trips/*)
-app.use('/api/trips', authMiddleware, require('./routes/trips'));
+// Mount plans routes WITH authMiddleware (protects all /api/plans/*)
+app.use('/api/plans', authMiddleware, require('./routes/plans'));
 
 // Mount events under /api/events (uses events.js handler)
 app.use('/api/events', authMiddleware, require('./routes/events'));
@@ -157,11 +157,11 @@ app.use('/api/invites', authMiddleware, require('./routes/invites'));
 
 // Temp test routes for auth (remove after Phase 2 testing)
 app.get('/api/test-auth', authMiddleware, (req, res) => {
-  res.json({ msg: 'Auth works!', userId: req.user.id });
+  res.json({ msg: 'Auth works!', userId: req.user.userId });
 });
 
 app.get('/api/protected', authMiddleware, (req, res) => {
-  res.json({ msg: 'You\'re in!', userId: req.user.id });
+  res.json({ msg: 'You\'re in!', userId: req.user.userId });
 });
 
 // Basic root route (health check)

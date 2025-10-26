@@ -143,17 +143,17 @@ class User {
 }
 
 // Separate model for trip-specific roles (from trip_users collection)
-class TripUser {
-  final String tripId;
+class PlanUser {
+  final String planId;
   final String userId;
   final UserRole role;
 
-  TripUser({required this.tripId, required this.userId, required this.role});
+  PlanUser({required this.planId, required this.userId, required this.role});
 
   // From JSON
-  factory TripUser.fromJson(Map<String, dynamic> json) {
-    return TripUser(
-      tripId: json['tripId'] ?? '',
+  factory PlanUser.fromJson(Map<String, dynamic> json) {
+    return PlanUser(
+      planId: json['planId'] ?? '',
       userId: json['userId'] ?? '',
       role: UserRole.values.firstWhere(
         (r) => r.toString().split('.').last == json['role'],
@@ -165,7 +165,7 @@ class TripUser {
   // To JSON
   Map<String, dynamic> toJson() {
     return {
-      'tripId': tripId,
+      'planId': planId,
       'userId': userId,
       'role': role.toString().split('.').last,
     };

@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/trip_provider.dart'; // For addEvent
+import '../providers/plan_provider.dart'; // For addEvent
 import '../providers/user_provider.dart'; // For addEvent
 import '../models/event.dart'; // Event model
 //import '../models/trip.dart'; // For tripId
 
 class AddEventScreen extends StatefulWidget {
-  final String tripId; // Passed from TripDetailScreen
+  final String planId; // Passed from TripDetailScreen
 
-  const AddEventScreen({super.key, required this.tripId});
+  const AddEventScreen({super.key, required this.planId});
 
   @override
   State<AddEventScreen> createState() => _AddEventScreenState();
@@ -312,21 +312,23 @@ class _AddEventScreenState extends State<AddEventScreen> {
   // Submit the form
   void _submitForm() {
     if (_formKey.currentState!.validate()) {
-      final tripProvider = Provider.of<TripProvider>(context, listen: false);
+      final planProvider = Provider.of<PlanProvider>(context, listen: false);
       final userProvider = Provider.of<UserProvider>(
         context,
         listen: false,
       ); // Get token
       final newEvent = Event(
         id: DateTime.now().millisecondsSinceEpoch.toString(), // Mock ID
-        tripId: widget.tripId,
+        planId: widget.planId,
         title: _titleController.text,
         location: _locationController.text,
         details: _detailsController.text,
         type: _type,
+        customType: '',
         cost: double.parse(_costController.text),
         costType: _costType,
         startTime: _startTime,
+        duration: 30,
         endTime: _endTime,
         originTimeZone: _isFlight ? _originTimeZone : null,
         destinationTimeZone: _isFlight ? _destinationTimeZone : null,
@@ -334,11 +336,11 @@ class _AddEventScreenState extends State<AddEventScreen> {
         createdAt: DateTime.now(),
       );
 
-      tripProvider.addEvent(newEvent, userProvider.token); // Fixed: Pass token
+      planProvider.addEvent(newEvent, userProvider.token); // Fixed: Pass token
       Navigator.pop(
         context,
         newEvent,
-      ); // Return to TripDetailScreen (updates list)
+      ); // Return to PlanDetailScreen (updates list)
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Event added successfully!')),
       );

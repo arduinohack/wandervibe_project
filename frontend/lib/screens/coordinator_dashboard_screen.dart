@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/trip_provider.dart';
+import '../providers/plan_provider.dart';
 import '../providers/invitation_provider.dart';
 import '../providers/user_provider.dart'; // For role check
-import '../models/trip.dart';
+import 'plan_detail_screen.dart'; // Add this line for PlanDetailScreen navigation
+import '../models/plan.dart';
 import '../models/invitation.dart';
 import '../models/event.dart'; // Add this line for EventType enum
+import '../utils/logger.dart';
 
 class CoordinatorDashboardScreen extends StatefulWidget {
   const CoordinatorDashboardScreen({super.key});
@@ -25,7 +27,7 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
     _tabController = TabController(length: 3, vsync: this); // 3 tabs
     // Load data on open
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final tripProvider = Provider.of<TripProvider>(context, listen: false);
+      final planProvider = Provider.of<PlanProvider>(context, listen: false);
       final invitationProvider = Provider.of<InvitationProvider>(
         context,
         listen: false,
@@ -34,7 +36,7 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
         context,
         listen: false,
       ); // Added: Get token
-      tripProvider.fetchTrips(
+      planProvider.fetchPlans(
         userProvider.token,
       ); // Pass token (if not already)
       invitationProvider.fetchInvitations(
@@ -67,14 +69,14 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
       body: TabBarView(
         controller: _tabController,
         children: [
-          _buildMyTripsTab(context),
+          _buildMyPlansTab(context),
           _buildPendingInvitesTab(context),
           _buildRecentEventsTab(context),
         ],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          print(
+          logger.i(
             'Reassign Coordinator button pressed',
           ); // Stub for reassign role
         },
@@ -83,16 +85,20 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
     );
   }
 
-  Widget _buildMyTripsTab(BuildContext context) {
-    return Consumer<TripProvider>(
-      builder: (context, tripProvider, child) {
-        if (tripProvider.isLoading) {
+  Widget _buildMyPlansTab(BuildContext context) {
+    return Consumer<PlanProvider>(
+      builder: (context, planProvider, child) {
+        final userProvider = Provider.of<UserProvider>(
+          context,
+          listen: false,
+        ); // Added: Grab UserProvider inside builder
+        if (planProvider.isLoading) {
           return const Center(child: CircularProgressIndicator());
         }
-        final myTrips = tripProvider.trips
-            .where((trip) => trip.ownerId == 'user123')
+        final myPlans = planProvider.plans
+            .where((plan) => plan.ownerId == userProvider.currentUserId)
             .toList(); // Stub current user
-        if (myTrips.isEmpty) {
+        if (myPlans.isEmpty) {
           return const Center(child: Text('No trips yet—create one!'));
         }
         return Column(
@@ -100,26 +106,32 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
             Expanded(
               // Makes list scrollable
               child: ListView.builder(
-                itemCount: myTrips.length,
+                itemCount: myPlans.length,
                 itemBuilder: (context, index) {
-                  final trip = myTrips[index];
+                  final plan = myPlans[index];
                   return Card(
                     child: ListTile(
                       leading: const Icon(Icons.flight_takeoff),
-                      title: Text(trip.name),
+                      title: Text(plan.name),
                       subtitle: Text(
-                        '${trip.destination} | Budget: \$${trip.budget} | State: ${trip.planningState}',
+                        '${plan.destination} | Budget: \$${plan.budget} | State: ${plan.planningState}',
                       ),
                       trailing: IconButton(
                         icon: const Icon(Icons.edit),
                         onPressed: () {
-                          print('Edit trip ${trip.id}');
+                          logger.i('Edit trip ${plan.id}');
                           // Later: Navigate to edit screen
                         },
                       ),
                       onTap: () {
-                        print('View trip ${trip.id}');
-                        // Later: Navigate to TripDetailScreen
+                        logger.i('View trip ${plan.id}');
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) =>
+                                PlanDetailScreen(planId: plan.id),
+                          ),
+                        ); // Navigate to details
                       },
                     ),
                   );
@@ -134,25 +146,32 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
                     context,
                     listen: false,
                   ); // Get token for auth
-                  final tripProvider = Provider.of<TripProvider>(
+                  final planProvider = Provider.of<PlanProvider>(
                     context,
                     listen: false,
                   );
-                  final newTrip = Trip(
-                    id: 'temp_id', // Backend generates real ID
-                    name: 'New Test Trip', // Stub name; later from form
-                    destination: 'New York, USA', // Stub
+                  final newPlan = Plan(
+                    id: DateTime.now().millisecondsSinceEpoch
+                        .toString(), // Temp ID, backend overrides
+                    type: 'trip',
+                    name:
+                        'New Trip - ${DateTime.now().month}/${DateTime.now().day}', // Stub name; later from form
+                    destination: 'Your Destination', // Stub; later from form
                     startDate: DateTime.now(),
                     endDate: DateTime.now().add(const Duration(days: 7)),
+                    autoCalculateStartDate: false,
+                    autoCalculateEndDate: false,
+                    location: '',
                     budget: 1500.0,
                     planningState: 'initial',
                     timeZone: 'America/New_York',
                     ownerId:
                         userProvider.currentUserId ??
                         'user123', // From provider
+                    createdAt: DateTime.now(),
                   );
-                  await tripProvider.createTrip(
-                    newTrip,
+                  await planProvider.createPlan(
+                    newPlan,
                     userProvider.token,
                   ); // Pass token for auth
                 },
@@ -192,7 +211,7 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
                 leading: const Icon(Icons.mail),
                 title: Text('Invite for ${invite.role}'),
                 subtitle: Text(
-                  'Trip: ${invite.tripId} | Invited by: ${invite.invitedBy}',
+                  'Trip: ${invite.planId} | Invited by: ${invite.invitedBy}',
                 ),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -241,15 +260,15 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
     );
   }
 
-  // Tab 3: Recent Events (across trips)
+  // Tab 3: Recent Events (across plans)
   Widget _buildRecentEventsTab(BuildContext context) {
-    return Consumer<TripProvider>(
-      builder: (context, tripProvider, child) {
-        if (tripProvider.isLoading) {
+    return Consumer<PlanProvider>(
+      builder: (context, planProvider, child) {
+        if (planProvider.isLoading) {
           return const Center(child: CircularProgressIndicator());
         }
-        // Mock recent events (later, fetch from all trips)
-        final recentEvents = tripProvider.events
+        // Mock recent events (later, fetch from all plans)
+        final recentEvents = planProvider.events
             .take(5)
             .toList(); // Last 5 from current
         if (recentEvents.isEmpty) {
@@ -263,7 +282,7 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
               child: ListTile(
                 leading: Icon(
                   _getEventIcon(event.type),
-                ), // From TripDetailScreen
+                ), // From PlanDetailScreen
                 title: Text(event.title),
                 subtitle: Text(
                   '${event.location} | ${event.startTime.toLocal().toString().split(' ')[1].substring(0, 5)} | Day ${event.dayNumber}',
@@ -277,7 +296,7 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
     );
   }
 
-  // Helper: Icon for event type (copy from TripDetailScreen)
+  // Helper: Icon for event type (copy from PlanDetailScreen)
   IconData _getEventIcon(EventType type) {
     switch (type) {
       case EventType.flight:
@@ -293,6 +312,16 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
       case EventType.attraction:
         return Icons.location_on;
       case EventType.cruise:
+        return Icons.sailing;
+      case EventType.setup:
+        return Icons.sailing;
+      case EventType.ceremony:
+        return Icons.sailing;
+      case EventType.reception:
+        return Icons.sailing;
+      case EventType.vendor:
+        return Icons.sailing;
+      case EventType.custom:
         return Icons.sailing;
     }
   }

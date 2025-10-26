@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'login_screen.dart'; // Add this line for LoginScreen navigation
 import 'signup_screen.dart'; // Add this line for SignupScreen navigation
+import '../models/plan.dart';
+import '../providers/plan_provider.dart';
 import '../providers/user_provider.dart'; // For role check
 import 'coordinator_dashboard_screen.dart'; // Navigation to dashboard
 import 'user_profile_screen.dart'; // Navigation to profile
@@ -94,13 +96,72 @@ class HomeScreen extends StatelessWidget {
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          print(
-            'Create trip button pressed!',
-          ); // Stub for create trip (navigate to create screen later)
-        },
-        child: const Icon(Icons.add),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () =>
+            _showCreatePlanDialog(context), // Open dialog for creation
+        icon: const Icon(Icons.add),
+        label: const Text('New Plan'),
+        backgroundColor: Colors.green,
+        // child: const Icon(Icons.add),
+      ),
+    );
+  }
+
+  void _showCreatePlanDialog(BuildContext context) {
+    final nameController = TextEditingController();
+    final destinationController = TextEditingController();
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Create New Trip'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextFormField(
+              controller: nameController,
+              decoration: const InputDecoration(labelText: 'Trip Name'),
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: destinationController,
+              decoration: const InputDecoration(labelText: 'Destination'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final newPlan = Plan(
+                id: DateTime.now().millisecondsSinceEpoch.toString(), // Temp ID
+                type: 'trip',
+                name: nameController.text,
+                destination: destinationController.text,
+                startDate: DateTime.now(),
+                endDate: DateTime.now().add(const Duration(days: 7)),
+                autoCalculateStartDate: false,
+                autoCalculateEndDate: false,
+                location: '',
+                budget: 1500.0,
+                planningState: 'initial',
+                timeZone: 'America/New_York',
+                ownerId: userProvider.currentUserId ?? 'user123',
+                createdAt: DateTime.now(),
+              );
+              await planProvider.createPlan(newPlan, userProvider.token);
+              if (mounted) {
+                Navigator.pop(context); // Close dialog
+              }
+            },
+            child: const Text('Create'),
+          ),
+        ],
       ),
     );
   }

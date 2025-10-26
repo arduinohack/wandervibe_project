@@ -45,7 +45,7 @@ class InvitationProvider extends ChangeNotifier {
       _invitations = [
         Invitation(
           id: 'inv1',
-          tripId: 'trip1',
+          planId: 'trip1',
           userId: 'user456',
           invitedBy: 'user123',
           role: InvitationRole.vibePlanner,
@@ -54,7 +54,7 @@ class InvitationProvider extends ChangeNotifier {
         ),
         Invitation(
           id: 'inv2',
-          tripId: 'trip2',
+          planId: 'trip2',
           userId: 'user456',
           invitedBy: 'user789',
           role: InvitationRole.wanderer,
@@ -110,8 +110,8 @@ class InvitationProvider extends ChangeNotifier {
       if (index != -1) {
         _invitations[index] = Invitation(
           id: _invitations[index].id,
-          tripId: _invitations[index]
-              .tripId, // Fixed: Use existing invitation's tripId
+          planId: _invitations[index]
+              .planId, // Fixed: Use existing invitation's tripId
           userId: _invitations[index].userId,
           invitedBy: _invitations[index].invitedBy,
           role: _invitations[index].role,

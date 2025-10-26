@@ -7,7 +7,7 @@ enum InvitationStatus { pending, accepted, rejected }
 
 class Invitation {
   final String id;
-  final String tripId;
+  final String planId;
   final String userId;
   final String invitedBy; // User ID of inviter
   final InvitationRole role;
@@ -16,7 +16,7 @@ class Invitation {
 
   Invitation({
     required this.id,
-    required this.tripId,
+    required this.planId,
     required this.userId,
     required this.invitedBy,
     required this.role,
@@ -28,7 +28,7 @@ class Invitation {
   factory Invitation.fromJson(Map<String, dynamic> json) {
     return Invitation(
       id: json['_id'] ?? '',
-      tripId: json['tripId'] ?? '',
+      planId: json['planId'] ?? '',
       userId: json['userId'] ?? '',
       invitedBy: json['invitedBy'] ?? '',
       role: InvitationRole.values.firstWhere(
@@ -48,7 +48,7 @@ class Invitation {
   // To JSON (for API sends)
   Map<String, dynamic> toJson() {
     return {
-      'tripId': tripId,
+      'planId': planId,
       'userId': userId,
       'invitedBy': invitedBy,
       'role': role.toString().split('.').last,

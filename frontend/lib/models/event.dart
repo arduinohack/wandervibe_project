@@ -1,20 +1,35 @@
 import 'package:timezone/timezone.dart'
     as tz; // For time zone handling (add to pubspec.yaml if needed)
 
-enum EventType { flight, car, dining, hotel, tour, attraction, cruise }
+enum EventType {
+  flight,
+  car,
+  dining,
+  hotel,
+  tour,
+  attraction,
+  cruise,
+  setup,
+  ceremony,
+  reception,
+  vendor,
+  custom,
+}
 
 enum CostType { estimated, actual }
 
 class Event {
-  final String id;
-  final String tripId;
+  final String id; // Event ID?
+  final String planId;
   final String title;
   final String location;
   final String details;
   final EventType type;
+  final String customType;
   final double cost;
   final CostType costType;
   final DateTime startTime;
+  final int duration;
   final DateTime endTime;
   final String? originTimeZone; // Optional, required for flight
   final String? destinationTimeZone; // Optional, required for flight
@@ -24,14 +39,16 @@ class Event {
 
   Event({
     required this.id,
-    required this.tripId,
+    required this.planId,
     required this.title,
     required this.location,
     required this.details,
     required this.type,
+    required this.customType,
     required this.cost,
     required this.costType,
     required this.startTime,
+    required this.duration,
     required this.endTime,
     this.originTimeZone,
     this.destinationTimeZone,
@@ -44,7 +61,7 @@ class Event {
   factory Event.fromJson(Map<String, dynamic> json) {
     return Event(
       id: json['_id'] ?? '',
-      tripId: json['tripId'] ?? '',
+      planId: json['planId'] ?? '',
       title: json['title'] ?? '',
       location: json['location'] ?? '',
       details: json['details'] ?? '',
@@ -52,6 +69,7 @@ class Event {
         (e) => e.toString().split('.').last == json['type'],
         orElse: () => EventType.dining, // Default if invalid
       ),
+      customType: json['customType'] ?? '',
       cost: (json['cost'] ?? 0.0).toDouble(),
       costType: CostType.values.firstWhere(
         (c) => c.toString().split('.').last == json['costType'],
@@ -60,6 +78,7 @@ class Event {
       startTime: DateTime.parse(
         json['startTime'] ?? DateTime.now().toIso8601String(),
       ),
+      duration: json['duration'] ?? 0,
       endTime: DateTime.parse(
         json['endTime'] ?? DateTime.now().toIso8601String(),
       ),
@@ -75,14 +94,16 @@ class Event {
   // To JSON for API sends
   Map<String, dynamic> toJson() {
     return {
-      'tripId': tripId,
+      'planId': planId,
       'title': title,
       'location': location,
       'details': details,
       'type': type.toString().split('.').last,
+      'customType': customType,
       'cost': cost,
       'costType': costType.toString().split('.').last,
       'startTime': startTime.toIso8601String(),
+      'duration': duration,
       'endTime': endTime.toIso8601String(),
       'originTimeZone': originTimeZone,
       'destinationTimeZone': destinationTimeZone,

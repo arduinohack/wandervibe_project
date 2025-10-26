@@ -5,27 +5,29 @@ import 'dart:convert'; // For JSON
 import 'package:provider/provider.dart'; // Added for Provider.of (token from UserProvider)
 import '../config/constants.dart'; // Add this line for backendBaseUrl
 import '../providers/user_provider.dart'; // Add this line for UserProvider (token)
-import '../models/trip.dart'; // Your Trip model
+import '../models/plan.dart'; // Your Plan model
 import '../models/event.dart'; // Your Event model
 import '../models/user.dart'; // Your User model
 
-class TripProvider extends ChangeNotifier {
-  List<Trip> _trips = []; // Private list of trips
-  List<Event> _events = []; // Private list of events for current trip
-  List<TripUser> _tripUsers =
-      []; // Private list of users/roles for current trip
+class PlanProvider extends ChangeNotifier {
+  List<Plan> _plans = []; // Private list of plans
+  Plan? _currentPlan; // Current selected plan
+  Plan? get currentPlan => _currentPlan;
+  List<Event> _events = []; // Private list of events for current plan
+  List<PlanUser> _planUsers =
+      []; // Private list of users/roles for current plan
   bool _isLoading = false; // Loading state for UI spinners
 
-  List<Trip> get trips => _trips; // Public getter
+  List<Plan> get plans => _plans; // Public getter
   List<Event> get events => _events;
-  List<TripUser> get tripUsers => _tripUsers;
+  List<PlanUser> get planUsers => _planUsers;
   bool get isLoading => _isLoading;
 
-  String? _currentTripId; // Track current trip for itinerary
+  String? _currentPlanId; // Track current plan for itinerary
 
-  // Fetch itinerary for a trip (real API with token passed as param)
-  Future<void> fetchItinerary(String tripId, String? token) async {
-    _currentTripId = tripId;
+  // Fetch itinerary for a plan (real API with token passed as param)
+  Future<void> fetchPlan(String planId, String? token) async {
+    _currentPlanId = planId;
     _isLoading = true;
     notifyListeners();
 
@@ -35,7 +37,7 @@ class TripProvider extends ChangeNotifier {
       final response = await http.get(
         Uri.parse(
           (await backendBaseUrl) +
-              apiTripsItinerary.replaceAll('{tripId}', tripId),
+              apiPlansItinerary.replaceAll('{planId}', planId),
         ),
         headers: {
           'Content-Type': 'application/json',
@@ -46,8 +48,8 @@ class TripProvider extends ChangeNotifier {
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
         _events = data.map((json) => Event.fromJson(json)).toList();
-        _computeDayNumbers(tripId); // Calculate day numbers
-        print('Fetched ${_events.length} events for trip $tripId from backend');
+        _computeDayNumbers(planId); // Calculate day numbers
+        print('Fetched ${_events.length} events for plan $planId from backend');
       } else {
         throw Exception('Failed to load itinerary: ${response.statusCode}');
       }
@@ -57,14 +59,16 @@ class TripProvider extends ChangeNotifier {
       _events = [
         Event(
           id: 'event1',
-          tripId: tripId,
+          planId: planId,
           title: 'Flight to Paris',
           location: 'JFK Airport',
           details: 'Direct flight, economy.',
           type: EventType.flight,
+          customType: '',
           cost: 800.0,
           costType: CostType.estimated,
           startTime: DateTime.now().add(const Duration(hours: 8)),
+          duration: 30,
           endTime: DateTime.now().add(const Duration(hours: 10)),
           originTimeZone: 'America/New_York',
           destinationTimeZone: 'Europe/Paris',
@@ -73,14 +77,16 @@ class TripProvider extends ChangeNotifier {
         ),
         Event(
           id: 'event2',
-          tripId: tripId,
+          planId: planId,
           title: 'Hotel Check-in',
           location: 'Le Marais',
           details: 'Cozy boutique hotel.',
           type: EventType.hotel,
+          customType: '',
           cost: 150.0,
           costType: CostType.actual,
           startTime: DateTime.now().add(const Duration(days: 1)),
+          duration: 30,
           endTime: DateTime.now().add(const Duration(days: 8)),
           originTimeZone: null,
           destinationTimeZone: null,
@@ -88,7 +94,7 @@ class TripProvider extends ChangeNotifier {
           createdAt: DateTime.now(),
         ),
       ];
-      _computeDayNumbers(tripId);
+      _computeDayNumbers(planId);
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -96,22 +102,27 @@ class TripProvider extends ChangeNotifier {
   }
 
   // Private method to compute Day Numbers (TZ logic from requirements)
-  void _computeDayNumbers(String tripId) {
-    final trip = _trips.firstWhere(
-      (t) => t.id == tripId,
-      orElse: () => Trip(
+  void _computeDayNumbers(String planId) {
+    final plan = _plans.firstWhere(
+      (t) => t.id == planId,
+      orElse: () => Plan(
         id: '',
+        type: '',
         name: '',
         destination: '',
         startDate: DateTime.now(),
         endDate: DateTime.now(),
+        autoCalculateStartDate: false,
+        autoCalculateEndDate: false,
+        location: '',
         budget: 0.0,
         planningState: 'initial',
         timeZone: 'UTC',
         ownerId: '',
+        createdAt: DateTime.now(),
       ),
     );
-    final tripTz = trip
+    final planTz = plan
         .timeZone; // Mock TZ location (add luxon or flutter_timezone later for DST)
 
     _events.sort(
@@ -138,8 +149,8 @@ class TripProvider extends ChangeNotifier {
     }
   }
 
-  // Fetch all trips (real API with auth token passed in)
-  Future<void> fetchTrips(String? token) async {
+  // Fetch all plans (real API with auth token passed in)
+  Future<void> fetchPlans(String? token) async {
     _isLoading = true;
     notifyListeners();
 
@@ -149,30 +160,35 @@ class TripProvider extends ChangeNotifier {
       }
 
       final response = await http.get(
-        Uri.parse((await backendBaseUrl) + apiTrips),
+        Uri.parse((await backendBaseUrl) + apiPlans),
         headers: {'Authorization': 'Bearer $token'},
       );
 
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
-        _trips = data.map((json) => Trip.fromJson(json)).toList();
+        _plans = data.map((json) => Plan.fromJson(json)).toList();
       } else {
-        throw Exception('Failed to load trips: ${response.statusCode}');
+        throw Exception('Failed to load plans: ${response.statusCode}');
       }
     } catch (e) {
-      print('Error fetching trips: $e');
+      print('Error fetching plans: $e');
       // Fallback to mock if offline
-      _trips = [
-        Trip(
-          id: 'trip1',
+      _plans = [
+        Plan(
+          id: 'plan1',
+          type: 'trip',
           name: 'Paris Adventure',
           destination: 'Paris, France',
           startDate: DateTime.now(),
           endDate: DateTime.now().add(const Duration(days: 7)),
+          autoCalculateStartDate: false,
+          autoCalculateEndDate: false,
+          location: '',
           budget: 2000.0,
           planningState: 'initial',
           timeZone: 'Europe/Paris',
           ownerId: 'user123',
+          createdAt: DateTime.now(),
         ),
       ];
     } finally {
@@ -181,40 +197,80 @@ class TripProvider extends ChangeNotifier {
     }
   }
 
-  // Create trip (real API POST /api/trips with token passed as param)
-  Future<void> createTrip(Trip newTrip, String? token) async {
-    try {
-      if (token == null) throw Exception('No token—log in first');
+  // Fetch all all plan users (real API with auth token passed in)
+  Future<void> fetchPlanUsers(String planId, String? token) async {
+    _currentPlanId = planId;
+    _isLoading = true;
+    notifyListeners();
 
-      final response = await http.post(
-        Uri.parse(await backendBaseUrl + apiTrips),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-        body: json.encode(newTrip.toJson()),
+    // final _planUsers PlanUsers;
+
+    try {
+      if (token == null) {
+        throw Exception('No token—log in first');
+      }
+
+      final response = await http.get(
+        Uri.parse((await backendBaseUrl) + apiPlanUsers),
+        headers: {'Authorization': 'Bearer $token'},
       );
 
-      if (response.statusCode == 201) {
-        final data = json.decode(response.body);
-        final createdTrip = Trip.fromJson(
-          data['trip'],
-        ); // Backend returns the created trip
-        _trips.add(createdTrip);
-        notifyListeners();
-        print('Created trip: ${createdTrip.name} from backend');
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(response.body);
+        _planUsers = data.map((json) => PlanUser.fromJson(json)).toList();
       } else {
-        throw Exception('Failed to create trip: ${response.statusCode}');
+        throw Exception('Failed to load plans: ${response.statusCode}');
       }
     } catch (e) {
-      print('Error creating trip: $e');
-      // Fallback: Add mock
-      _trips.add(newTrip);
+      print('Error fetching users: $e');
+      // Fallback to mock if offline
+      _planUsers = [
+        PlanUser(
+          planId: 'plan1',
+          userId: 'user1',
+          role: UserRole.vibeCoordinator,
+        ),
+      ];
+    } finally {
+      _isLoading = false;
       notifyListeners();
     }
   }
 
-  // Add event to trip (real API POST /api/events with token passed as param)
+  // Create plan (real API POST /api/plans with token passed as param)
+  Future<void> createPlan(Plan newPlan, String? token) async {
+    try {
+      if (token == null) throw Exception('No token—log in first');
+
+      final response = await http.post(
+        Uri.parse(await backendBaseUrl + apiPlans),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode(newPlan.toJson()),
+      );
+
+      if (response.statusCode == 201) {
+        final data = json.decode(response.body);
+        final createdPlan = Plan.fromJson(
+          data['plan'],
+        ); // Backend returns the created plan
+        _plans.add(createdPlan);
+        notifyListeners();
+        print('Created plan: ${createdPlan.name} from backend');
+      } else {
+        throw Exception('Failed to create plan: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error creating plan: $e');
+      // Fallback: Add mock
+      _plans.add(newPlan);
+      notifyListeners();
+    }
+  }
+
+  // Add event to plan (real API POST /api/events with token passed as param)
   Future<void> addEvent(Event newEvent, String? token) async {
     try {
       if (token == null) throw Exception('No token—log in first');
@@ -234,7 +290,7 @@ class TripProvider extends ChangeNotifier {
           data['event'],
         ); // Backend returns the created event
         _events.add(createdEvent);
-        _computeDayNumbers(newEvent.tripId); // Recalculate days
+        _computeDayNumbers(newEvent.planId); // Recalculate days
         notifyListeners();
         print('Added event: ${createdEvent.title} from backend');
       } else {
@@ -244,7 +300,7 @@ class TripProvider extends ChangeNotifier {
       print('Error adding event: $e');
       // Fallback: Add mock
       _events.add(newEvent);
-      _computeDayNumbers(newEvent.tripId);
+      _computeDayNumbers(newEvent.planId);
       notifyListeners();
     }
   }

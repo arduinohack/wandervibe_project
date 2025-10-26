@@ -10,36 +10,38 @@ const router = express.Router();
 const logger = require('../utils/logger');  // Added: Borrow exported logger from ../util/logger.js
 
 
-// POST /api/plans (Protected: Creates trip and assigns VibeCoordinator role)
+// POST /api/plans (Protected: Creates plan and assigns VibeCoordinator role)
 router.post('/', async (req, res) => {
   const { type, name, destination, startDate, endDate, timeZone, budget } = req.body;
 
   // Validate required fields
-  if (!type || !name || !destination || !startDate || !endDate || !timeZone) {
-    return res.status(400).json({ msg: 'Missing required fields: type, name, destination, startDate, endDate, timeZone' });
+  if (!type || !name) {
+    return res.status(400).json({ msg: 'Missing required fields: type, name' });
   }
 
   try {
-    // Generate UUID for trip ID
+    // Generate UUID for plan ID
     const planId = uuidv4();
 
     logger.info('userId: ', req.user.userId);
     
-    // Create the trip document
+    // Create the plan document
     const plan = new Plan({
       _id: planId,
       type,
       name,
-      destination,
-      startDate: new Date(startDate),
-      endDate: new Date(endDate),
-      budget: budget || 0,
-      timeZone,
-      ownerId: req.user.userId  // From auth middleware—creator is owner
+      destination: req.body.destination,
+      startDate: req.body.startDate ? new Date(req.body.startDate) : null,  // FIXED: Allow null
+      endDate: req.body.endDate ? new Date(req.body.endDate) : null,  // FIXED: Allow null
+      location: req.body.location,
+      timeZone: req.body.timeZone,
+      budget: req.body.budget || 0,
+      autoCalculateStartDate: req.body.autoCalculateStartDate || true,
+      autoCalculateEndDate: req.body.autoCalculateEndDate || true,
+      ownerId: req.user.userId
     });
-    await plan.save();
+    await plan.save();  // Now saves with null dates    // Assign VibeCoordinator role
 
-    // Assign VibeCoordinator role
     const planUser = new PlanUser({
       planId,
       userId: req.user.userId,
@@ -61,13 +63,13 @@ router.post('/', async (req, res) => {
   }
 });
 
-// GET /api/plans (Protected: Lists user's trips as owner or participant)
+// GET /api/plans (Protected: Lists user's plans as owner or participant)
 router.get('/', async (req, res) => {
   try {
-    // Find trips where user is owner
+    // Find plans where user is owner
     const ownedPlans = await Plan.find({ ownerId: req.user.userId }).select('name destination startDate endDate planningState timeZone');
 
-    // Find trips where user is participant (via trip_users)
+    // Find plans where user is participant (via plan_users)
     const participantPlans = await PlanUser.find({ userId: req.user.userId }).populate('planId', 'name destination startDate endDate planningState timeZone');
     const participantPlanObjs = participantPlans.filter(pt => pt.planId).map(pt => pt.planId);  // Filter undefined
 
@@ -78,16 +80,16 @@ router.get('/', async (req, res) => {
     );
 
     res.json({ 
-      msg: 'User trips fetched!', 
-      trips: uniquePlans.sort((a, b) => new Date(a.startDate) - new Date(b.startDate))  // Sort by startDate
+      msg: 'User plans fetched!', 
+      plans: uniquePlans.sort((a, b) => new Date(a.startDate) - new Date(b.startDate))  // Sort by startDate
     });
   } catch (err) {
-    console.error('List trips error:', err);
+    console.error('List plans error:', err);
     res.status(500).json({ msg: 'Server error' });
   }
 });
 
-// GET /api/plans/:planId/users (Protected: Lists trip participants with roles)
+// GET /api/plans/:planId/users (Protected: Lists plan participants with roles)
 router.get('/:planId/users', async (req, res) => {
   const { planId } = req.params;
 
@@ -95,14 +97,14 @@ router.get('/:planId/users', async (req, res) => {
     // Check caller is participant
     const callerPlanUser = await PlanUser.findOne({ planId, userId: req.user.userId });
     if (!callerPlanUser) {
-      return res.status(403).json({ msg: 'Access denied: Not a trip participant' });
+      return res.status(403).json({ msg: 'Access denied: Not a plan participant' });
     }
 
-    // Fetch all trip users, populate with full user details
-    const tripUsers = await PlanUser.find({ planId }).populate('userId', 'firstName lastName email');
+    // Fetch all plan users, populate with full user details
+    const planUsers = await PlanUser.find({ planId }).populate('userId', 'firstName lastName email');
 
     // Format response
-    const formatted = tripUsers.map(tu => ({
+    const formatted = planUsers.map(tu => ({
       userId: tu.userId._id,
       name: `${tu.userId.firstName} ${tu.userId.lastName}`,
       email: tu.userId.email,
@@ -139,7 +141,7 @@ router.post('/:planId/remove-user', async (req, res) => {
   try {
     const callerPlanUser = await PlanUser.findOne({ planId, userId: req.user.userId });
     if (!callerPlanUser) {
-      return res.status(403).json({ msg: 'Access denied: Not a trip participant' });
+      return res.status(403).json({ msg: 'Access denied: Not a plan participant' });
     }
 
     if (targetUserId === req.user.userId) {
@@ -148,7 +150,7 @@ router.post('/:planId/remove-user', async (req, res) => {
 
     const targetPlanUser = await PlanUser.findOne({ planId, userId: targetUserId });
     if (!targetPlanUser) {
-      return res.status(404).json({ msg: 'Target user not found on trip' });
+      return res.status(404).json({ msg: 'Target user not found on plan' });
     }
 
     if (callerPlanUser.role !== 'VibeCoordinator' && targetPlanUser.role !== 'Wanderer') {
@@ -162,10 +164,10 @@ router.post('/:planId/remove-user', async (req, res) => {
     await PlanUser.deleteOne({ planId, userId: targetUserId });
 
     const removedUser = await User.findById(targetUserId).select('firstName lastName');
-    const trip = await Plan.findById(planId).select('name');
+    const plan = await Plan.findById(planId).select('name');
 
-    await notifyUsers([targetUserId], `You've been removed from "${trip.name}" by ${callerPlanUser.userId}.`, 'email');
-    await notifyUsers([req.user.userId], `Removed ${removedUser.firstName} ${removedUser.lastName} from "${trip.name}".`, 'email');
+    await notifyUsers([targetUserId], `You've been removed from "${plan.name}" by ${callerPlanUser.userId}.`, 'email');
+    await notifyUsers([req.user.userId], `Removed ${removedUser.firstName} ${removedUser.lastName} from "${plan.name}".`, 'email');
 
     res.json({ msg: 'User removed successfully!' });
   } catch (err) {
@@ -199,9 +201,9 @@ router.post('/:planId/reassign-coordinator', async (req, res) => {
     await callerPlanUser.save();
     await targetPlanUser.save();
 
-    const trip = await Plan.findById(planId);
-    trip.ownerId = targetUserId;
-    await trip.save();
+    const plan = await Plan.findById(planId);
+    plan.ownerId = targetUserId;
+    await plan.save();
 
     const allParticipants = await PlanUser.find({ planId }).select('userId');
     const participantIds = allParticipants.map(tu => tu.userId);
@@ -223,20 +225,20 @@ router.get('/:planId/itinerary', async (req, res) => {
     // Check caller is participant
     const callerPlanUser = await PlanUser.findOne({ planId, userId: req.user.userId });
     if (!callerPlanUser) {
-      return res.status(403).json({ msg: 'Access denied: Not a trip participant' });
+      return res.status(403).json({ msg: 'Access denied: Not a plan participant' });
     }
 
-    // Fetch trip for timeZone
-    const trip = await Plan.findById(planId);
-    if (!trip) {
+    // Fetch plan for timeZone
+    const plan = await Plan.findById(planId);
+    if (!plan) {
       return res.status(404).json({ msg: 'Plan not found' });
     }
 
     // Fetch and sort events by startTime
-    let events = await Event.find({ $or: [{ tripId: planId }, { eventPlanId: planId }] });
+    let events = await Event.find({ $or: [{ planId: planId }, { eventPlanId: planId }] });
     events = events.map(event => ({
       ...event.toObject(),
-      relevantTimeZone: event.type === 'flight' ? event.destinationTimeZone : trip.timeZone
+      relevantTimeZone: event.type === 'flight' ? event.destinationTimeZone : plan.timeZone
     }));
 
     // Compute Day Numbers (loop, compare to previous)

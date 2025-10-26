@@ -1,37 +1,37 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/trip_provider.dart'; // Your provider
+import '../providers/plan_provider.dart'; // Your provider
 import '../providers/user_provider.dart'; // Your provider
-import '../models/trip.dart'; // Trip model
+import '../models/plan.dart'; // Plan model
 import '../models/event.dart'; // Event model
 import '../models/user.dart'; // User model
 import '../screens/add_event_screen.dart'; // Your new screen
 
-class TripDetailScreen extends StatefulWidget {
-  final String tripId; // Passed from HomeScreen
+class PlanDetailScreen extends StatefulWidget {
+  final String planId; // Passed from HomeScreen
 
-  const TripDetailScreen({super.key, required this.tripId});
+  const PlanDetailScreen({super.key, required this.planId});
 
   @override
-  State<TripDetailScreen> createState() => _TripDetailScreenState();
+  State<PlanDetailScreen> createState() => _PlanDetailScreenState();
 }
 
-class _TripDetailScreenState extends State<TripDetailScreen> {
+class _PlanDetailScreenState extends State<PlanDetailScreen> {
   @override
   void initState() {
     super.initState();
     // Load data when screen opens
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final tripProvider = Provider.of<TripProvider>(context, listen: false);
+      final planProvider = Provider.of<PlanProvider>(context, listen: false);
       final userProvider = Provider.of<UserProvider>(
         context,
         listen: false,
       ); // Added: Get token
-      tripProvider.fetchItinerary(
-        widget.tripId,
+      planProvider.fetchPlan(
+        widget.planId,
         userProvider.token,
       ); // Fixed: Pass token
-      tripProvider.fetchTripUsers(widget.tripId);
+      planProvider.fetchPlanUsers(widget.planId, userProvider.token);
     });
   }
 
@@ -39,30 +39,51 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Trip Details'),
+        title: Text(
+          'Need to get the plan  name here...',
+        ), // Fixed: widget. for plan
         backgroundColor: Colors.blue, // Matches theme
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.add),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => AddEventScreen(planId: widget.planId),
+                ),
+              );
+            },
+            tooltip: 'Add Event',
+          ),
+        ],
       ),
-      body: Consumer<TripProvider>(
+      body: Consumer<PlanProvider>(
         // Listens to provider changes
-        builder: (context, tripProvider, child) {
-          if (tripProvider.isLoading) {
+        builder: (context, planProvider, child) {
+          if (planProvider.isLoading) {
             return const Center(
               child: CircularProgressIndicator(),
             ); // Loading spinner
           }
 
-          final trip = tripProvider.trips.firstWhere(
-            (t) => t.id == widget.tripId,
-            orElse: () => Trip(
+          final plan = planProvider.plans.firstWhere(
+            (t) => t.id == widget.planId,
+            orElse: () => Plan(
               id: '',
+              type: 'trip',
               name: 'Unknown Trip',
               destination: '',
               startDate: DateTime.now(),
               endDate: DateTime.now(),
+              autoCalculateStartDate: false,
+              autoCalculateEndDate: true,
+              location: '',
               budget: 0.0,
               planningState: 'initial',
               timeZone: 'UTC',
               ownerId: '',
+              createdAt: DateTime.now(),
             ),
           );
 
@@ -73,7 +94,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Trip Overview Card
+                  // Plan Overview Card
                   Card(
                     child: Padding(
                       padding: const EdgeInsets.all(16.0),
@@ -81,17 +102,17 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            trip.name,
+                            plan.name,
                             style: Theme.of(context).textTheme.headlineSmall,
                           ),
                           const SizedBox(height: 8),
-                          Text('Destination: ${trip.destination}'),
+                          Text('Destination: ${plan.destination}'),
                           Text(
-                            'Dates: ${trip.startDate.toLocal().toString().split(' ')[0]} - ${trip.endDate.toLocal().toString().split(' ')[0]}',
+                            'Dates: ${plan.startDate.toLocal().toString().split(' ')[0]} - ${plan.endDate.toLocal().toString().split(' ')[0]}',
                           ),
-                          Text('Budget: \$${trip.budget.toStringAsFixed(2)}'),
-                          Text('State: ${trip.planningState}'),
-                          Text('Time Zone: ${trip.timeZone}'),
+                          Text('Budget: \$${plan.budget.toStringAsFixed(2)}'),
+                          Text('State: ${plan.planningState}'),
+                          Text('Time Zone: ${plan.timeZone}'),
                         ],
                       ),
                     ),
@@ -105,23 +126,23 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
                   ),
                   const SizedBox(height: 8),
                   ..._buildItineraryGroups(
-                    tripProvider.events,
+                    planProvider.events,
                   ), // Grouped by Day Number
 
                   const SizedBox(height: 16),
 
-                  // Trip Users Section
+                  // Plan Users Section
                   const Text(
                     'Trip Users',
                     style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 8),
-                  ..._buildTripUsersList(tripProvider.tripUsers),
+                  ..._buildPlanUsersList(planProvider.planUsers),
 
                   const SizedBox(height: 16),
 
                   // Role-Based Actions
-                  _buildRoleBasedActions(context, tripProvider),
+                  _buildRoleBasedActions(context, planProvider),
                 ],
               ),
             ),
@@ -133,7 +154,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => AddEventScreen(tripId: widget.tripId),
+              builder: (context) => AddEventScreen(planId: widget.planId),
             ),
           );
         },
@@ -185,21 +206,21 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
     }).toList();
   }
 
-  // Helper: List trip users
-  List<Widget> _buildTripUsersList(List<TripUser> tripUsers) {
-    if (tripUsers.isEmpty) {
+  // Helper: List plan users
+  List<Widget> _buildPlanUsersList(List<PlanUser> planUsers) {
+    if (planUsers.isEmpty) {
       return [const Text('No users yet—invite some!')];
     }
 
-    return tripUsers
+    return planUsers
         .map(
-          (tripUser) => ListTile(
+          (planUser) => ListTile(
             leading: const CircleAvatar(child: Icon(Icons.person)),
             title: Text(
-              'User ${tripUser.userId}',
+              'User ${planUser.userId}',
             ), // Later, fetch full name from User
             subtitle: Text(
-              tripUser.role
+              planUser.role
                   .toString()
                   .split('.')
                   .last
@@ -214,7 +235,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
   // Helper: Role-based actions (stub current user role for now)
   Widget _buildRoleBasedActions(
     BuildContext context,
-    TripProvider tripProvider,
+    PlanProvider planProvider,
   ) {
     // Stub: Assume current user is VibeCoordinator (replace with UserProvider check)
     bool isVibeCoordinator =
@@ -267,6 +288,16 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
       case EventType.attraction:
         return Icons.location_on; // Fixed: For landmarks/attractions
       case EventType.cruise:
+        return Icons.sailing; // Fixed: For sailboat/cruise
+      case EventType.setup:
+        return Icons.sailing; // Fixed: For sailboat/cruise
+      case EventType.ceremony:
+        return Icons.sailing; // Fixed: For sailboat/cruise
+      case EventType.reception:
+        return Icons.sailing; // Fixed: For sailboat/cruise
+      case EventType.vendor:
+        return Icons.sailing; // Fixed: For sailboat/cruise
+      case EventType.custom:
         return Icons.sailing; // Fixed: For sailboat/cruise
     }
   }

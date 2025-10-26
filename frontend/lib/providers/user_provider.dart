@@ -3,7 +3,6 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart'; // For JWT storage
 import '../utils/logger.dart';
-import 'user_provider.dart'; // Add this line for UserProvider (token)
 import '../config/constants.dart'; // Add this line for backendBaseUrl
 import '../models/user.dart'; // Your User model with Address/Preferences
 
@@ -264,12 +263,12 @@ class UserProvider extends ChangeNotifier {
       );
 
       if (response.statusCode == 200) {
-        print('Forgot password email sent for $email');
+        logger.i('Forgot password email sent for $email');
       } else {
         throw Exception('Failed to send reset email: ${response.statusCode}');
       }
     } catch (e) {
-      print('Forgot password error: $e');
+      logger.e('Forgot password error: $e');
       rethrow;
     }
   }

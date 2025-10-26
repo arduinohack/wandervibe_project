@@ -360,7 +360,7 @@ router.patch('/users/:userId', authMiddleware, async (req, res) => {
 // Logout endpoint: POST /api/auth/logout
 router.post('/logout', authMiddleware, async (req, res) => {
   logger.info('At Logout', {
-    userId: req.user.id,
+    userId: req.user.userId,
     event: 'AuthLogout',
     context: {  }
   });
@@ -370,7 +370,7 @@ router.post('/logout', authMiddleware, async (req, res) => {
       if (token) {
       // Optional: Blacklist token for 24h
         logger.info('Blacklisting token', {
-        userId: req.user.id,
+        userId: req.user.userId,
         event: 'AuthLogout',
         context: { Token: token }
         });
@@ -378,14 +378,14 @@ router.post('/logout', authMiddleware, async (req, res) => {
       }
     }
     logger.info('User logged out', {
-      userId: req.user.id,
+      userId: req.user.userId,
       event: 'AuthLogout',
       context: { tokenLength: token ? token.length : 0 }
     });
     res.status(200).json({ message: 'Logged out successfully' });
   } catch (error) {
     logger.error('Server error', {
-      userId: req.user ? req.user.id : 'anonymous',
+      userId: req.user ? req.user.userId : 'anonymous',
       event: 'AuthLogout',
       context: { error: error.message }
     });
