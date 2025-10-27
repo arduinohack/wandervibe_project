@@ -10,9 +10,14 @@ import 'user_profile_screen.dart'; // Navigation to profile
 import 'settings_screen.dart';
 import '../models/user.dart'; // For UserRole enum
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -20,6 +25,23 @@ class HomeScreen extends StatelessWidget {
         title: const Text('WanderVibe'), // App title
         backgroundColor: Colors.blue, // Matches theme
         actions: [
+          IconButton(
+            icon: const Icon(Icons.logout),
+            onPressed: () async {
+              final userProvider = Provider.of<UserProvider>(
+                context,
+                listen: false,
+              );
+              await userProvider.logout();
+              if (mounted) {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (context) => const LoginScreen()),
+                );
+              }
+            },
+            tooltip: 'Logout',
+          ),
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () {
@@ -29,21 +51,6 @@ class HomeScreen extends StatelessWidget {
               );
             },
             tooltip: 'App Settings',
-          ),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () async {
-              final userProvider = Provider.of<UserProvider>(
-                context,
-                listen: false,
-              );
-              await userProvider.logout();
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (context) => const LoginScreen()),
-              );
-            },
-            tooltip: 'Logout',
           ),
         ],
       ),
@@ -106,7 +113,9 @@ class HomeScreen extends StatelessWidget {
       ),
     );
   }
+}
 
+class _HomeScreenState extends State<HomeScreen> {
   void _showCreatePlanDialog(BuildContext context) {
     final nameController = TextEditingController();
     final destinationController = TextEditingController();
@@ -138,25 +147,29 @@ class HomeScreen extends StatelessWidget {
           ),
           ElevatedButton(
             onPressed: () async {
-              final newPlan = Plan(
-                id: DateTime.now().millisecondsSinceEpoch.toString(), // Temp ID
-                type: 'trip',
-                name: nameController.text,
-                destination: destinationController.text,
-                startDate: DateTime.now(),
-                endDate: DateTime.now().add(const Duration(days: 7)),
-                autoCalculateStartDate: false,
-                autoCalculateEndDate: false,
-                location: '',
-                budget: 1500.0,
-                planningState: 'initial',
-                timeZone: 'America/New_York',
-                ownerId: userProvider.currentUserId ?? 'user123',
-                createdAt: DateTime.now(),
-              );
-              await planProvider.createPlan(newPlan, userProvider.token);
-              if (mounted) {
-                Navigator.pop(context); // Close dialog
+              if (nameController.text.isNotEmpty &&
+                  destinationController.text.isNotEmpty) {
+                final newPlan = Plan(
+                  id: DateTime.now().millisecondsSinceEpoch
+                      .toString(), // Temp ID
+                  type: 'trip',
+                  name: nameController.text,
+                  destination: destinationController.text,
+                  startDate: DateTime.now(),
+                  endDate: DateTime.now().add(const Duration(days: 7)),
+                  autoCalculateStartDate: false,
+                  autoCalculateEndDate: false,
+                  location: '',
+                  budget: 1500.0,
+                  planningState: 'initial',
+                  timeZone: 'America/New_York',
+                  ownerId: userProvider.currentUserId ?? 'user123',
+                  createdAt: DateTime.now(),
+                );
+                await planProvider.createPlan(newPlan, userProvider.token);
+                if (mounted) {
+                  Navigator.pop(context); // Close dialog
+                }
               }
             },
             child: const Text('Create'),
