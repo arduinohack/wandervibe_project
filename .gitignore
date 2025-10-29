@@ -1,7 +1,10 @@
 # Node.js
 node_modules/
 .env
+.env*
 *.log
+seed_users.js
+
 
 # Flutter
 build/
@@ -9,6 +12,10 @@ build/
 .flutter-plugins
 .packages
 pubspec.lock
+*.key
+*.pem
+.*-audit.json
+
 
 # OS
 .DS_Store
