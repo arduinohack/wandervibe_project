@@ -3,6 +3,7 @@ const express = require('express');
 const jwt = require('jsonwebtoken');  // For JWT token handling
 const { authMiddleware } = require('./middleware/auth');  // This line
 const mongoose = require('mongoose');
+// const User = require('./models/User');  // Add this line for User model in seed/test
 const morgan = require('morgan');  // Add this line
 const winston = require('winston');  // For app logs
 const bcrypt = require('bcryptjs');  // For password hashing
@@ -24,7 +25,7 @@ const PORT = process.env.PORT || 3000;
 logger.info('Server starting up', { port: process.env.PORT || 3000 });
 
 // Connect to MongoDB
-logger.info(process.env.MONGODB_URI);
+// logger.info(process.env.MONGODB_URI);
 mongoose.connect(process.env.MONGODB_URI, {  // Fixed: URI first, options second
   bufferTimeoutMS: 5000,  // 5s timeout for buffering (fails fast if DB slow)
   serverSelectionTimeoutMS: 5000,  // 5s for server selection (quick detect if DB down)
@@ -64,8 +65,7 @@ mongoose.connection.on('disconnected', () => {
 
 
 // TEMP: One-time test users creation (uncomment to run, then comment out after)
-const User = require('./models/User');
-const { v4: uuidv4 } = require('uuid');
+/*const { v4: uuidv4 } = require('uuid');
 
   for (const userData of usersToSeed) {
     try {
@@ -96,7 +96,8 @@ const { v4: uuidv4 } = require('uuid');
       logger.error.error('Test user creation error:', err);
     }
   }
-}
+}*/
+
 
 // Mount auth routes (e.g., POST /api/auth/login)
 app.use('/api/auth', require('./routes/auth'));

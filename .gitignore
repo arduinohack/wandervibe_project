@@ -1,22 +1,62 @@
-# Node.js
-node_modules/
+# Environment variables
 .env
-.env*
+.env.local
+.env.*.local
+
+# Miscellaneous
+*.class
 *.log
-seed_users.js
+*.log.gz
+*-audit.json
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
 
+# Backend
+backend/node_modules/
+backend/.env
 
-# Flutter
-build/
-.dart_tool/
-.flutter-plugins
-.packages
-pubspec.lock
-*.key
-*.pem
-.*-audit.json
+# Frontend
+frontend/.dart_tool/
+frontend/build/
+frontend/.env
 
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/coverage/
+
+# IDE
+.vscode/settings.json
+.idea/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
