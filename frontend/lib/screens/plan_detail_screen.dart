@@ -40,7 +40,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          'Need to get the plan  name here...',
+          'Need to get the plan name here...',
         ), // Fixed: widget. for plan
         backgroundColor: Colors.blue, // Matches theme
         actions: [

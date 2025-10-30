@@ -12,7 +12,11 @@ const authMiddleware = async (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_secret_key');
-    logger.info('decoded: ', decoded);
+    logger.info('Decoded token with secret key', {
+      userId: decoded.userId,
+      event: 'MiddlewareToken',
+      context: { decoded: decoded }
+    });
 
     if (!token) {
       return res.status(401).json({ message: 'No token, authorization denied' });
@@ -27,7 +31,11 @@ const authMiddleware = async (req, res, next) => {
     //}
 
     req.user = decoded;
-    logger.info('decoded: ', decoded);
+    logger.info('Req.user assigned from decoded', {
+      userId: req.user.userId,
+      event: 'MiddlewareUserAssign',
+      context: { token: token }
+    });
     next();
 
   } catch (err) {

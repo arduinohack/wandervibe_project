@@ -14,6 +14,7 @@ const logger = require('../utils/logger');  // Added: Borrow exported logger fro
 router.post('/', async (req, res) => {
   const { type, name, destination, startDate, endDate, timeZone, budget } = req.body;
 
+  logger.info('In Post /api/plans - Creates plan and assigns VibeCoordinator role to requestor');
   // Validate required fields
   if (!type || !name) {
     return res.status(400).json({ msg: 'Missing required fields: type, name' });
@@ -65,9 +66,14 @@ router.post('/', async (req, res) => {
 
 // GET /api/plans (Protected: Lists user's plans as owner or participant)
 router.get('/', async (req, res) => {
-  try {
+   logger.info('Lists user\'s plans as owner or participant', {
+      userId: req.user.userId,
+      event: 'GetAPIPlans',
+      context: { context: 'n/a' }
+    });
+    try {
     // Find plans where user is owner
-    const ownedPlans = await Plan.find({ ownerId: req.user.userId }).select('name destination startDate endDate planningState timeZone');
+    const ownedPlans = await Plan.find({ ownerId: req.user.userId }).select('type name destination startDate endDate autoCalculateStartDate autoCalculateEndDate location budget planningState timeZone ownerId');
 
     // Find plans where user is participant (via plan_users)
     const participantPlans = await PlanUser.find({ userId: req.user.userId }).populate('planId', 'name destination startDate endDate planningState timeZone');
@@ -92,6 +98,7 @@ router.get('/', async (req, res) => {
 // GET /api/plans/:planId/users (Protected: Lists plan participants with roles)
 router.get('/:planId/users', async (req, res) => {
   const { planId } = req.params;
+  logger.info('In Get /api/plans/{planID}/users - lists a plans users');
 
   try {
     // Check caller is participant
@@ -133,6 +140,8 @@ router.get('/:planId/users', async (req, res) => {
 router.post('/:planId/remove-user', async (req, res) => {
   const { planId } = req.params;
   const { userId: targetUserId } = req.body;
+  
+  logger.info('In Post /api/plans/{planID}/remove-user - removes a user from a plan');
 
   if (!targetUserId) {
     return res.status(400).json({ msg: 'Missing userId to remove' });
@@ -181,6 +190,8 @@ router.post('/:planId/reassign-coordinator', async (req, res) => {
   const { planId } = req.params;
   const { targetUserId } = req.body;
 
+  logger.info('In Post /api/plans/{planID}/reassign-coordinator - transfers plan ownership to a plan\'s VibePlanner');
+
   if (!targetUserId) {
     return res.status(400).json({ msg: 'Missing targetUserId' });
   }
@@ -220,6 +231,8 @@ router.post('/:planId/reassign-coordinator', async (req, res) => {
 // GET /api/plans/:planId/itinerary (Protected: Fetches sorted events with Day Numbers)
 router.get('/:planId/itinerary', async (req, res) => {
   const { planId } = req.params;
+
+  logger.info('In Get /api/plans/{planID}/itinerary - fetches sorted events with Day Numbers');
 
   try {
     // Check caller is participant

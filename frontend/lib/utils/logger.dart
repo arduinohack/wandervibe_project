@@ -5,7 +5,7 @@ final logger = Logger(
     methodCount: 0,
     printEmojis: false,
   ), // Clean format, no emojis
-  level: Level.debug, // Dynamic: debug in dev, info in prod
+  level: Level.all, // Dynamic: debug in dev, info in prod
 );
 
 // Helper functions for levels

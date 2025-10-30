@@ -8,6 +8,7 @@ import '../providers/user_provider.dart'; // Add this line for UserProvider (tok
 import '../models/plan.dart'; // Your Plan model
 import '../models/event.dart'; // Your Event model
 import '../models/user.dart'; // Your User model
+import '../utils/logger.dart';
 
 class PlanProvider extends ChangeNotifier {
   List<Plan> _plans = []; // Private list of plans
@@ -164,14 +165,34 @@ class PlanProvider extends ChangeNotifier {
         headers: {'Authorization': 'Bearer $token'},
       );
 
+      logger.i('Fetch plans response body: ${response.body}');
+
       if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        _plans = data.map((json) => Plan.fromJson(json)).toList();
+        final dynamic data = json.decode(response.body);
+        List<dynamic> plansData;
+        if (data is List<dynamic>) {
+          plansData = data; // Direct list
+        } else if (data is Map<String, dynamic>) {
+          plansData =
+              data['plans'] ??
+              [
+                data['plan'] ?? {},
+              ]; // Extract 'plans' array or wrap single 'plan' in list
+        } else {
+          throw Exception('Unexpected response format: ${data.runtimeType}');
+        }
+        _plans = plansData
+            .map((json) => Plan.fromJson(json as Map<String, dynamic>))
+            .toList();
+        logger.i('Parsed ${_plans.length} plans from backend'); // Existing
+        _plans.forEach(
+          (plan) => logger.i('Plan ID: ${plan.id}, Owner ID: ${plan.ownerId}'),
+        ); // Added: Debug ownerIds
       } else {
         throw Exception('Failed to load plans: ${response.statusCode}');
       }
     } catch (e) {
-      print('Error fetching plans: $e');
+      logger.i('Error fetching plans: $e');
       // Fallback to mock if offline
       _plans = [
         Plan(

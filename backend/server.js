@@ -67,48 +67,6 @@ mongoose.connection.on('disconnected', () => {
 const User = require('./models/User');
 const { v4: uuidv4 } = require('uuid');
 
-async function seedTestUsers() {
-  const usersToSeed = [
-    {
-      email: 'test@example.com',
-      password: 'testpass',
-      firstName: 'Test',
-      lastName: 'User',
-      phoneNumber: '+1-555-0000',
-      address: {
-        street: '123 Test St',
-        city: 'Test City',
-        state: 'TC',
-        country: 'USA',
-        postalCode: '12345',
-      },
-      notificationPreferences: {
-        email: true,
-        sms: false,
-      },
-      role: 'VibeCoordinator',  // Default for test user
-    },
-    {
-      email: 'jane@example.com',
-      password: 'janepass',
-      firstName: 'Jane',
-      lastName: 'Doe',
-      phoneNumber: '+1-555-0001',
-      address: {
-        street: '456 Jane Ave',
-        city: 'Sample Town',
-        state: 'ST',
-        country: 'USA',
-        postalCode: '67890',
-      },
-      notificationPreferences: {
-        email: true,
-        sms: true,
-      },
-      role: 'VibePlanner',  // Assigned role for Jane
-    },
-  ];
-
   for (const userData of usersToSeed) {
     try {
       const existingUser = await User.findOne({ email: userData.email });
@@ -139,9 +97,6 @@ async function seedTestUsers() {
     }
   }
 }
-
-// Uncomment the line below to run once
-// seedTestUsers();
 
 // Mount auth routes (e.g., POST /api/auth/login)
 app.use('/api/auth', require('./routes/auth'));

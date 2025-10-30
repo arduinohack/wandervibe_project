@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'login_screen.dart'; // Add this line for LoginScreen navigation
-import 'signup_screen.dart'; // Add this line for SignupScreen navigation
+import 'login_screen.dart'; // Navigate on logout
+import 'signup_screen.dart'; // Navigate to signup
 import '../models/plan.dart';
 import '../providers/plan_provider.dart';
-import '../providers/user_provider.dart'; // For role check
-import 'coordinator_dashboard_screen.dart'; // Navigation to dashboard
-import 'user_profile_screen.dart'; // Navigation to profile
+import '../providers/user_provider.dart'; // For role and logout
+import 'coordinator_dashboard_screen.dart'; // For coordinators
+import 'user_profile_screen.dart'; // For profile
 import 'settings_screen.dart';
 import '../models/user.dart'; // For UserRole enum
 
@@ -103,19 +103,24 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () =>
-            _showCreatePlanDialog(context), // Open dialog for creation
-        icon: const Icon(Icons.add),
-        label: const Text('New Plan'),
-        backgroundColor: Colors.green,
-        // child: const Icon(Icons.add),
+      floatingActionButton: Consumer<UserProvider>(
+        builder: (context, userProvider, child) {
+          if (userProvider.currentUserRole == UserRole.vibeCoordinator) {
+            return FloatingActionButton.extended(
+              onPressed: () =>
+                  _showCreatePlanDialog(context), // Open dialog for creation
+              icon: const Icon(Icons.add),
+              label: const Text('New Plan'),
+              backgroundColor: Colors.green,
+            );
+          }
+          return const SizedBox.shrink(); // Hide for other roles
+        },
       ),
     );
   }
-}
 
-class _HomeScreenState extends State<HomeScreen> {
+  // Dialog for creating a new plan (inside _HomeScreenState)
   void _showCreatePlanDialog(BuildContext context) {
     final nameController = TextEditingController();
     final destinationController = TextEditingController();
