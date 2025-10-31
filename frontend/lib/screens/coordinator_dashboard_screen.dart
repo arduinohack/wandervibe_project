@@ -50,17 +50,24 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          _showAllPlans ? 'All Plans' : 'My Plans',
+          _showAllPlans ? 'Coordinator: All Trips' : 'Coordinator: My Trips',
         ), // Added: Dynamic title
         backgroundColor: Colors.blue,
         bottom: TabBar(
           controller: _tabController,
+          onTap: (index) {
+            // Added: Detect tab tap
+            if (index == 0) {
+              // First tab (Plans)
+              setState(() => _showAllPlans = !_showAllPlans); // Toggle state
+            }
+          },
           tabs: [
             Tab(
               icon: Icon(Icons.list),
               text: _showAllPlans
-                  ? 'All Plans'
-                  : 'My Plans', // Dynamic text now works
+                  ? 'My Trips'
+                  : 'All Trips', // Dynamic text now works
             ),
             Tab(icon: Icon(Icons.mail), text: 'Invites'),
             Tab(icon: Icon(Icons.event), text: 'Events'),
@@ -100,13 +107,14 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
         if (planProvider.isLoading) {
           return const Center(child: CircularProgressIndicator());
         }
-        final myPlans = planProvider.plans
-            .where(
-              (plan) => _showAllPlans
+        final myPlans = planProvider.plans.where((plan) {
+          final typeMatch = plan.type == 'trip'; // Debug: Check type
+          logger.i('Plan ${plan.name} type: ${plan.type} (match: $typeMatch)');
+          return typeMatch &&
+              (_showAllPlans
                   ? _isUserParticipantInPlan(plan, userProvider.currentUserId)
-                  : plan.ownerId == userProvider.currentUserId,
-            )
-            .toList();
+                  : plan.ownerId == userProvider.currentUserId);
+        }).toList();
         logger.i(
           'Filtered myPlans length: ${myPlans.length}',
         ); // Added: See if filter works
@@ -133,11 +141,11 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
         }
         return Column(
           children: [
-            Row(
+            /* Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  _showAllPlans ? 'All Plans' : 'My Plans',
+                  _showAllPlans ? 'All Trips' : 'My Trips',
                   style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
@@ -146,10 +154,10 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
                 TextButton(
                   onPressed: () =>
                       setState(() => _showAllPlans = !_showAllPlans),
-                  child: Text(_showAllPlans ? 'My Plans' : 'All Plans'),
+                  child: Text(_showAllPlans ? 'My Trips' : 'All Trips'),
                 ),
               ],
-            ),
+            ), */
             Expanded(
               child: ListView.builder(
                 itemCount: myPlans.length,

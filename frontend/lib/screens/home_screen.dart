@@ -103,7 +103,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       ),
-      floatingActionButton: Consumer<UserProvider>(
+      /* floatingActionButton: Consumer<UserProvider>(
         builder: (context, userProvider, child) {
           if (userProvider.currentUserRole == UserRole.vibeCoordinator) {
             return FloatingActionButton.extended(
@@ -116,7 +116,7 @@ class _HomeScreenState extends State<HomeScreen> {
           }
           return const SizedBox.shrink(); // Hide for other roles
         },
-      ),
+      ),*/
     );
   }
 
