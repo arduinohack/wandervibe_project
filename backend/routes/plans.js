@@ -71,7 +71,18 @@ router.get('/', async (req, res) => {
       event: 'GetAPIPlans',
       context: { context: 'n/a' }
     });
-    try {
+
+  try {
+    const userId = req.user.userId;  // From token
+    const plans = await Plan.find({ ownerId: userId })  // Or your filter
+      .populate('participants');  // Added: Embed PlanUser data (userId, role)
+    res.status(200).json({ plans });  // Response now has participants array
+  } catch (error) {
+    console.error('Fetch plans error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+/*    try {
     // Find plans where user is owner
     const ownedPlans = await Plan.find({ ownerId: req.user.userId }).select('type name destination startDate endDate autoCalculateStartDate autoCalculateEndDate location budget planningState timeZone ownerId');
 
@@ -94,6 +105,7 @@ router.get('/', async (req, res) => {
     res.status(500).json({ msg: 'Server error' });
   }
 });
+*/
 
 // GET /api/plans/:planId/users (Protected: Lists plan participants with roles)
 router.get('/:planId/users', async (req, res) => {

@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart'; // Added for IconData in icon getter
 import 'package:timezone/timezone.dart'
     as tz; // For time zone handling (add to pubspec.yaml if needed)
 
@@ -7,6 +8,7 @@ enum EventType {
   dining,
   hotel,
   tour,
+  activity,
   attraction,
   cruise,
   setup,
@@ -14,6 +16,25 @@ enum EventType {
   reception,
   vendor,
   custom,
+}
+
+// Extension for dynamic icon access
+extension EventTypeIcon on EventType {
+  IconData get icon {
+    switch (this) {
+      case EventType.flight:
+        return Icons.flight;
+      case EventType.hotel:
+        return Icons.hotel;
+      case EventType.activity:
+        return Icons.local_activity;
+      case EventType.dining:
+        return Icons.restaurant;
+      // Add more cases for your EventType values
+      default:
+        return Icons.event; // Default icon
+    }
+  }
 }
 
 enum CostType { estimated, actual }

@@ -8,7 +8,7 @@ import '../models/invitation.dart';
 import '../models/user.dart'; // For UserRole
 import '../utils/logger.dart';
 import 'plan_detail_screen.dart'; // For plan details
-import 'add_event_screen.dart'; // For adding events
+// import 'add_event_screen.dart'; // For adding events
 
 class CoordinatorDashboardScreen extends StatefulWidget {
   const CoordinatorDashboardScreen({super.key});
@@ -21,6 +21,7 @@ class CoordinatorDashboardScreen extends StatefulWidget {
 class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  bool _showAllPlans = false; // Added: Toggle for My vs. All Plans
 
   @override
   void initState() {
@@ -48,16 +49,35 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Coordinator Dashboard'),
+        title: Text(
+          _showAllPlans ? 'All Plans' : 'My Plans',
+        ), // Added: Dynamic title
         backgroundColor: Colors.blue,
         bottom: TabBar(
           controller: _tabController,
-          tabs: const [
-            Tab(icon: Icon(Icons.list), text: 'My Plans'),
+          tabs: [
+            Tab(
+              icon: Icon(Icons.list),
+              text: _showAllPlans
+                  ? 'All Plans'
+                  : 'My Plans', // Dynamic text now works
+            ),
             Tab(icon: Icon(Icons.mail), text: 'Invites'),
             Tab(icon: Icon(Icons.event), text: 'Events'),
           ],
         ),
+        actions: [
+          // Moved: Toggle button here (global to all tabs)
+          IconButton(
+            icon: Icon(_showAllPlans ? Icons.person : Icons.people),
+            onPressed: () {
+              setState(
+                () => _showAllPlans = !_showAllPlans,
+              ); // Flip state, rebuild tab
+            },
+            tooltip: _showAllPlans ? 'My Plans' : 'All Plans',
+          ),
+        ],
       ),
       body: TabBarView(
         controller: _tabController,
@@ -81,17 +101,55 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
           return const Center(child: CircularProgressIndicator());
         }
         final myPlans = planProvider.plans
-            .where((plan) => plan.ownerId == userProvider.currentUserId)
+            .where(
+              (plan) => _showAllPlans
+                  ? _isUserParticipantInPlan(plan, userProvider.currentUserId)
+                  : plan.ownerId == userProvider.currentUserId,
+            )
             .toList();
         logger.i(
           'Filtered myPlans length: ${myPlans.length}',
         ); // Added: See if filter works
         // Added: See if filter works
         if (myPlans.isEmpty) {
-          return const Center(child: Text('No plans yet—create one!'));
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  _showAllPlans
+                      ? 'No plans matching your role yet'
+                      : 'No plans yet—create one!',
+                ),
+                if (!_showAllPlans)
+                  ElevatedButton(
+                    // Create button only for My Plans
+                    onPressed: () => _showCreatePlanDialog(context),
+                    child: const Text('Create One'),
+                  ),
+              ],
+            ),
+          );
         }
         return Column(
           children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  _showAllPlans ? 'All Plans' : 'My Plans',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                TextButton(
+                  onPressed: () =>
+                      setState(() => _showAllPlans = !_showAllPlans),
+                  child: Text(_showAllPlans ? 'My Plans' : 'All Plans'),
+                ),
+              ],
+            ),
             Expanded(
               child: ListView.builder(
                 itemCount: myPlans.length,
@@ -140,6 +198,18 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
         );
       },
     );
+  }
+
+  bool _isUserParticipantInPlan(Plan plan, String? userId) {
+    if (userId == null) return false;
+
+    return plan.ownerId == userId || // Owner
+        plan.participants.any(
+          (participant) => // Or participant
+              participant.userId == userId &&
+              (participant.role == UserRole.vibePlanner ||
+                  participant.role == UserRole.wanderer),
+        );
   }
 
   Widget _buildPendingInvitesTab(BuildContext context) {

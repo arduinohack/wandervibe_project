@@ -15,12 +15,12 @@ class PlanProvider extends ChangeNotifier {
   Plan? _currentPlan; // Current selected plan
   Plan? get currentPlan => _currentPlan;
   List<Event> _events = []; // Private list of events for current plan
-  List<PlanUser> _planUsers =
-      []; // Private list of users/roles for current plan
   bool _isLoading = false; // Loading state for UI spinners
 
   List<Plan> get plans => _plans; // Public getter
   List<Event> get events => _events;
+  List<PlanUser> _planUsers =
+      []; // Private list of users/roles for current plan
   List<PlanUser> get planUsers => _planUsers;
   bool get isLoading => _isLoading;
 
@@ -185,9 +185,10 @@ class PlanProvider extends ChangeNotifier {
             .map((json) => Plan.fromJson(json as Map<String, dynamic>))
             .toList();
         logger.i('Parsed ${_plans.length} plans from backend'); // Existing
-        _plans.forEach(
-          (plan) => logger.i('Plan ID: ${plan.id}, Owner ID: ${plan.ownerId}'),
-        ); // Added: Debug ownerIds
+        // Fixed:
+        for (final plan in _plans) {
+          logger.i('Plan ID: ${plan.id}, Owner ID: ${plan.ownerId}');
+        } // Debug optional
       } else {
         throw Exception('Failed to load plans: ${response.statusCode}');
       }
@@ -218,43 +219,41 @@ class PlanProvider extends ChangeNotifier {
     }
   }
 
-  // Fetch all all plan users (real API with auth token passed in)
+  // Fetch PlanUsers for a plan (GET /api/plans/:planId/users with token)
   Future<void> fetchPlanUsers(String planId, String? token) async {
-    _currentPlanId = planId;
-    _isLoading = true;
+    _isLoading = true; // Optional: Show loading in UI
     notifyListeners();
 
-    // final _planUsers PlanUsers;
-
     try {
-      if (token == null) {
-        throw Exception('No token—log in first');
-      }
+      if (token == null) throw Exception('No token—log in first');
 
       final response = await http.get(
-        Uri.parse((await backendBaseUrl) + apiPlanUsers),
-        headers: {'Authorization': 'Bearer $token'},
+        Uri.parse((await backendBaseUrl) + '/api/plans/$planId/users'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
       );
+
+      print(
+        'Fetch PlanUsers response: ${response.statusCode}',
+      ); // Debug optional
 
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
-        _planUsers = data.map((json) => PlanUser.fromJson(json)).toList();
+        _planUsers = data
+            .map((json) => PlanUser.fromJson(json))
+            .toList(); // Parse to List<PlanUser>
+        print('Fetched ${_planUsers.length} PlanUsers for plan $planId');
       } else {
-        throw Exception('Failed to load plans: ${response.statusCode}');
+        throw Exception('Failed to load PlanUsers: ${response.statusCode}');
       }
     } catch (e) {
-      print('Error fetching users: $e');
-      // Fallback to mock if offline
-      _planUsers = [
-        PlanUser(
-          planId: 'plan1',
-          userId: 'user1',
-          role: UserRole.vibeCoordinator,
-        ),
-      ];
+      print('Error fetching PlanUsers: $e');
+      _planUsers = []; // Empty fallback
     } finally {
       _isLoading = false;
-      notifyListeners();
+      notifyListeners(); // Refresh UI (e.g., list in PlanDetailScreen)
     }
   }
 

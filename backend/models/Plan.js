@@ -1,4 +1,5 @@
-const mongoose = require('mongoose');  // Import for Schema
+const mongoose = require('mongoose');
+const Schema = mongoose.Schema;  // Added: Extract Schema for types like ObjectId
 const { v4: uuidv4 } = require('uuid');
 
 const planSchema = new mongoose.Schema({
@@ -15,6 +16,7 @@ const planSchema = new mongoose.Schema({
   planningState: { type: String, enum: ['initial', 'reviewing', 'complete'], default: 'initial' },
   timeZone: { type: String, required: false },
   ownerId: { type: String, ref: 'User', required: true },
+  participants: [{ type: Schema.Types.ObjectId, ref: 'PlanUser', }],
   activityIds: [{ type: String, ref: 'Event' }]  // NEW: For eventPlan activities
 }, { timestamps: true });
 
