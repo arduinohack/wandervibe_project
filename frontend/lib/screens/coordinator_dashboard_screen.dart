@@ -180,8 +180,7 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (context) =>
-                                PlanDetailScreen(planId: plan.id),
+                            builder: (context) => PlanDetailScreen(plan: plan),
                           ),
                         );
                       },

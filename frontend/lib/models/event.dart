@@ -1,41 +1,7 @@
 import 'package:flutter/material.dart'; // Added for IconData in icon getter
 import 'package:timezone/timezone.dart'
     as tz; // For time zone handling (add to pubspec.yaml if needed)
-
-enum EventType {
-  flight,
-  car,
-  dining,
-  hotel,
-  tour,
-  activity,
-  attraction,
-  cruise,
-  setup,
-  ceremony,
-  reception,
-  vendor,
-  custom,
-}
-
-// Extension for dynamic icon access
-extension EventTypeIcon on EventType {
-  IconData get icon {
-    switch (this) {
-      case EventType.flight:
-        return Icons.flight;
-      case EventType.hotel:
-        return Icons.hotel;
-      case EventType.activity:
-        return Icons.local_activity;
-      case EventType.dining:
-        return Icons.restaurant;
-      // Add more cases for your EventType values
-      default:
-        return Icons.event; // Default icon
-    }
-  }
-}
+import './event_type.dart';
 
 enum CostType { estimated, actual }
 
@@ -50,7 +16,7 @@ class Event {
   final double cost;
   final CostType costType;
   final DateTime startTime;
-  final int duration;
+  final Duration duration;
   final DateTime endTime;
   final String? originTimeZone; // Optional, required for flight
   final String? destinationTimeZone; // Optional, required for flight
@@ -65,11 +31,11 @@ class Event {
     required this.location,
     required this.details,
     required this.type,
-    required this.customType,
+    this.customType = '',
     required this.cost,
-    required this.costType,
+    this.costType = CostType.estimated,
     required this.startTime,
-    required this.duration,
+    this.duration = const Duration(),
     required this.endTime,
     this.originTimeZone,
     this.destinationTimeZone,
@@ -92,14 +58,15 @@ class Event {
       ),
       customType: json['customType'] ?? '',
       cost: (json['cost'] ?? 0.0).toDouble(),
-      costType: CostType.values.firstWhere(
-        (c) => c.toString().split('.').last == json['costType'],
-        orElse: () => CostType.estimated, // Default if invalid
-      ),
+      costType: _costTypeFromString(
+        json['costType'] ?? 'estimated',
+      ), // Parse to enum
       startTime: DateTime.parse(
         json['startTime'] ?? DateTime.now().toIso8601String(),
       ),
-      duration: json['duration'] ?? 0,
+      duration: Duration(
+        minutes: json['duration'] ?? 0,
+      ), // Parse from backend (minutes as int)
       endTime: DateTime.parse(
         json['endTime'] ?? DateTime.now().toIso8601String(),
       ),
@@ -122,14 +89,34 @@ class Event {
       'type': type.toString().split('.').last,
       'customType': customType,
       'cost': cost,
-      'costType': costType.toString().split('.').last,
+      'costType': costType
+          .toString()
+          .split('.')
+          .last, // Enum to string for backend
       'startTime': startTime.toIso8601String(),
-      'duration': duration,
+      'duration': duration.inMinutes, // Serialize as minutes for backend
       'endTime': endTime.toIso8601String(),
       'originTimeZone': originTimeZone,
       'destinationTimeZone': destinationTimeZone,
       'resourceLinks': resourceLinks,
       'createdAt': createdAt.toIso8601String(),
     };
+  }
+
+  DateTime get finishTime {
+    if (duration.isNegative) return startTime; // Handle invalid
+    return startTime.add(
+      duration,
+    ); // If duration is Duration, add directly (no constructor needed)
+  }
+
+  // Helper for costType parsing
+  static CostType _costTypeFromString(String typeStr) {
+    switch (typeStr.toLowerCase()) {
+      case 'actual':
+        return CostType.actual;
+      default:
+        return CostType.estimated;
+    }
   }
 }

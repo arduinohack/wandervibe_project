@@ -5,6 +5,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart'; // For JWT 
 import '../utils/logger.dart';
 import '../config/constants.dart'; // Add this line for backendBaseUrl
 import '../models/user.dart'; // Your User model with Address/Preferences
+import '../config/config.dart';
 
 class UserProvider extends ChangeNotifier {
   String? currentUserId; // Current user ID
@@ -21,15 +22,19 @@ class UserProvider extends ChangeNotifier {
   // Login with real backend (POST /api/auth/login)
   Future<void> login(String email, String password) async {
     try {
+      final timeoutDuration = Duration(seconds: await AppConfig.timeoutSeconds);
+
       logger.i('Flutter sending login: email=$email, password=$password');
       logger.i(
         'Flutter sending login: email=$email, password=$password',
       ); // Log input
-      final response = await http.post(
-        Uri.parse((await backendBaseUrl) + apiAuthLogin),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({'email': email, 'password': password}),
-      );
+      final response = await http
+          .post(
+            Uri.parse((await backendBaseUrl) + apiAuthLogin),
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode({'email': email, 'password': password}),
+          )
+          .timeout(timeoutDuration);
 
       logger.i('Flutter received status: ${response.statusCode}');
       logger.i(
@@ -76,19 +81,23 @@ class UserProvider extends ChangeNotifier {
     Map<String, bool> notificationPreferences,
   ) async {
     try {
-      final response = await http.post(
-        Uri.parse((await backendBaseUrl) + apiAuthRegister),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({
-          'firstName': firstName,
-          'lastName': lastName,
-          'email': email,
-          'password': password,
-          'phoneNumber': phoneNumber,
-          'address': address,
-          'notificationPreferences': notificationPreferences,
-        }),
-      );
+      final timeoutDuration = Duration(seconds: await AppConfig.timeoutSeconds);
+      final response = await http
+          .post(
+            Uri.parse((await backendBaseUrl) + apiAuthRegister),
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode({
+              'firstName': firstName,
+              'lastName': lastName,
+              'email': email,
+              'password': password,
+              'phoneNumber': phoneNumber,
+              'address': address,
+              'notificationPreferences': notificationPreferences,
+            }),
+          )
+          .timeout(timeoutDuration);
+      ;
 
       if (response.statusCode == 201) {
         final data = json.decode(response.body);
@@ -108,16 +117,20 @@ class UserProvider extends ChangeNotifier {
   // Logout (clear token locally and call backend)
   Future<void> logout() async {
     try {
+      final timeoutDuration = Duration(seconds: await AppConfig.timeoutSeconds);
       final token = _jwtToken;
       if (token != null) {
         // Call backend logout (optional, for blacklisting)
-        final response = await http.post(
-          Uri.parse((await backendBaseUrl) + apiAuthLogout),
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer $token',
-          },
-        );
+        final response = await http
+            .post(
+              Uri.parse((await backendBaseUrl) + apiAuthLogout),
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer $token',
+              },
+            )
+            .timeout(timeoutDuration);
+        ;
         if (response.statusCode != 200) {
           logger.i(
             'Backend logout failed: ${response.statusCode}',
@@ -141,16 +154,20 @@ class UserProvider extends ChangeNotifier {
   // Load stored token and verify user (real API POST /api/auth/verify-token)
   Future<void> loadStoredToken() async {
     try {
+      final timeoutDuration = Duration(seconds: await AppConfig.timeoutSeconds);
       _jwtToken = await _storage.read(key: 'jwt_token');
       if (_jwtToken != null) {
         // Verify token with backend
-        final response = await http.post(
-          Uri.parse((await backendBaseUrl) + apiAuthVerifyToken),
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer $_jwtToken',
-          },
-        );
+        final response = await http
+            .post(
+              Uri.parse((await backendBaseUrl) + apiAuthVerifyToken),
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer $_jwtToken',
+              },
+            )
+            .timeout(timeoutDuration);
+        ;
 
         if (response.statusCode == 200) {
           final data = json.decode(response.body);
@@ -213,20 +230,23 @@ class UserProvider extends ChangeNotifier {
   Future<void> updateUser(Map<String, dynamic> updates) async {
     logger.i('At Update User API');
     try {
+      final timeoutDuration = Duration(seconds: await AppConfig.timeoutSeconds);
       final token = _jwtToken;
       if (token == null) throw Exception('No token—log in first');
 
-      final response = await http.patch(
-        Uri.parse(
-          (await backendBaseUrl) +
-              apiUsersUpdate.replaceAll('{id}', currentUserId!),
-        ),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-        body: json.encode(updates),
-      );
+      final response = await http
+          .patch(
+            Uri.parse(
+              (await backendBaseUrl) +
+                  apiUsersUpdate.replaceAll('{id}', currentUserId!),
+            ),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+            body: json.encode(updates),
+          )
+          .timeout(timeoutDuration);
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
@@ -256,11 +276,15 @@ class UserProvider extends ChangeNotifier {
   // Forgot password (stub: POST /api/auth/forgot-password)
   Future<void> forgotPassword(String email) async {
     try {
-      final response = await http.post(
-        Uri.parse((await backendBaseUrl) + apiAuthForgotPassword),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({'email': email}),
-      );
+      final timeoutDuration = Duration(seconds: await AppConfig.timeoutSeconds);
+      final response = await http
+          .post(
+            Uri.parse((await backendBaseUrl) + apiAuthForgotPassword),
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode({'email': email}),
+          )
+          .timeout(timeoutDuration);
+      ;
 
       if (response.statusCode == 200) {
         logger.i('Forgot password email sent for $email');

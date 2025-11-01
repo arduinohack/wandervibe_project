@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../config/constants.dart';
+import '../config/config.dart'; // For AppConfig
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -10,64 +10,70 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  final _urlController = TextEditingController();
-  bool _isLoading = false;
+  int _timeoutSeconds = 30;
+  int _defaultDuration = 60;
 
   @override
   void initState() {
     super.initState();
-    _loadUrl();
+    _loadSettings();
   }
 
-  Future<void> _loadUrl() async {
-    final prefs = await SharedPreferences.getInstance();
-    _urlController.text =
-        prefs.getString('backendUrl') ?? 'http://10.0.2.2:3000';
-  }
-
-  Future<void> _saveUrl() async {
-    setState(() => _isLoading = true);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('backendUrl', _urlController.text);
-    setState(() => _isLoading = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Backend URL saved—restart app to apply')),
-    );
+  Future<void> _loadSettings() async {
+    _timeoutSeconds = await AppConfig.timeoutSeconds;
+    _defaultDuration = await AppConfig.defaultDurationMinutes;
+    setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('App Settings'),
-        backgroundColor: Colors.blue,
-      ),
+      appBar: AppBar(title: const Text('Settings')),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
-            const Text(
-              'Backend URL (for testing)',
-              style: TextStyle(fontSize: 16),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _urlController,
-              decoration: const InputDecoration(
-                labelText: 'Base URL (e.g., http://10.0.2.2:3000)',
-                border: OutlineInputBorder(),
-              ),
-              keyboardType: TextInputType.url,
+            // Timeout slider
+            Row(
+              children: [
+                const Text('Network Timeout (seconds):'),
+                Expanded(
+                  child: Slider(
+                    value: _timeoutSeconds.toDouble(),
+                    min: 10.0,
+                    max: 120.0,
+                    divisions: 11,
+                    onChanged: (value) async {
+                      final newValue = value.round();
+                      setState(() => _timeoutSeconds = newValue);
+                      await AppConfig.setTimeoutSeconds(newValue);
+                    },
+                  ),
+                ),
+                Text('$_timeoutSeconds'),
+              ],
             ),
             const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _isLoading ? null : _saveUrl,
-              child: _isLoading
-                  ? const CircularProgressIndicator()
-                  : const Text('Save'),
+            // Duration slider
+            Row(
+              children: [
+                const Text('Default Event Duration (minutes):'),
+                Expanded(
+                  child: Slider(
+                    value: _defaultDuration.toDouble(),
+                    min: 30.0,
+                    max: 480.0,
+                    divisions: 15,
+                    onChanged: (value) async {
+                      final newValue = value.round();
+                      setState(() => _defaultDuration = newValue);
+                      await AppConfig.setDefaultDurationMinutes(newValue);
+                    },
+                  ),
+                ),
+                Text('$_defaultDuration'),
+              ],
             ),
-            const SizedBox(height: 8),
-            const Text('Note: Restart the app to use the new URL.'),
           ],
         ),
       ),

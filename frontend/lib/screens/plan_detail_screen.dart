@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:wandervibe_frontend/models/event_type.dart';
 import '../providers/plan_provider.dart';
-import '../providers/user_provider.dart'; // For token
+import '../providers/user_provider.dart'; // For token if needed
 import '../models/plan.dart';
-import '../models/event.dart'; // For event list and type.icon
+import '../models/event.dart'; // For event list
 import 'add_event_screen.dart'; // For adding events
 
 class PlanDetailScreen extends StatefulWidget {
-  final String planId; // Passed from dashboard onTap
-  const PlanDetailScreen({super.key, required this.planId});
+  final Plan plan; // Full plan object passed from dashboard
+  const PlanDetailScreen({super.key, required this.plan});
 
   @override
   State<PlanDetailScreen> createState() => _PlanDetailScreenState();
@@ -18,21 +19,14 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final planProvider = Provider.of<PlanProvider>(context, listen: false);
-      final userProvider = Provider.of<UserProvider>(context, listen: false);
-      planProvider.fetchPlan(
-        widget.planId,
-        userProvider.token,
-      ); // Fetch plan by ID
-    });
+    // No fetch needed—plan is passed from dashboard
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Plan Details'),
+        title: Text(widget.plan.name ?? 'Plan Details'), // Use passed plan
         backgroundColor: Colors.blue,
         actions: [
           IconButton(
@@ -42,8 +36,8 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                 context,
                 MaterialPageRoute(
                   builder: (context) => AddEventScreen(
-                    planId: widget.planId,
-                  ), // Pass planId for linking
+                    planId: widget.plan.id,
+                  ), // Pass plan.id for linking
                 ),
               );
             },
@@ -53,16 +47,9 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
       ),
       body: Consumer<PlanProvider>(
         builder: (context, planProvider, child) {
-          final plan = planProvider.currentPlan; // From fetchPlanById
-          if (plan == null) {
-            return const Center(
-              child: CircularProgressIndicator(),
-            ); // Loading spinner
-          }
+          // Filter events for this plan (from provider's events list)
           final events = planProvider.events
-              .where(
-                (event) => event.planId == plan.id,
-              ) // Filter events for this plan
+              .where((event) => event.planId == widget.plan.id)
               .toList();
           return ListView(
             padding: const EdgeInsets.all(16.0),
@@ -74,19 +61,21 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        plan.name,
+                        widget.plan.name ?? 'Unnamed Plan',
                         style: const TextStyle(
                           fontSize: 24,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
                       const SizedBox(height: 8),
-                      Text('Destination: ${plan.destination}'),
-                      Text('Budget: \$${plan.budget}'),
                       Text(
-                        'Dates: ${plan.startDate.toLocal().toString().substring(0, 10)} - ${plan.endDate.toLocal().toString().substring(0, 10)}',
+                        'Destination: ${widget.plan.destination ?? 'Unknown'}',
                       ),
-                      Text('State: ${plan.planningState}'),
+                      Text('Budget: \$${widget.plan.budget ?? 0}'),
+                      Text(
+                        'Dates: ${widget.plan.startDate.toLocal().toString().substring(0, 10)} - ${widget.plan.endDate.toLocal().toString().substring(0, 10)}',
+                      ),
+                      Text('State: ${widget.plan.planningState ?? 'initial'}'),
                     ],
                   ),
                 ),
@@ -107,8 +96,8 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                       ), // Icon from EventType extension
                       title: Text(event.title),
                       subtitle: Text(
-                        '${event.startTime} | ${event.location} | \$${event.cost}',
-                      ),
+                        '${event.startTime} - ${event.finishTime} | ${event.location} | \$${event.cost}',
+                      ), // Added: Use finishTime getter
                       trailing: IconButton(
                         icon: const Icon(Icons.edit),
                         onPressed: () {

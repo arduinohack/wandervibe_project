@@ -35,6 +35,7 @@ class PlanProvider extends ChangeNotifier {
     try {
       if (token == null) throw Exception('No token—log in first');
 
+      logger.i('Fetching plan ID: $planId with token'); // Added: Debug start
       final response = await http.get(
         Uri.parse(
           (await backendBaseUrl) +
@@ -46,56 +47,31 @@ class PlanProvider extends ChangeNotifier {
         },
       );
 
+      logger.i('Response status: ${response.statusCode}'); // Added: Status
       if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        _events = data.map((json) => Event.fromJson(json)).toList();
+        logger.i(
+          'Response body: ${response.body}',
+        ); // Added: Raw JSON for parsing check
+        final data = json.decode(
+          response.body,
+        ); // Added: Declare data as local variable
+        final List<dynamic> eventsData =
+            data['events'] ??
+            []; // Extract 'events' array (or empty if missing)
+        _events = eventsData
+            .map((json) => Event.fromJson(json))
+            .toList(); // Map to List<Event>
+        logger.i(
+          'Fetched ${_events.length} events for plan $planId from backend',
+        );
+        // Optional: Handle 'grouped' if used (e.g.,
+        //_groupedEvents = data['grouped'] ?? {});
         _computeDayNumbers(planId); // Calculate day numbers
-        print('Fetched ${_events.length} events for plan $planId from backend');
-      } else {
-        throw Exception('Failed to load itinerary: ${response.statusCode}');
       }
     } catch (e) {
-      print('Error fetching itinerary: $e');
-      // Fallback to mock
-      _events = [
-        Event(
-          id: 'event1',
-          planId: planId,
-          title: 'Flight to Paris',
-          location: 'JFK Airport',
-          details: 'Direct flight, economy.',
-          type: EventType.flight,
-          customType: '',
-          cost: 800.0,
-          costType: CostType.estimated,
-          startTime: DateTime.now().add(const Duration(hours: 8)),
-          duration: 30,
-          endTime: DateTime.now().add(const Duration(hours: 10)),
-          originTimeZone: 'America/New_York',
-          destinationTimeZone: 'Europe/Paris',
-          resourceLinks: {'booking': 'https://example.com/booking'},
-          createdAt: DateTime.now(),
-        ),
-        Event(
-          id: 'event2',
-          planId: planId,
-          title: 'Hotel Check-in',
-          location: 'Le Marais',
-          details: 'Cozy boutique hotel.',
-          type: EventType.hotel,
-          customType: '',
-          cost: 150.0,
-          costType: CostType.actual,
-          startTime: DateTime.now().add(const Duration(days: 1)),
-          duration: 30,
-          endTime: DateTime.now().add(const Duration(days: 8)),
-          originTimeZone: null,
-          destinationTimeZone: null,
-          resourceLinks: {'maps': 'https://maps.example.com/hotel'},
-          createdAt: DateTime.now(),
-        ),
-      ];
-      _computeDayNumbers(planId);
+      logger.i('Error fetching itinerary: $e');
+      _events = [];
+      notifyListeners();
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -195,24 +171,7 @@ class PlanProvider extends ChangeNotifier {
     } catch (e) {
       logger.i('Error fetching plans: $e');
       // Fallback to mock if offline
-      _plans = [
-        Plan(
-          id: 'plan1',
-          type: 'trip',
-          name: 'Paris Adventure',
-          destination: 'Paris, France',
-          startDate: DateTime.now(),
-          endDate: DateTime.now().add(const Duration(days: 7)),
-          autoCalculateStartDate: false,
-          autoCalculateEndDate: false,
-          location: '',
-          budget: 2000.0,
-          planningState: 'initial',
-          timeZone: 'Europe/Paris',
-          ownerId: 'user123',
-          createdAt: DateTime.now(),
-        ),
-      ];
+      _plans = [];
     } finally {
       _isLoading = false;
       notifyListeners();
