@@ -1,117 +1,138 @@
 const express = require('express');
-const Event = require('../models/Event');
-const Plan = require('../models/Plan');  // This line
-const PlanUser = require('../models/PlanUser');
-const { v4: uuidv4 } = require('uuid');
-const { notifyUsers } = require('../utils/notifications');
+const mongoose = require('mongoose');
+const authMiddleware = require('../middleware/auth.js');  // Token validation
+const Event = require('../models/Event.js');  // Your Event model
+const Joi = require('joi');  // For validation (npm i joi if missing)
+
 const router = express.Router();
-const logger = require('../utils/logger');  // Add this import
 
+// Validation schema for core event fields
+const eventValidationSchema = Joi.object({
+  title: Joi.string().required(),
+  location: Joi.string().required(),
+  type: Joi.string().required(),
+  cost: Joi.number().required(),
+  startTime: Joi.date().required(),
+  duration: Joi.number().default(0),
+  planId: Joi.string().required(),
+  details: Joi.string().default(''),
+  customType: Joi.string().default(''),
+  costType: Joi.string().valid('estimated', 'actual').default('estimated'),
+  endTime: Joi.date().optional(),
+  subEvents: Joi.array().optional(),
+  extras: Joi.object().optional(),
+});
 
-// POST /api/events (Protected: Creates event for plan)
-router.post('/', async (req, res) => {  // Note: / in events.js becomes /api/events
-  const { planId, title, location, details, type, customType, cost, costType, startTime, duration, endTime, originTimeZone, destinationTimeZone, resourceLinks } = req.body;
+// Type-specific validation helper
+function validateEventSpecific(eventData) {
+  const { type, subEvents, flightNumber, airline, roomNumber, checkInDate } = eventData;
+  let error = '';
 
-  // Validate required
-  if (!planId || !title || !type || !startTime || (!duration && !endTime)) {
-    return res.status(400).json({ msg: 'Missing required: planId, title, type, startTime, and either duration or endTime' });
+  switch (type) {
+    case 'flight':
+      if (!flightNumber) error = 'Flight number required';
+      if (!airline) error = 'Airline required';
+      if (subEvents && subEvents.length < 2) error = 'Flight requires 2 sub-events';
+      subEvents?.forEach(se => {
+        if (se.subType === 'departure' && !se.gate) error = 'Departure gate required';
+        if (se.subType === 'arrival' && !se.baggageClaim) error = 'Arrival baggage claim required';
+      });
+      break;
+    case 'hotel':
+      if (!roomNumber) error = 'Room number required';
+      if (!checkInDate) error = 'Check-in date required';
+      break;
+    default:
+      if (!title) error = 'Title required';
   }
 
-  // Custom type: Require all details (user provides logic)
-  if (type === 'custom') {
-    if (!customType || !location || !details) {  // Example: Require extra for custom
-      return res.status(400).json({ msg: 'Custom events require customType, location, details' });
-    }
-    // No special logic—user defines everything
-  }
+  return error;
+}
 
-  // For custom types, no extra validation—user-defined
-  if (type.startsWith('custom:') && (!title || !startTime || !endTime)) {
-    return res.status(400).json({ msg: 'Custom events require title, startTime, endTime' });
-  }
-
-  // Calculate endTime if duration provided
-  let calculatedEndTime;
-  if (duration && !endTime) {
-    calculatedEndTime = new Date(startTime.getTime() + (duration * 60 * 1000));  // ms = minutes * 60s * 1000ms
-  } else if (endTime) {
-    calculatedEndTime = new Date(endTime);
-  }
-
-  // Validate endTime > startTime
-  if (calculatedEndTime <= new Date(startTime)) {
-    return res.status(400).json({ msg: 'endTime must be after startTime' });
-  }
-
-  if (type === 'flight' && (!originTimeZone || !destinationTimeZone)) {
-    return res.status(400).json({ msg: 'Flights require originTimeZone and destinationTimeZone' });
-  }
-
-  // Helper: Auto-populate plan dates from events (earliest start, latest end)
-  const updatePlanDates = async (planId) => {
-    try {
-      const plan = await Plan.findById(planId);  // Fetch Plan to check flags
-      if (!plan) {
-        logger.info('No plan found for ID:', planId);  // Debug log
-        return;  // Skip if not found
-      }
-
-      const allEvents = await Event.find({ $or: [{ tripId: planId }, { planId: planId }] }).sort('startTime');
-      if (allEvents.length === 0) return;  // No events, no update
-
-      const earliestStart = allEvents[0].startTime;
-      const latestEnd = allEvents[allEvents.length - 1].endTime;
-
-      const update = {};
-      if (plan.autoCalculateStartDate) update.startDate = earliestStart;
-      if (plan.autoCalculateEndDate) update.endDate = latestEnd;
-
-      if (Object.keys(update).length > 0) {
-        await Plan.findByIdAndUpdate(planId, update);
-        logger.info('Plan dates auto-updated:', update);  // Debug log
-      }
-    } catch (err) {
-      logger.error('updatePlanDates error:', err);  // Log but don't crash
-    }
-  };
-
+// GET /api/events - Fetch all events for the user
+router.get('/', authMiddleware , async (req, res) => {
   try {
-    const callerPlanUser = await PlanUser.findOne({ planId, userId: req.user.userId });
-    if (!callerPlanUser) {
-      return res.status(403).json({ msg: 'Access denied: Not a plan participant' });
+    const userId = req.user.id;
+    const events = await Event.find({ planId: { $in: req.user.plans } })
+      .populate('planId', 'name')
+      .sort({ startTime: 1 });
+    res.json({ events });
+  } catch (error) {
+    console.error('Error fetching events:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// GET /api/events/:id - Fetch single event
+router.get('/:id', authMiddleware, async (req, res) => {
+  try {
+    const event = await Event.findById(req.params.id).populate('planId');
+    if (!event) return res.status(404).json({ message: 'Event not found' });
+    if (event.planId.ownerId !== req.user.id && !event.planId.participants.includes(req.user.id)) {
+      return res.status(403).json({ message: 'Not authorized' });
     }
+    res.json({ event });
+  } catch (error) {
+    console.error('Error fetching event:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
 
-    const eventId = uuidv4();
-    const event = new Event({
-      _id: eventId,
-      planId,
-      title,
-      type,
-      customType: req.body.customType,
-      startTime: new Date(startTime),
-      endTime,
-      duration: duration || null,
-      originTimeZone: type === 'flight' ? originTimeZone : undefined,
-      destinationTimeZone: type === 'flight' ? destinationTimeZone : undefined,
-      location,
-      details,
-      cost: cost || 0,
-      costType: costType || 'estimated',
-      resourceLinks: resourceLinks || {}
+// POST /api/events - Create new event
+router.post('/', authMiddleware, async (req, res) => {
+  try {
+    const { error } = eventValidationSchema.validate(req.body);
+    if (error) return res.status(400).json({ message: error.details[0].message });
+
+    const validationError = validateEventSpecific(req.body);
+    if (validationError) return res.status(400).json({ message: validationError });
+
+    const newEvent = new Event({
+      ...req.body,
+      ownerId: req.user.id,
+      createdAt: new Date(),
     });
+
+    await newEvent.save();
+    res.status(201).json({ message: 'Event added!', event: newEvent });
+  } catch (error) {
+    console.error('Error adding event:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// PUT /api/events/:id - Update event
+router.put('/:id', authMiddleware, async (req, res) => {
+  try {
+    const event = await Event.findById(req.params.id);
+    if (!event) return res.status(404).json({ message: 'Event not found' });
+    if (event.ownerId !== req.user.id) return res.status(403).json({ message: 'Not authorized' });
+
+    const { error } = eventValidationSchema.validate(req.body);
+    if (error) return res.status(400).json({ message: error.details[0].message });
+
+    const validationError = validateEventSpecific(req.body);
+    if (validationError) return res.status(400).json({ message: validationError });
+
+    Object.assign(event, req.body);
     await event.save();
+    res.json({ message: 'Event updated!', event });
+  } catch (error) {
+    console.error('Error updating event:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
 
-    // Call after save
-    await updatePlanDates(planId);
-
-    const participants = await PlanUser.find({ planId }).select('userId');
-    const participantIds = participants.map(tu => tu.userId);
-    await notifyUsers(participantIds, `New event added: ${title} (${type})`, 'email');
-
-    res.status(201).json({ msg: 'Event created!', event });
-  } catch (err) {
-    console.error('Event creation error:', err);
-    res.status(500).json({ msg: 'Server error' });
+// DELETE /api/events/:id - Delete event
+router.delete('/:id', authMiddleware, async (req, res) => {
+  try {
+    const event = await Event.findByIdAndDelete(req.params.id);
+    if (!event) return res.status(404).json({ message: 'Event not found' });
+    if (event.ownerId !== req.user.id) return res.status(403).json({ message: 'Not authorized' });
+    res.json({ message: 'Event deleted!' });
+  } catch (error) {
+    console.error('Error deleting event:', error);
+    res.status(500).json({ message: 'Server error' });
   }
 });
 

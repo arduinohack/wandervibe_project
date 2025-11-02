@@ -5,7 +5,7 @@ const jwt = require('jsonwebtoken');
 const redis = require('redis');  // Optional for blacklist
 const User = require('../models/User');
 const logger = require('../utils/logger');  // Added: Borrow exported logger from ../util/logger.js
-const { authMiddleware } = require('../middleware/auth');  // Add this line for token verification
+const authMiddleware = require('../middleware/auth.js');  // Add this line for token verification
 const { v4: uuidv4 } = require('uuid');  // For reset token
 
 // POST /api/auth/login (Verifies email/password, returns token)

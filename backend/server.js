@@ -1,7 +1,7 @@
 require('dotenv').config();  // Loads .env vars (e.g., JWT_SECRET, MONGODB_URI)
 const express = require('express');
 const jwt = require('jsonwebtoken');  // For JWT token handling
-const { authMiddleware } = require('./middleware/auth');  // This line
+const authMiddleware = require('./middleware/auth');  // This line
 const mongoose = require('mongoose');
 // const User = require('./models/User');  // Add this line for User model in seed/test
 const morgan = require('morgan');  // Add this line

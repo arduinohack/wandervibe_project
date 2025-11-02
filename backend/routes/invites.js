@@ -4,7 +4,7 @@ const User = require('../models/User');
 const TripUser = require('../models/TripUser');  // FIXED: Import for role assignment on accept
 const { v4: uuidv4 } = require('uuid');
 const { notifyUsers } = require('../utils/notifications');
-const { roleCheck } = require('../middleware/roleCheck');
+const { roleCheck } = require('../middleware/roleCheck');  // Fixed: Destructure to get the function
 const router = express.Router();
 
 // POST /api/trips/:tripId/invite (Protected: Invites user by email as role)

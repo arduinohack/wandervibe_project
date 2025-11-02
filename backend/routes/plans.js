@@ -3,6 +3,7 @@ const Plan = require('../models/Plan');
 const PlanUser = require('../models/PlanUser');
 const User = require('../models/User');
 const Event = require('../models/Event');
+const authMiddleware = require('../middleware/auth.js');  // Add this line for token verification
 const { DateTime } = require('luxon');  // For time zone/DST in Day Numbers
 const { v4: uuidv4 } = require('uuid');
 const { notifyUsers } = require('../utils/notifications');
@@ -11,7 +12,7 @@ const logger = require('../utils/logger');  // Added: Borrow exported logger fro
 
 
 // POST /api/plans (Protected: Creates plan and assigns VibeCoordinator role)
-router.post('/', async (req, res) => {
+router.post('/', authMiddleware, async (req, res) => {
   const { type, name, destination, startDate, endDate, timeZone, budget } = req.body;
 
   logger.info('In Post /api/plans - Creates plan and assigns VibeCoordinator role to requestor');
@@ -108,7 +109,7 @@ router.get('/', async (req, res) => {
 */
 
 // GET /api/plans/:planId/users (Protected: Lists plan participants with roles)
-router.get('/:planId/users', async (req, res) => {
+router.get('/:planId/users', authMiddleware, async (req, res) => {
   const { planId } = req.params;
   logger.info('In Get /api/plans/{planID}/users - lists a plans users');
 
@@ -149,7 +150,7 @@ router.get('/:planId/users', async (req, res) => {
 });
 
 // POST /api/plans/:planId/remove-user (Protected: Removes user by ID)
-router.post('/:planId/remove-user', async (req, res) => {
+router.post('/:planId/remove-user', authMiddleware, async (req, res) => {
   const { planId } = req.params;
   const { userId: targetUserId } = req.body;
   
@@ -198,7 +199,7 @@ router.post('/:planId/remove-user', async (req, res) => {
 });
 
 // POST /api/plans/:planId/reassign-coordinator (Protected: Transfers ownership to VibePlanner)
-router.post('/:planId/reassign-coordinator', async (req, res) => {
+router.post('/:planId/reassign-coordinator', authMiddleware, async (req, res) => {
   const { planId } = req.params;
   const { targetUserId } = req.body;
 
@@ -241,7 +242,7 @@ router.post('/:planId/reassign-coordinator', async (req, res) => {
 });
 
 // GET /api/plans/:planId/itinerary (Protected: Fetches sorted events with Day Numbers)
-router.get('/:planId/itinerary', async (req, res) => {
+router.get('/:planId/itinerary', authMiddleware, async (req, res) => {
   const { planId } = req.params;
 
   logger.info('In Get /api/plans/{planID}/itinerary - fetches sorted events with Day Numbers');
