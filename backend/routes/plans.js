@@ -66,12 +66,12 @@ router.post('/', authMiddleware, async (req, res) => {
 });
 
 // GET /api/plans (Protected: Lists user's plans as owner or participant)
-router.get('/', async (req, res) => {
-   logger.info('Lists user\'s plans as owner or participant', {
-      userId: req.user.userId,
-      event: 'GetAPIPlans',
-      context: { context: 'n/a' }
-    });
+router.get('/', authMiddleware, async (req, res) => {
+  logger.info('Lists user\'s plans as owner or participant', {
+    userId: req.user.userId,
+    event: 'GetAPIPlans',
+    context: { context: 'n/a' }
+  });
 
   try {
     const userId = req.user.userId;  // From token

@@ -1,4 +1,6 @@
 const mongoose = require('mongoose');
+const { v4: uuidv4 } = require('uuid');  // Generate UUID
+const bcrypt = require('bcryptjs');
 
 // Sub-schema for address (nested object)
 const addressSchema = new mongoose.Schema({
@@ -17,7 +19,7 @@ const notificationPreferencesSchema = new mongoose.Schema({
 
 // Main User schema
 const userSchema = new mongoose.Schema({
-  _id: { type: String, required: true }, // UUID
+  _id: { type: String, default: uuidv4 },  // UUID as string (custom ID)
   firstName: String,
   lastName: String,
   email: { type: String, unique: true },
@@ -31,9 +33,15 @@ const userSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
-// Indexes for search (from requirements)
-// userSchema.index({ firstName: 'text', lastName: 'text', email: 'text' });
-// userSchema.set('bufferCommands', false);  // Disable buffering to avoid timeouts
-// userSchema.index({ email: 1 })
+// Pre-save hook for password hashing
+userSchema.pre('save', async function (next) {
+  if (!this.isModified('password')) return next();
+  this.password = await bcrypt.hash(this.password, 12);
+  next();
+});
+
+userSchema.methods.comparePassword = async function (password) {
+  return await bcrypt.compare(password, this.password);
+};
 
 module.exports = mongoose.model('User', userSchema);

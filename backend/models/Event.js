@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { v4: uuidv4 } = require('uuid');  // Generate UUID
 
 // Sub-event schema for composite events (e.g., flight departure/arrival)
 const subEventSchema = new mongoose.Schema({
@@ -20,6 +21,7 @@ const subEventSchema = new mongoose.Schema({
 
 // Main Event schema
 const eventSchema = new mongoose.Schema({
+  _id: { type: String, default: uuidv4 },  // UUID as string
   title: { type: String, required: true },
   location: { type: String, required: true },
   type: { type: String, required: true },  // 'flight', 'hotel', etc. (enum-like)
