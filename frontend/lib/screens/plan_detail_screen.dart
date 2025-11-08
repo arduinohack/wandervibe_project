@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:wandervibe_frontend/models/event_type.dart';
+import 'package:url_launcher/url_launcher.dart'; // For launchUrl
 import '../providers/plan_provider.dart';
 import '../providers/user_provider.dart'; // For token if needed
 import '../models/plan.dart';
 import '../models/event.dart'; // For event list
+import '../models/event_type.dart'; // For EventType (fixed import)
 import 'add_event_screen.dart'; // For adding events
+import '../utils/logger.dart';
 
 class PlanDetailScreen extends StatefulWidget {
   final Plan plan; // Full plan object passed from dashboard
@@ -86,24 +88,71 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                 style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
               ),
               if (events.isEmpty)
-                const Center(child: Text('No events yet—add one!'))
+                const Center(
+                  child: Text('No events yet—add one!'),
+                ) // Fixed: No braces for single widget
               else
                 ...events.map(
                   (event) => Card(
-                    child: ListTile(
-                      leading: Icon(
-                        event.type.icon,
-                      ), // Icon from EventType extension
-                      title: Text(event.title),
-                      subtitle: Text(
-                        '${event.startTime} - ${event.finishTime} | ${event.location} | \$${event.cost}',
-                      ), // Added: Use finishTime getter
-                      trailing: IconButton(
-                        icon: const Icon(Icons.edit),
-                        onPressed: () {
-                          print('Edit event ${event.id}');
-                        },
-                      ),
+                    child: Column(
+                      children: [
+                        ListTile(
+                          leading: Icon(event.type.icon), // Event type icon
+                          title: Text(event.name),
+                          subtitle: Text(
+                            '${event.startTime} - ${event.endTime ?? 'TBD'} | ${event.location ?? ''} | \$${event.cost ?? 0}',
+                          ), // Fixed: subtitle: Text, null-safety
+                          trailing: IconButton(
+                            icon: const Icon(Icons.edit),
+                            onPressed: () {
+                              logger.i(
+                                'Edit event ${event.id}',
+                              ); // Placeholder for edit
+                            },
+                          ),
+                        ),
+                        if (event.urlLinks.isNotEmpty)
+                          ...event.urlLinks.map(
+                            (urlLink) => ListTile(
+                              leading: const Icon(Icons.link),
+                              title: Text(
+                                urlLink.linkName.isEmpty
+                                    ? urlLink.linkUrl
+                                    : urlLink.linkName,
+                              ),
+                              subtitle: Text(urlLink.linkUrl),
+                              trailing: IconButton(
+                                icon: const Icon(Icons.open_in_new),
+                                onPressed: () async {
+                                  final Uri url = Uri.parse(urlLink.linkUrl);
+                                  if (await canLaunchUrl(url)) {
+                                    await launchUrl(url);
+                                  } else {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          'Could not open ${urlLink.linkUrl}',
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                },
+                              ),
+                            ),
+                          ),
+                        if (event.subEvents.isNotEmpty)
+                          ...event.subEvents.map(
+                            (subEvent) => ListTile(
+                              title: Text('${subEvent.name}: ${subEvent.time}'),
+                              subtitle: Text('${subEvent.location ?? ''}'),
+                              /*trailing:
+                                  subEvent.subType ==
+                                      'departure' // Fixed: 'departure' (typo was 'departure')
+                                  ? Text(subEvent.gate ?? '')
+                                  : Text(subEvent.baggageClaim ?? ''),*/
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                 ),

@@ -3,32 +3,41 @@ const mongoose = require('mongoose');
 const authMiddleware = require('../middleware/auth.js');  // Token validation
 const Event = require('../models/Event.js');  // Your Event model
 const Joi = require('joi');  // For validation (npm i joi if missing)
+const logger = require('../utils/logger');
+const { v4: uuidv4 } = require('uuid');  // Add at top if using UUID (npm i uuid)
 
 const router = express.Router();
 
 // Validation schema for core event fields
 const eventValidationSchema = Joi.object({
-  title: Joi.string().required(),
-  location: Joi.string().required(),
+  name: Joi.string().required(),
+  location: Joi.string().optional(),
   type: Joi.string().required(),
-  cost: Joi.number().required(),
-  startTime: Joi.date().required(),
-  duration: Joi.number().default(0),
+  cost: Joi.number().default(0).optional(),
+  startTime: Joi.date().optional(),
+  duration: Joi.number().default(0).optional(),
   planId: Joi.string().required(),
-  details: Joi.string().default(''),
+  details: Joi.string().optional(''),
   customType: Joi.string().default(''),
   costType: Joi.string().valid('estimated', 'actual').default('estimated'),
   endTime: Joi.date().optional(),
+  eventNum: Joi.number().default(0).optional(),
+  status: Joi.string().valid('draft', 'complete').default('draft').optional(),
+  missingFields: Joi.string().optional(''),
   subEvents: Joi.array().optional(),
   extras: Joi.object().optional(),
 });
 
 // Type-specific validation helper
 function validateEventSpecific(eventData) {
-  const { type, subEvents, flightNumber, airline, roomNumber, checkInDate } = eventData;
+  const { type, customType, subEvents, flightNumber, airline, roomNumber, checkInDate } = eventData;
   let error = '';
 
-  switch (type) {
+  if (type === 'custom' && !customType) {
+    error = 'Cusom events require a customType';
+  }
+  
+  /*switch (type) {
     case 'flight':
       if (!flightNumber) error = 'Flight number required';
       if (!airline) error = 'Airline required';
@@ -43,8 +52,8 @@ function validateEventSpecific(eventData) {
       if (!checkInDate) error = 'Check-in date required';
       break;
     default:
-      if (!title) error = 'Title required';
-  }
+      if (!name) error = 'Name required';
+  }*/
 
   return error;
 }
@@ -73,7 +82,7 @@ router.get('/:id', authMiddleware, async (req, res) => {
     }
     res.json({ event });
   } catch (error) {
-    console.error('Error fetching event:', error);
+    logger.error('Error fetching event:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -81,22 +90,83 @@ router.get('/:id', authMiddleware, async (req, res) => {
 // POST /api/events - Create new event
 router.post('/', authMiddleware, async (req, res) => {
   try {
-    const { error } = eventValidationSchema.validate(req.body);
-    if (error) return res.status(400).json({ message: error.details[0].message });
 
-    const validationError = validateEventSpecific(req.body);
-    if (validationError) return res.status(400).json({ message: validationError });
+    // Always validate basics (Joi for all, but skip custom for draft)
+    const { error, value } = eventValidationSchema.validate(req.body);
+    if (error) {
+      return res.status(400).json({ message: error.details[0].message });
+    }
 
+    // Destructure from validated value (defaults applied)
+    const { name, location, type, cost, startTime, duration, planId, details, customType, costType, endTime, eventNum, status, missingFields, subEvents, extras } = value;
+    
+    // Skip additional validation for drafts
+    if (status !== 'draft') {
+      const validationError = validateEventSpecific(value);
+      if (validationError) return res.status(400).json({ message: validationError });
+    }
+
+    // Calculate endTime if duration provided
+    let calculatedEndTime;
+    if (duration && !endTime && startTime) {
+      calculatedEndTime = new Date(startTime.getTime() + (duration * 60 * 1000));  // ms = minutes * 60s * 1000ms
+    } else if (endTime) {
+      calculatedEndTime = new Date(endTime);
+    }
+
+    if (calculatedEndTime <= new Date(startTime)) {
+      return res.status(400).json({ message: 'endTime must be after startTime' });
+    }
+
+    // Create newEvent (fixed: subEvents, req.user.id, logger as console)
     const newEvent = new Event({
-      ...req.body,
-      ownerId: req.user.id,
-      createdAt: new Date(),
+      _id: uuidv4(),
+      name,
+      location,
+      type,
+      cost: parseFloat(cost) || 0,
+      startTime,
+      duration: parseInt(duration) || 0,
+      planId,
+      details,
+      customType,
+      costType,
+      endTime,
+      eventNum: parseInt(eventNum) || 0,
+      status: status || 'draft',  // FIXED: Default if missing
+      missingFields: missingFields || [],
+      subEvents: subEvents || [],  // FIXED: Destructured as subEvents
+      extras: extras || {},
+      ownerId: req.user.userId  // FIXED: req.user.id, not userId
     });
+
+    logger.info('New event before save:', { name: newEvent.name, type: newEvent.type, status: newEvent.status });  // FIXED: Use newEvent
 
     await newEvent.save();
     res.status(201).json({ message: 'Event added!', event: newEvent });
   } catch (error) {
-    console.error('Error adding event:', error);
+    logger.error('Error adding event:', error);
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(e => e.message).join(', ');
+      return res.status(400).json({ message: `Validation error: ${messages}` });
+    }
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+//PUT /api/events - reorder events by eventNum for drag/drop changing event order if no no time fields
+router.put('/:id/reorder', authMiddleware, async (req, res) => {
+  try {
+    const { eventNum } = req.body;
+    const event = await Event.findOneAndUpdate(
+      { _id: req.params.id, ownerId: req.user.userId },
+      { eventNum: parseInt(eventNum) || 0 },
+      { new: true }
+    );
+    if (!event) return res.status(404).json({ message: 'Event not found' });
+    res.json({ message: 'Event reordered!', event });
+  } catch (error) {
+    console.error('Reorder error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -123,17 +193,22 @@ router.put('/:id', authMiddleware, async (req, res) => {
   }
 });
 
-// DELETE /api/events/:id - Delete event
+// DELETE /api/events/:id - Delete event if owner
 router.delete('/:id', authMiddleware, async (req, res) => {
   try {
-    const event = await Event.findByIdAndDelete(req.params.id);
-    if (!event) return res.status(404).json({ message: 'Event not found' });
-    if (event.ownerId !== req.user.id) return res.status(403).json({ message: 'Not authorized' });
-    res.json({ message: 'Event deleted!' });
+    const deletedEvent = await Event.findOneAndDelete({ 
+      _id: req.params.id,  // Match ID
+      ownerId: req.user.userId  // FIXED: Combined check with ownerId
+    });
+
+    if (!deletedEvent) {
+      return res.status(404).json({ message: 'Event not found or unauthorized' });  // 404 for both (secure)
+    }
+
+    res.json({ message: 'Event deleted!', deletedEvent });  // Optional: Return deleted for confirmation
   } catch (error) {
     console.error('Error deleting event:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
-
 module.exports = router;

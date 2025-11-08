@@ -4,7 +4,7 @@ import 'package:flutter/material.dart'; // For IconData in extension
 enum EventType {
   flight,
   car,
-  dining,
+  dining, // more of a formal reservation vs walk in meal
   hotel,
   tour,
   activity,

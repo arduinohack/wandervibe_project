@@ -1,47 +1,144 @@
 import 'package:flutter/material.dart'; // Added for IconData in icon getter
-import 'package:timezone/timezone.dart'
-    as tz; // For time zone handling (add to pubspec.yaml if needed)
+// import 'package:timezone/timezone.dart' as tz; // For time zone handling (add to pubspec.yaml if needed)
 import './event_type.dart';
 
 enum CostType { estimated, actual }
 
+class UrlLink {
+  final String linkName; // Optional label (e.g., 'JFK Map')
+  final String linkUrl; // The link (e.g., 'https://maps.google.com/?q=JFK')
+
+  UrlLink({this.linkName = '', required this.linkUrl});
+
+  factory UrlLink.fromJson(Map<String, dynamic> json) {
+    return UrlLink(
+      linkName: json['linkName'] ?? '',
+      linkUrl: json['linkUrl'] ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {'linkName': linkName, 'linkUrl': linkUrl};
+  }
+}
+
+// Sub-event class for composite events (e.g., departure/arrival in flight)
+class SubEvent {
+  final String name; // e.g., 'Departure'
+  final String location;
+  final DateTime? time;
+  final int duration; // Minutes
+  final String details;
+  final String subType; // 'departure', 'arrival'
+  final Map<String, dynamic>
+  extras; // Added: User-defined fields (e.g., {'luggage': '2 bags'})
+
+  SubEvent({
+    required this.name,
+    this.location = '',
+    this.time, // Fixed: Default to current time (non-null)
+    this.duration = 0,
+    this.details = '',
+    required this.subType,
+    this.extras = const {}, // Default empty map
+  });
+
+  factory SubEvent.fromJson(Map<String, dynamic> json) {
+    return SubEvent(
+      name: json['name'] ?? '',
+      location: json['location'] ?? '',
+      time: json['time'] != null ? DateTime.parse(json['time']) : null,
+      duration: json['duration'] ?? 0,
+      details: json['details'] ?? '',
+      subType: json['subType'] ?? '',
+      // gate: json['gate'],
+      // baggageClaim: json['baggageClaim'],
+      extras: Map<String, dynamic>.from(
+        json['extras'] ?? {},
+      ), // Parse map or empty
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'name': name,
+      'location': location,
+      'time': time?.toIso8601String(),
+      'duration': duration,
+      'details': details,
+      'subType': subType,
+      // if (gate != null) 'gate': gate,
+      // if (baggageClaim != null) 'baggageClaim': baggageClaim,
+      'extras': extras, // Serialize map
+    };
+  }
+
+  SubEvent copyWith({
+    String? name,
+    String? location,
+    DateTime? startTime,
+    int? duration,
+    String? details,
+    String? subType,
+    String? gate,
+    String? baggageClaim,
+    Map<String, dynamic>? extras,
+  }) {
+    return SubEvent(
+      name: name ?? this.name,
+      location: location ?? this.location,
+      time: startTime ?? this.time,
+      duration: duration ?? this.duration,
+      details: details ?? this.details,
+      subType: subType ?? this.subType,
+      // gate: gate ?? this.gate,
+      // baggageClaim: baggageClaim ?? this.baggageClaim,
+      extras: extras ?? this.extras, // Update extras
+    );
+  }
+}
+
 class Event {
   final String id; // Event ID?
   final String planId;
-  final String title;
-  final String location;
-  final String details;
+  final String name;
+  final String? location;
   final EventType type;
-  final String customType;
-  final double cost;
-  final CostType costType;
-  final DateTime startTime;
-  final Duration duration;
-  final DateTime endTime;
-  final String? originTimeZone; // Optional, required for flight
-  final String? destinationTimeZone; // Optional, required for flight
-  final Map<String, String> resourceLinks; // e.g., {'maps': 'url'}
-  final DateTime createdAt;
+  final double? cost;
+  final DateTime? startTime;
+  final Duration? duration;
+  final String? details;
+  final String? customType;
+  final CostType? costType;
+  final DateTime? endTime;
+  final int? eventNum;
+  final String? status;
+  final List<String>? missingFields;
+  final List<SubEvent> subEvents;
+  final List<UrlLink> urlLinks; // e.g., {'maps': 'url'}
+  final DateTime? createdAt;
   int? dayNumber; // Computed later in provider for itinerary
 
   Event({
-    required this.id,
-    required this.planId,
-    required this.title,
-    required this.location,
-    required this.details,
-    required this.type,
-    this.customType = '',
-    required this.cost,
+    required this.id, // only populated once an event is created, null for new
+    required this.planId, // the planId that this event is part of
+    required this.name, // required - gotta have a name
+    this.location = '',
+    this.details,
+    required this.type, // gotta have a type
+    this.customType,
+    this.cost,
     this.costType = CostType.estimated,
-    required this.startTime,
-    this.duration = const Duration(),
-    required this.endTime,
-    this.originTimeZone,
-    this.destinationTimeZone,
-    this.resourceLinks = const {},
-    required this.createdAt,
-    this.dayNumber,
+    this.startTime,
+    this.duration,
+    this.endTime,
+    this.eventNum, // the order of events in a plan/trip will be sorted by a combo of eventNum and startTime
+    this.status = 'draft',
+    this.missingFields = const [],
+    this.subEvents = const [],
+    this.urlLinks = const [],
+    this.createdAt, // only populated once an event is created, null for new
+    this.dayNumber, // a front end calculated field
   });
 
   // Factory to create from JSON (for API responses from backend)
@@ -49,7 +146,7 @@ class Event {
     return Event(
       id: json['_id'] ?? '',
       planId: json['planId'] ?? '',
-      title: json['title'] ?? '',
+      name: json['name'] ?? '',
       location: json['location'] ?? '',
       details: json['details'] ?? '',
       type: EventType.values.firstWhere(
@@ -70,9 +167,15 @@ class Event {
       endTime: DateTime.parse(
         json['endTime'] ?? DateTime.now().toIso8601String(),
       ),
-      originTimeZone: json['originTimeZone'],
-      destinationTimeZone: json['destinationTimeZone'],
-      resourceLinks: Map<String, String>.from(json['resourceLinks'] ?? {}),
+      eventNum: json['eventNum'] ?? 0,
+      status: json['status'] ?? 'draft',
+      missingFields: List<String>.from(json['missingFields'] ?? []),
+      subEvents: (json['subEvents'] ?? [])
+          .map((se) => SubEvent.fromJson(se))
+          .toList(),
+      urlLinks: (json['urlLinks'] ?? [])
+          .map((l) => UrlLink.fromJson(l))
+          .toList(), // Parse array
       createdAt: DateTime.parse(
         json['createdAt'] ?? DateTime.now().toIso8601String(),
       ),
@@ -83,7 +186,7 @@ class Event {
   Map<String, dynamic> toJson() {
     return {
       'planId': planId,
-      'title': title,
+      'name': name,
       'location': location,
       'details': details,
       'type': type.toString().split('.').last,
@@ -93,21 +196,24 @@ class Event {
           .toString()
           .split('.')
           .last, // Enum to string for backend
-      'startTime': startTime.toIso8601String(),
-      'duration': duration.inMinutes, // Serialize as minutes for backend
-      'endTime': endTime.toIso8601String(),
-      'originTimeZone': originTimeZone,
-      'destinationTimeZone': destinationTimeZone,
-      'resourceLinks': resourceLinks,
-      'createdAt': createdAt.toIso8601String(),
+      'startTime': startTime?.toIso8601String() ?? '',
+      'duration':
+          duration?.inMinutes ?? 0, // Fixed: ?. for null-safe, ?? 0 for default
+      'endTime': endTime?.toIso8601String() ?? '',
+      'urlLinks': urlLinks.map((l) => l.toJson()).toList(), // Serialize array
+      'subEvents': subEvents.map((se) => se.toJson()).toList(),
+      'createdAt': createdAt?.toIso8601String() ?? '',
     };
   }
 
   DateTime get finishTime {
-    if (duration.isNegative) return startTime; // Handle invalid
-    return startTime.add(
-      duration,
-    ); // If duration is Duration, add directly (no constructor needed)
+    if (duration?.isNegative ?? false) {
+      return startTime ??
+          DateTime.now(); // Fixed: ?. for null-safe, ?? false for default
+    }
+    return (startTime ?? DateTime.now()).add(
+      duration ?? Duration.zero,
+    ); // Null-safe add
   }
 
   // Helper for costType parsing

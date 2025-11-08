@@ -102,9 +102,14 @@ class PlanProvider extends ChangeNotifier {
     final planTz = plan
         .timeZone; // Mock TZ location (add luxon or flutter_timezone later for DST)
 
-    _events.sort(
-      (a, b) => a.startTime.compareTo(b.startTime),
-    ); // Sort by startTime
+    _events.sort((a, b) {
+      final dateA = a.startTime;
+      final dateB = b.startTime;
+      if (dateA != null && dateB != null) {
+        return dateA.compareTo(dateB); // Safe compare if both non-null
+      }
+      return 0; // Or sort nulls last: return (dateA == null ? 1 : 0) - (dateB == null ? 1 : 0);
+    });
 
     int currentDay = 1;
     DateTime? prevEndTime = _events.isNotEmpty
@@ -114,7 +119,8 @@ class PlanProvider extends ChangeNotifier {
     for (int i = 1; i < _events.length; i++) {
       Event event = _events[i];
       DateTime eventStart =
-          event.startTime; // Adjust for TZ/DST in real (use tz.TZDateTime.from)
+          event.startTime ??
+          DateTime.now(); // Adjust for TZ/DST in real (use tz.TZDateTime.from)
 
       // Increment day if startTime is after midnight relative to prevEndTime in relevant TZ
       if (eventStart.isAfter(prevEndTime!.add(const Duration(days: 1)))) {
@@ -271,12 +277,12 @@ class PlanProvider extends ChangeNotifier {
         _events.add(createdEvent);
         _computeDayNumbers(newEvent.planId); // Recalculate days
         notifyListeners();
-        print('Added event: ${createdEvent.title} from backend');
+        logger.i('Added event: ${createdEvent.name} from backend');
       } else {
         throw Exception('Failed to add event: ${response.statusCode}');
       }
     } catch (e) {
-      print('Error adding event: $e');
+      logger.e('Error adding event: $e');
       // Fallback: Add mock
       _events.add(newEvent);
       _computeDayNumbers(newEvent.planId);

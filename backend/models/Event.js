@@ -4,11 +4,13 @@ const { v4: uuidv4 } = require('uuid');  // Generate UUID
 // Sub-event schema for composite events (e.g., flight departure/arrival)
 const subEventSchema = new mongoose.Schema({
   name: { type: String, required: true },  // e.g., 'Departure'
-  location: { type: String, required: true },
-  time: { type: Date, required: true },
+  location: { type: String, default: '' },
+  time: { type: Date },
+  timeZone: {type: String, default: ''}, // Time zone of time in this subevent
   duration: { type: Number, default: 0 },  // Minutes
   details: { type: String, default: '' },
   subType: { type: String, required: true },  // 'departure', 'arrival', etc.
+  extras: { type: mongoose.Schema.Types.Mixed },  // Added: User-defined fields (anything)
 
   // Type-specific fields (optional, validated in pre-save)
   gate: { type: String },  // For departure
@@ -19,30 +21,37 @@ const subEventSchema = new mongoose.Schema({
   _id: false,  // No _id for sub-documents
 });
 
-// Main Event schema
-const eventSchema = new mongoose.Schema({
-  _id: { type: String, default: uuidv4 },  // UUID as string
-  title: { type: String, required: true },
-  location: { type: String, required: true },
-  type: { type: String, required: true },  // 'flight', 'hotel', etc. (enum-like)
-  cost: { type: Number, required: true },
-  startTime: { type: Date, required: true },
-  duration: { type: Number, default: 0 },  // Minutes
-  planId: { type: mongoose.Schema.Types.ObjectId, ref: 'Plan', required: true },
-  details: { type: String, default: '' },
-  customType: { type: String, default: '' },  // User-defined type
-  costType: { type: String, enum: ['estimated', 'actual'], default: 'estimated' },
-  endTime: { type: Date, default: null },  // Optional, calculated if needed
-  subEvents: [subEventSchema],  // Nested array for composite events (optional)
-  extras: { type: mongoose.Schema.Types.Mixed },  // Dynamic user fields (optional)
-  ownerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },  // For security
-}, {
-  timestamps: true,  // Auto createdAt/updatedAt
-});
+  // Main Event schema
+  const eventSchema = new mongoose.Schema({
+    _id: { type: String, default: uuidv4 },  // Added: Auto-generate UUID string (or omit for ObjectId)
+    name: { type: String, required: true },
+    location: { type: String, default: '' },  // Fixed: Optional with default
+    type: { type: String, required: true },  // 'flight', 'hotel', etc.
+    cost: { type: Number, default: 0 },
+    startTime: { type: Date },
+    duration: { type: Number, default: 0 },  // Minutes
+    planId: { type: String, required: true },
+    details: { type: String, default: '' },
+    customType: { type: String, default: '' },
+    costType: { type: String, enum: ['estimated', 'actual'], default: 'estimated' },
+    endTime: { type: Date },  // Fixed: Optional (no required)
+    eventNum: { type: Number, default: 0, min: 0 },  // Added: Optional order number within plan for drafts (0 for dated)
+    status: { type: String, enum: ['draft', 'complete'], default: 'draft' },  // Added: Draft/complete for incomplete itineraries
+    missingFields: [{ type: String }],  // Array of missing field names (e.g., ['flightNumber'])
+    subEvents: [subEventSchema],  // Nested array for composite
+    extras: { type: mongoose.Schema.Types.Mixed },  // Dynamic user fields
+    ownerId: { type: String, required: true },
+  }, { timestamps: true });  // Auto createdAt/updatedAt
 
 // Pre-save hook for type-specific validation
 eventSchema.pre('save', function (next) {
   const e = this;
+  if (e.nastatus === 'draft') {
+    return next();  // Skip validation for drafts
+  }
+  
+  /* for now, all validation is to be done at front end.
+  // possibly additional validation at backend if status != 'draft'
   let validationError = '';
   switch (e.type) {
     case 'flight':
@@ -55,7 +64,7 @@ eventSchema.pre('save', function (next) {
       });
       break;
     case 'hotel':
-      if (!e.roomNumber) validationError = 'Room number required';
+      //if (!e.roomNumber) validationError = 'Room number required'; // Room number not assigned until check in,
       if (!e.checkInDate) validationError = 'Check-in date required';
       break;
     // Add for other types (activity, meal, etc.)
@@ -63,7 +72,7 @@ eventSchema.pre('save', function (next) {
       // Basic validation
       if (!e.title) validationError = 'Title required';
   }
-  if (validationError) return next(new Error(validationError));
+  if (validationError) return next(new Error(validationError)); */
   next();
 });
 

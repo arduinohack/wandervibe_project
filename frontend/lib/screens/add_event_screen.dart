@@ -16,18 +16,23 @@ class AddEventScreen extends StatefulWidget {
 
 class _AddEventScreenState extends State<AddEventScreen> {
   final _formKey = GlobalKey<FormState>(); // For validation
-  final _titleController = TextEditingController();
+  final _nameController = TextEditingController();
   final _locationController = TextEditingController();
   final _costController = TextEditingController();
   final _detailsController = TextEditingController();
   final _customTypeController = TextEditingController();
-  EventType? _type; // Dropdown selection
+  EventType? _type = EventType.activity; // Dropdown selection
   final String _customType = 'party';
-  CostType _costType = CostType
+  CostType? _costType = CostType
       .estimated; // Added: Default for costType dropdown (string or enum)
   DateTime _startTime = DateTime.now(); // DateTime picker
   int _durationMinutes = 60; // Default 1 hour
   DateTime _endTime = DateTime.now(); // Added: Default to now for end time
+  List<UrlLink> _urlLinks = []; // Added: Empty list for links
+  final List<SubEvent> _subEvents = []; // State variable
+  Map<String, dynamic> _extras = {}; // For custom fields
+  String _customKey = ''; // Temp for key input
+  String _urlLink = '';
 
   bool _isSaving = false; // Loading spinner
 
@@ -36,11 +41,12 @@ class _AddEventScreenState extends State<AddEventScreen> {
     super.initState();
     // ... existing (if any)
     _endTime = DateTime.now(); // Ensure it's set
+    _urlLinks = [];
   }
 
   @override
   void dispose() {
-    _titleController.dispose();
+    _nameController.dispose();
     _locationController.dispose();
     _costController.dispose();
     _detailsController.dispose();
@@ -62,7 +68,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
 
       final newEvent = Event(
         id: DateTime.now().millisecondsSinceEpoch.toString(), // Temp ID
-        title: _titleController.text,
+        name: _nameController.text,
         location: _locationController.text,
         details: _detailsController.text,
         type: _type ?? EventType.activity, // Default if not selected
@@ -74,6 +80,10 @@ class _AddEventScreenState extends State<AddEventScreen> {
           minutes: _durationMinutes,
         ), // Fixed: Wrap int as Duration (minutes)
         endTime: _endTime,
+        urlLinks: _urlLinks,
+        subEvents: _subEvents
+            .map((se) => se.copyWith(extras: _extras))
+            .toList(),
         planId: widget.planId, // Link to plan
         createdAt: DateTime.now(),
       );
@@ -98,6 +108,35 @@ class _AddEventScreenState extends State<AddEventScreen> {
       } finally {
         setState(() => _isSaving = false);
       }
+    }
+  }
+
+  // Add sub-event (e.g., on button tap)
+  void _addSubEvent(
+    String name,
+    String subType,
+    String location,
+    DateTime time,
+  ) {
+    setState(() {
+      _subEvents.add(
+        SubEvent(
+          name: name,
+          location: location,
+          time: time,
+          subType: subType,
+          // gate: subType == 'departure' ? gate : null,
+          // baggageClaim: subType == 'arrival' ? baggageClaim : null,
+        ),
+      );
+    });
+  }
+
+  void _addLink(String urlName, String url) {
+    if (url.isNotEmpty) {
+      setState(() {
+        _urlLinks.add(UrlLink(linkName: urlName, linkUrl: url));
+      });
     }
   }
 
@@ -168,10 +207,10 @@ class _AddEventScreenState extends State<AddEventScreen> {
           child: Column(
             children: [
               TextFormField(
-                controller: _titleController,
-                decoration: const InputDecoration(labelText: 'Title'),
+                controller: _nameController,
+                decoration: const InputDecoration(labelText: 'Name'),
                 validator: (value) =>
-                    value?.isEmpty ?? true ? 'Title required' : null,
+                    value?.isEmpty ?? true ? 'Name required' : null,
               ),
               const SizedBox(height: 16),
               TextFormField(
@@ -265,6 +304,43 @@ class _AddEventScreenState extends State<AddEventScreen> {
                   return null;
                 },
               ),
+              // Links section
+              const Text(
+                'Links (optional)',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              TextFormField(
+                decoration: const InputDecoration(
+                  labelText: 'Link URL (e.g., https://maps.google.com)',
+                ),
+                onFieldSubmitted: (url) => _addLink(url, ''), // Add on submit
+              ),
+              TextFormField(
+                decoration: const InputDecoration(
+                  labelText: 'Link Name (optional)',
+                ),
+                onFieldSubmitted: (title) => _addLink(
+                  title,
+                  _urlLink,
+                ), // Add on submit (update previous URL)
+              ),
+              const SizedBox(height: 8),
+              if (_urlLinks.isNotEmpty) ...[
+                ..._urlLinks.map(
+                  (link) => ListTile(
+                    leading: Icon(Icons.link),
+                    title: Text(
+                      link.linkName.isEmpty ? link.linkUrl : link.linkName,
+                    ),
+                    subtitle: Text(link.linkUrl),
+                    trailing: IconButton(
+                      icon: Icon(Icons.delete),
+                      onPressed: () => setState(() => _urlLinks.remove(link)),
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 16),
               Row(
                 children: [
