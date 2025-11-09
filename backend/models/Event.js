@@ -46,7 +46,7 @@ const subEventSchema = new mongoose.Schema({
 // Pre-save hook for type-specific validation
 eventSchema.pre('save', function (next) {
   const e = this;
-  if (e.nastatus === 'draft') {
+  if (e.status === 'draft') {
     return next();  // Skip validation for drafts
   }
   

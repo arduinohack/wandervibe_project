@@ -200,7 +200,7 @@ class PlanProvider extends ChangeNotifier {
         },
       );
 
-      print(
+      logger.i(
         'Fetch PlanUsers response: ${response.statusCode}',
       ); // Debug optional
 
@@ -209,12 +209,12 @@ class PlanProvider extends ChangeNotifier {
         _planUsers = data
             .map((json) => PlanUser.fromJson(json))
             .toList(); // Parse to List<PlanUser>
-        print('Fetched ${_planUsers.length} PlanUsers for plan $planId');
+        logger.i('Fetched ${_planUsers.length} PlanUsers for plan $planId');
       } else {
         throw Exception('Failed to load PlanUsers: ${response.statusCode}');
       }
     } catch (e) {
-      print('Error fetching PlanUsers: $e');
+      logger.e('Error fetching PlanUsers: $e');
       _planUsers = []; // Empty fallback
     } finally {
       _isLoading = false;
@@ -260,8 +260,10 @@ class PlanProvider extends ChangeNotifier {
     try {
       if (token == null) throw Exception('No token—log in first');
 
+      final baseUrl = await backendBaseUrl; // Await first (get the string)
+      final url = Uri.parse(baseUrl + apiEvents);
       final response = await http.post(
-        Uri.parse(await backendBaseUrl + apiEvents),
+        url,
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
@@ -286,6 +288,51 @@ class PlanProvider extends ChangeNotifier {
       // Fallback: Add mock
       _events.add(newEvent);
       _computeDayNumbers(newEvent.planId);
+      notifyListeners();
+    }
+  }
+
+  // Add event to plan (real API POST /api/events with token passed as param)
+  Future<void> updateEvent(Event updatedEvent, String? token) async {
+    if (updatedEvent.id == null) {
+      throw Exception(
+        'Cannot update: Event ID is null. Use addEvent for new events.',
+      ); // Early return with message
+    }
+
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      if (token == null) throw Exception('No token—log in first');
+
+      final baseUrl = await backendBaseUrl; // Await first (get the string)
+      final url = Uri.parse('$baseUrl$apiEvents/${updatedEvent.id}');
+      final response = await http.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode(updatedEvent.toJson()),
+      );
+
+      if (response.statusCode == 201) {
+        final index = _events.indexWhere((e) => e.id == updatedEvent.id);
+        if (index != -1) {
+          _events[index] = updatedEvent;
+        }
+        _computeDayNumbers(updatedEvent.planId); // Recalculate days
+        notifyListeners();
+        logger.i('Updated event: ${updatedEvent.name} from backend');
+      } else {
+        throw Exception('Failed to update event: ${response.statusCode}');
+      }
+    } catch (e) {
+      logger.e('Error updating event: $e');
+      // Fallback: Add mock
+      // _events.add(updatedEvent);
+      _computeDayNumbers(updatedEvent.planId);
       notifyListeners();
     }
   }

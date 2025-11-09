@@ -8,7 +8,7 @@ import '../models/invitation.dart';
 import '../models/user.dart'; // For UserRole
 import '../utils/logger.dart';
 import 'plan_detail_screen.dart'; // For plan details
-// import 'add_event_screen.dart'; // For adding events
+// import 'event_screen.dart'; // For adding events
 
 class CoordinatorDashboardScreen extends StatefulWidget {
   const CoordinatorDashboardScreen({super.key});

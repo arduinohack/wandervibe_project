@@ -99,7 +99,7 @@ class SubEvent {
 }
 
 class Event {
-  final String id; // Event ID?
+  final String? id; // Event ID?
   final String planId;
   final String name;
   final String? location;
@@ -120,7 +120,7 @@ class Event {
   int? dayNumber; // Computed later in provider for itinerary
 
   Event({
-    required this.id, // only populated once an event is created, null for new
+    this.id, // only populated once an event is created, null for new
     required this.planId, // the planId that this event is part of
     required this.name, // required - gotta have a name
     this.location = '',
@@ -144,7 +144,7 @@ class Event {
   // Factory to create from JSON (for API responses from backend)
   factory Event.fromJson(Map<String, dynamic> json) {
     return Event(
-      id: json['_id'] ?? '',
+      id: json['_id'] ?? json['id'], // From backend (null if not there)
       planId: json['planId'] ?? '',
       name: json['name'] ?? '',
       location: json['location'] ?? '',
@@ -171,11 +171,11 @@ class Event {
       status: json['status'] ?? 'draft',
       missingFields: List<String>.from(json['missingFields'] ?? []),
       subEvents: (json['subEvents'] ?? [])
-          .map((se) => SubEvent.fromJson(se))
+          .map<SubEvent>((se) => SubEvent.fromJson(se))
           .toList(),
       urlLinks: (json['urlLinks'] ?? [])
-          .map((l) => UrlLink.fromJson(l))
-          .toList(), // Parse array
+          .map<UrlLink>((l) => UrlLink.fromJson(l))
+          .toList(),
       createdAt: DateTime.parse(
         json['createdAt'] ?? DateTime.now().toIso8601String(),
       ),
@@ -185,6 +185,7 @@ class Event {
   // To JSON for API sends
   Map<String, dynamic> toJson() {
     return {
+      if (id != null) 'id': id, // Only send if not null (for updates)
       'planId': planId,
       'name': name,
       'location': location,

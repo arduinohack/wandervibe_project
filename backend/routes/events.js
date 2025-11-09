@@ -11,21 +11,21 @@ const router = express.Router();
 // Validation schema for core event fields
 const eventValidationSchema = Joi.object({
   name: Joi.string().required(),
-  location: Joi.string().optional(),
+  location: Joi.string().optional().allow(''),
   type: Joi.string().required(),
-  cost: Joi.number().default(0).optional(),
+  cost: Joi.number().min(0).optional().default(0),
   startTime: Joi.date().optional(),
-  duration: Joi.number().default(0).optional(),
+  duration: Joi.number().min(0).optional().default(0),
   planId: Joi.string().required(),
-  details: Joi.string().optional(''),
-  customType: Joi.string().default(''),
+  details: Joi.string().optional().allow(''),
+  customType: Joi.string().optional().allow(''),
   costType: Joi.string().valid('estimated', 'actual').default('estimated'),
   endTime: Joi.date().optional(),
-  eventNum: Joi.number().default(0).optional(),
+  eventNum: Joi.number().integer().min(0).optional().default(0),
   status: Joi.string().valid('draft', 'complete').default('draft').optional(),
-  missingFields: Joi.string().optional(''),
-  subEvents: Joi.array().optional(),
-  extras: Joi.object().optional(),
+  missingFields: Joi.array().items(Joi.string()).optional().default([]),
+  subEvents: Joi.array().optional().default([]),
+  extras: Joi.object().optional().default({}),
 });
 
 // Type-specific validation helper
@@ -92,7 +92,7 @@ router.post('/', authMiddleware, async (req, res) => {
   try {
 
     // Always validate basics (Joi for all, but skip custom for draft)
-    const { error, value } = eventValidationSchema.validate(req.body);
+    const { error, value } = eventValidationSchema.validate(req.body, { allowUnknown: true });
     if (error) {
       return res.status(400).json({ message: error.details[0].message });
     }

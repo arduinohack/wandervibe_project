@@ -6,7 +6,7 @@ import '../providers/user_provider.dart'; // For token if needed
 import '../models/plan.dart';
 import '../models/event.dart'; // For event list
 import '../models/event_type.dart'; // For EventType (fixed import)
-import 'add_event_screen.dart'; // For adding events
+import 'event_screen.dart'; // For adding events
 import '../utils/logger.dart';
 
 class PlanDetailScreen extends StatefulWidget {
@@ -21,7 +21,10 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
   @override
   void initState() {
     super.initState();
-    // No fetch needed—plan is passed from dashboard
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    logger.i('Fetching plan planId: ${widget.plan.id}');
+    planProvider.fetchPlan(widget.plan.id, userProvider.token);
   }
 
   @override
@@ -37,7 +40,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => AddEventScreen(
+                  builder: (context) => EventScreen(
                     planId: widget.plan.id,
                   ), // Pass plan.id for linking
                 ),
@@ -105,9 +108,17 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                           trailing: IconButton(
                             icon: const Icon(Icons.edit),
                             onPressed: () {
-                              logger.i(
-                                'Edit event ${event.id}',
-                              ); // Placeholder for edit
+                              logger.i('Edit event ${event.id}');
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => EventScreen(
+                                    planId: widget.plan.id,
+                                    event:
+                                        event, // Pass the event for edit mode
+                                  ),
+                                ),
+                              );
                             },
                           ),
                         ),

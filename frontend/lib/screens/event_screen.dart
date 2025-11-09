@@ -5,31 +5,36 @@ import '../providers/user_provider.dart'; // For token
 import '../models/event.dart';
 import '../models/event_type.dart'; // For EventType enum
 import 'plan_detail_screen.dart'; // Navigate back after add
+import 'package:intl/intl.dart'; // Added: For DateFormat
 
-class AddEventScreen extends StatefulWidget {
+class EventScreen extends StatefulWidget {
   final String planId; // Passed from PlanDetailScreen + button
-  const AddEventScreen({super.key, required this.planId});
+  final Event? event; // Optional for edit mode
+  const EventScreen({super.key, required this.planId, this.event});
 
   @override
-  State<AddEventScreen> createState() => _AddEventScreenState();
+  State<EventScreen> createState() => _EventScreenState();
 }
 
-class _AddEventScreenState extends State<AddEventScreen> {
+class _EventScreenState extends State<EventScreen> {
   final _formKey = GlobalKey<FormState>(); // For validation
   final _nameController = TextEditingController();
   final _locationController = TextEditingController();
   final _costController = TextEditingController();
   final _detailsController = TextEditingController();
   final _customTypeController = TextEditingController();
+  final _startTimeController = TextEditingController();
+  final _endTimeController = TextEditingController();
   EventType? _type = EventType.activity; // Dropdown selection
   final String _customType = 'party';
   CostType? _costType = CostType
       .estimated; // Added: Default for costType dropdown (string or enum)
-  DateTime _startTime = DateTime.now(); // DateTime picker
+  DateTime? _startTime; // DateTime picker
   int _durationMinutes = 60; // Default 1 hour
-  DateTime _endTime = DateTime.now(); // Added: Default to now for end time
+  DateTime? _endTime; // Added: Default to now for end time
+  final DateFormat _dateTimeFormat = DateFormat('yyyy-MM-dd HH:mm');
   List<UrlLink> _urlLinks = []; // Added: Empty list for links
-  final List<SubEvent> _subEvents = []; // State variable
+  List<SubEvent> _subEvents = []; // State variable
   Map<String, dynamic> _extras = {}; // For custom fields
   String _customKey = ''; // Temp for key input
   String _urlLink = '';
@@ -39,10 +44,41 @@ class _AddEventScreenState extends State<AddEventScreen> {
   @override
   void initState() {
     super.initState();
-    // ... existing (if any)
-    _endTime = DateTime.now(); // Ensure it's set
-    _urlLinks = [];
-  }
+    _startTimeController.text = _startTime != null
+        ? _dateTimeFormat.format(_startTime!)
+        : '';
+    _startTimeController.addListener(() {
+      if (_startTimeController.text.isEmpty) {
+        setState(() => _startTime = null); // Clear to null on empty
+      }
+    });
+    _endTimeController.text = _endTime != null
+        ? _dateTimeFormat.format(_endTime!)
+        : '';
+    _endTimeController.addListener(() {
+      if (_endTimeController.text.isEmpty) {
+        setState(() => _endTime = null); // Clear to null on empty
+      }
+    });
+
+    if (widget.event != null) {
+      // Pre-fill for edit
+      _nameController.text = widget.event!.name;
+      _locationController.text = widget.event!.location ?? '';
+      _type = widget.event!.type;
+      _costController.text = widget.event!.cost?.toString() ?? '';
+      _startTime = widget.event!.startTime;
+      _durationMinutes = widget.event!.duration?.inMinutes ?? 0;
+      _detailsController.text = widget.event!.details ?? '';
+      _customTypeController.text = widget.event!.customType ?? '';
+      _costType = widget.event!.costType ?? CostType.estimated;
+      _endTime = widget.event!.endTime;
+      _subEvents = List<SubEvent>.from(widget.event!.subEvents);
+      _urlLinks = widget.event!.urlLinks;
+    } else {
+      _urlLinks = [];
+    }
+  } // ... existing (if any)
 
   @override
   void dispose() {
@@ -51,6 +87,8 @@ class _AddEventScreenState extends State<AddEventScreen> {
     _costController.dispose();
     _detailsController.dispose();
     _customTypeController.dispose();
+    _startTimeController.dispose();
+    _endTimeController.dispose();
     super.dispose();
   }
 
@@ -67,7 +105,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
       final userProvider = Provider.of<UserProvider>(context, listen: false);
 
       final newEvent = Event(
-        id: DateTime.now().millisecondsSinceEpoch.toString(), // Temp ID
+        id: widget.event?.id,
         name: _nameController.text,
         location: _locationController.text,
         details: _detailsController.text,
@@ -89,10 +127,14 @@ class _AddEventScreenState extends State<AddEventScreen> {
       );
 
       try {
-        await planProvider.addEvent(
-          newEvent,
-          userProvider.token,
-        ); // Backend save
+        if (widget.event == null) {
+          await planProvider.addEvent(newEvent, userProvider.token); // Add new
+        } else {
+          await planProvider.updateEvent(
+            newEvent,
+            userProvider.token,
+          ); // Update existing
+        }
         if (mounted) {
           Navigator.pop(context); // Back to PlanDetailScreen
           ScaffoldMessenger.of(
@@ -108,11 +150,16 @@ class _AddEventScreenState extends State<AddEventScreen> {
       } finally {
         setState(() => _isSaving = false);
       }
+      /*try {
+        await planProvider.Event(newEvent, userProvider.token); // Backend save
+      } catch (e) {
+      } finally {
+      }*/
     }
   }
 
   // Add sub-event (e.g., on button tap)
-  void _addSubEvent(
+  /*void _addSubEvent(
     String name,
     String subType,
     String location,
@@ -132,6 +179,12 @@ class _AddEventScreenState extends State<AddEventScreen> {
     });
   }
 
+  void _addSubEvent(SubEvent newSubEvent) {
+    setState(() {
+      _subEvents.add(newSubEvent); // Safe—mutates the list (no reassign needed)
+    });
+  }*/
+
   void _addLink(String urlName, String url) {
     if (url.isNotEmpty) {
       setState(() {
@@ -140,7 +193,42 @@ class _AddEventScreenState extends State<AddEventScreen> {
     }
   }
 
-  Future<void> _pickStartTime() async {
+  // Reusable combo picker—returns the new DateTime or null if cancelled
+  Future<DateTime?> _showComboDateTimePicker({
+    DateTime? initialDateTime,
+  }) async {
+    if (!mounted) return null; // Check if widget still exists
+
+    final date = await showDatePicker(
+      context: context,
+      initialDate: initialDateTime ?? DateTime.now(),
+      firstDate: DateTime.now(),
+      lastDate: DateTime(2100),
+    );
+    if (date == null) return null; // Cancelled—return null
+
+    if (!mounted) return date; // Check after await
+
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(initialDateTime ?? DateTime.now()),
+    );
+    if (time == null) {
+      return date; // Date set, time cancelled—return date with 00:00
+    }
+
+    if (!mounted) return date; // Check after await
+
+    return DateTime(
+      date.year,
+      date.month,
+      date.day,
+      time.hour,
+      time.minute,
+    ); // Return the new combined DateTime
+  }
+
+  /*Future<void> _pickStartTime() async {
     final time = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(_startTime),
@@ -179,18 +267,16 @@ class _AddEventScreenState extends State<AddEventScreen> {
         _updateDuration(); // Optional: Recalculate duration if endTime changes
       });
     }
-  }
+  }*/
 
   // Helper to recalculate duration when endTime changes
-  void _updateDuration() {
-    final duration = _endTime
-        .difference(_startTime)
-        .inMinutes; // endTime - startTime = minutes
-    setState(() {
-      _durationMinutes = duration > 0
-          ? duration
-          : 60; // Min 60 if negative/zero
-    });
+  void updateDuration() {
+    if (_startTime != null && _endTime != null) {
+      final duration = _endTime!.difference(_startTime!).inMinutes;
+      setState(
+        () => _durationMinutes = duration > 0 ? duration : 0,
+      ); // Set duration (min 0)
+    }
   }
 
   @override
@@ -216,8 +302,8 @@ class _AddEventScreenState extends State<AddEventScreen> {
               TextFormField(
                 controller: _locationController,
                 decoration: const InputDecoration(labelText: 'Location'),
-                validator: (value) =>
-                    value?.isEmpty ?? true ? 'Location required' : null,
+                /*validator: (value) =>
+                    value?.isEmpty ?? true ? 'Location required' : null,*/
               ),
               const SizedBox(height: 16),
               TextFormField(
@@ -251,11 +337,11 @@ class _AddEventScreenState extends State<AddEventScreen> {
                 controller: _costController,
                 decoration: const InputDecoration(labelText: 'Cost'),
                 keyboardType: TextInputType.number,
-                validator: (value) {
+                /*validator: (value) {
                   final cost = double.tryParse(value ?? '');
                   if (cost == null || cost < 0) return 'Valid cost required';
                   return null;
-                },
+                },*/
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<CostType>(
@@ -278,14 +364,83 @@ class _AddEventScreenState extends State<AddEventScreen> {
               Row(
                 children: [
                   Expanded(
-                    child: ListTile(
-                      title: const Text('Start Time'),
-                      subtitle: Text(_startTime.toString().substring(11, 16)),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.access_time),
-                        onPressed: _pickStartTime,
+                    child: TextFormField(
+                      decoration: const InputDecoration(
+                        labelText: 'Start Date/Time',
                       ),
+                      controller: _startTimeController,
+                      onChanged: (value) {
+                        if (value.isEmpty) {
+                          _startTime =
+                              null; // Clear to null if user deletes text
+                        } else {
+                          // Parse if valid (optional—use try-catch for format)
+                          try {
+                            _startTime = _dateTimeFormat.parse(value);
+                          } catch (e) {
+                            // Invalid—keep previous or show error
+                          }
+                        }
+                      },
+                      validator: (value) {
+                        if (value == null || value.isEmpty) return null;
+                        return null;
+                      },
                     ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.date_range),
+                    onPressed: () async {
+                      final newDateTime = await _showComboDateTimePicker(
+                        initialDateTime: _startTime,
+                      );
+                      if (newDateTime != null) {
+                        setState(() => _startTime = newDateTime);
+                        updateDuration(); // Added: Recalculate after endTime change
+                      }
+                    },
+                    tooltip: 'Pick Start Date/Time',
+                  ),
+                ],
+              ),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      decoration: const InputDecoration(
+                        labelText: 'End Date/Time',
+                      ),
+                      controller: _endTimeController,
+                      onChanged: (value) {
+                        if (value.isEmpty) {
+                          _endTime = null; // Clear to null if user deletes text
+                        } else {
+                          // Parse if valid (optional—use try-catch for format)
+                          try {
+                            _endTime = _dateTimeFormat.parse(value);
+                          } catch (e) {
+                            // Invalid—keep previous or show error
+                          }
+                        }
+                      },
+                      validator: (value) {
+                        if (value == null || value.isEmpty) return null;
+                        return null;
+                      },
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.date_range),
+                    onPressed: () async {
+                      final newDateTime = await _showComboDateTimePicker(
+                        initialDateTime: _startTime,
+                      );
+                      if (newDateTime != null) {
+                        setState(() => _endTime = newDateTime);
+                        updateDuration(); // Added: Recalculate after endTime change
+                      }
+                    },
+                    tooltip: 'Pick End Date/Time',
                   ),
                 ],
               ),
@@ -297,12 +452,12 @@ class _AddEventScreenState extends State<AddEventScreen> {
                 keyboardType: TextInputType.number,
                 onChanged: (value) =>
                     _durationMinutes = int.tryParse(value) ?? 0,
-                validator: (value) {
+                /*validator: (value) {
                   final minutes = int.tryParse(value ?? '');
                   if (minutes == null || minutes < 1)
                     return 'Valid duration required';
                   return null;
-                },
+                },*/
               ),
               // Links section
               const Text(
@@ -341,24 +496,6 @@ class _AddEventScreenState extends State<AddEventScreen> {
                   ),
                 ),
               ],
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: ListTile(
-                      title: const Text('End Time'),
-                      subtitle: Text(
-                        _endTime.toString().substring(11, 16),
-                      ), // Time format
-                      trailing: IconButton(
-                        icon: const Icon(Icons.access_time),
-                        onPressed:
-                            _pickEndTime, // New helper for end time picker
-                      ),
-                    ),
-                  ),
-                ],
-              ),
               const SizedBox(height: 24),
               SizedBox(
                 width: double.infinity,
@@ -370,7 +507,9 @@ class _AddEventScreenState extends State<AddEventScreen> {
                           height: 20,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Text('Add Event'),
+                      : Text(
+                          widget.event == null ? 'Add Event' : 'Update Event',
+                        ),
                 ),
               ),
             ],
