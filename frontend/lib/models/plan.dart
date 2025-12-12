@@ -1,5 +1,4 @@
 import '../models/user.dart'; // Add this line for User class in participants
-import '../utils/logger.dart';
 
 class Plan {
   final String id;

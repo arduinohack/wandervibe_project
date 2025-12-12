@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'login_screen.dart'; // Navigate on logout
-import 'signup_screen.dart'; // Navigate to signup
+// Navigate to signup
 import '../models/plan.dart';
 import '../providers/plan_provider.dart';
 import '../providers/user_provider.dart'; // For role and logout

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart'; // Added for IconData in icon getter
+// Added for IconData in icon getter
 // import 'package:timezone/timezone.dart' as tz; // For time zone handling (add to pubspec.yaml if needed)
 import './event_type.dart';
 
@@ -24,53 +24,63 @@ class UrlLink {
 
 // Sub-event class for composite events (e.g., departure/arrival in flight)
 class SubEvent {
-  final String name; // e.g., 'Departure'
-  final String location;
-  final DateTime? time;
-  final int duration; // Minutes
-  final String details;
-  final String subType; // 'departure', 'arrival'
-  final Map<String, dynamic>
-  extras; // Added: User-defined fields (e.g., {'luggage': '2 bags'})
+  final String name;
+  final String? location;
+  final DateTime? startTime; // Changed: Explicitly nullable
+  final int? duration;
+  final DateTime? endTime;
+  final String? details;
+  final String subType;
+  final Map<String, dynamic> extras;
+  final String? serviceNumber;
+  final String? serviceClass;
 
   SubEvent({
     required this.name,
-    this.location = '',
-    this.time, // Fixed: Default to current time (non-null)
-    this.duration = 0,
-    this.details = '',
+    this.location,
+    this.startTime, // Changed: Optional, nullable (no 'required')
+    this.duration,
+    this.endTime,
+    this.details,
     required this.subType,
-    this.extras = const {}, // Default empty map
+    this.extras = const {},
+    this.serviceNumber,
+    this.serviceClass,
   });
 
   factory SubEvent.fromJson(Map<String, dynamic> json) {
     return SubEvent(
       name: json['name'] ?? '',
-      location: json['location'] ?? '',
-      time: json['time'] != null ? DateTime.parse(json['time']) : null,
-      duration: json['duration'] ?? 0,
-      details: json['details'] ?? '',
+      location: json['location'],
+      startTime: json['startTime'] != null
+          ? DateTime.parse(json['startTime'])
+          : null, // Matches DateTime?
+      duration: json['duration'] as int?,
+      endTime: json['endTime'] != null
+          ? DateTime.parse(json['endTime'])
+          : null, // Matches DateTime?
+      details: json['details'],
       subType: json['subType'] ?? '',
-      // gate: json['gate'],
-      // baggageClaim: json['baggageClaim'],
-      extras: Map<String, dynamic>.from(
-        json['extras'] ?? {},
-      ), // Parse map or empty
+      extras: Map<String, dynamic>.from(json['extras'] ?? {}),
+      serviceNumber: json['serviceNumber'],
+      serviceClass: json['serviceClass'],
     );
   }
 
   Map<String, dynamic> toJson() {
-    return {
+    final map = {
       'name': name,
       'location': location,
-      'time': time?.toIso8601String(),
+      'startTime': startTime?.toIso8601String(),
       'duration': duration,
+      'endTime': endTime?.toIso8601String(),
       'details': details,
       'subType': subType,
-      // if (gate != null) 'gate': gate,
-      // if (baggageClaim != null) 'baggageClaim': baggageClaim,
-      'extras': extras, // Serialize map
+      'extras': extras,
     };
+    if (serviceNumber != null) map['serviceNumber'] = serviceNumber;
+    if (serviceClass != null) map['serviceClass'] = serviceClass;
+    return map;
   }
 
   SubEvent copyWith({
@@ -78,6 +88,7 @@ class SubEvent {
     String? location,
     DateTime? startTime,
     int? duration,
+    DateTime? endTime,
     String? details,
     String? subType,
     String? gate,
@@ -87,8 +98,9 @@ class SubEvent {
     return SubEvent(
       name: name ?? this.name,
       location: location ?? this.location,
-      time: startTime ?? this.time,
+      startTime: startTime ?? this.startTime,
       duration: duration ?? this.duration,
+      endTime: endTime ?? this.endTime,
       details: details ?? this.details,
       subType: subType ?? this.subType,
       // gate: gate ?? this.gate,
@@ -99,131 +111,229 @@ class SubEvent {
 }
 
 class Event {
-  final String? id; // Event ID?
+  final String? id;
   final String planId;
   final String name;
   final String? location;
   final EventType type;
   final double? cost;
-  final DateTime? startTime;
-  final Duration? duration;
-  final String? details;
-  final String? customType;
   final CostType? costType;
+  final DateTime? startTime; // Changed: Nullable
+  final Duration? duration;
   final DateTime? endTime;
   final int? eventNum;
   final String? status;
   final List<String>? missingFields;
   final List<SubEvent> subEvents;
-  final List<UrlLink> urlLinks; // e.g., {'maps': 'url'}
+  final List<UrlLink> urlLinks;
+  final String? details;
+  final String? customType;
+  final String? serviceProvider;
+  final String? bookingReference;
+  final Map<String, dynamic> extras;
   final DateTime? createdAt;
-  int? dayNumber; // Computed later in provider for itinerary
 
   Event({
-    this.id, // only populated once an event is created, null for new
-    required this.planId, // the planId that this event is part of
-    required this.name, // required - gotta have a name
-    this.location = '',
-    this.details,
-    required this.type, // gotta have a type
-    this.customType,
+    this.id,
+    required this.planId,
+    required this.name,
+    this.location,
+    this.type = EventType.activity,
     this.cost,
-    this.costType = CostType.estimated,
-    this.startTime,
+    this.costType,
+    this.startTime, // Changed: Optional, nullable
     this.duration,
     this.endTime,
-    this.eventNum, // the order of events in a plan/trip will be sorted by a combo of eventNum and startTime
-    this.status = 'draft',
-    this.missingFields = const [],
+    this.eventNum,
+    this.status,
+    this.missingFields,
     this.subEvents = const [],
     this.urlLinks = const [],
-    this.createdAt, // only populated once an event is created, null for new
-    this.dayNumber, // a front end calculated field
+    this.details,
+    this.customType,
+    this.serviceProvider,
+    this.bookingReference,
+    this.extras = const {},
+    this.createdAt,
   });
 
-  // Factory to create from JSON (for API responses from backend)
+  // NEW: Getters for effective times (Cases 1-3)
+  DateTime? get effectiveStartTime {
+    if (startTime != null && endTime != null) {
+      return startTime; // Case 1: Both defined
+    } else if (startTime != null &&
+        duration != null &&
+        duration! > Duration.zero &&
+        endTime == null) {
+      return startTime; // Case 2: Start + duration
+    } else if (endTime != null &&
+        duration != null &&
+        duration! > Duration.zero &&
+        startTime == null) {
+      return endTime!.subtract(duration!); // Case 3: End - duration
+    } else if (subEvents.isNotEmpty) {
+      // Fallback: Use earliest sub-event startTime, filter out nulls
+      final validStartTimes = subEvents
+          .map((se) => se.startTime)
+          .where((dt) => dt != null)
+          .cast<DateTime>();
+      if (validStartTimes.isNotEmpty) {
+        return validStartTimes.reduce((a, b) => a.isBefore(b) ? a : b);
+      }
+      return null; // No valid start times
+    }
+    return null; // Fallback for drafts
+  }
+
+  DateTime? get effectiveEndTime {
+    if (startTime != null && endTime != null) {
+      return endTime; // Case 1
+    } else if (startTime != null &&
+        duration != null &&
+        duration! > Duration.zero &&
+        endTime == null) {
+      return startTime!.add(
+        duration!,
+      ); // Case 2: Start + duration (safe with !)
+    } else if (endTime != null &&
+        duration != null &&
+        duration! > Duration.zero &&
+        startTime == null) {
+      return endTime; // Case 3
+    } else if (subEvents.isNotEmpty) {
+      // Fallback: Use latest sub-event startTime, filter out nulls
+      final validStartTimes = subEvents
+          .map((se) => se.startTime)
+          .where((dt) => dt != null)
+          .cast<DateTime>();
+      if (validStartTimes.isNotEmpty) {
+        return validStartTimes.reduce((a, b) => a.isAfter(b) ? a : b);
+      }
+      return null; // No valid start times
+    }
+    return null; // Fallback
+  }
+
   factory Event.fromJson(Map<String, dynamic> json) {
     return Event(
-      id: json['_id'] ?? json['id'], // From backend (null if not there)
+      id: json['_id'] ?? json['id'],
       planId: json['planId'] ?? '',
-      name: json['name'] ?? '',
-      location: json['location'] ?? '',
-      details: json['details'] ?? '',
-      type: EventType.values.firstWhere(
-        (e) => e.toString().split('.').last == json['type'],
-        orElse: () => EventType.dining, // Default if invalid
-      ),
-      customType: json['customType'] ?? '',
-      cost: (json['cost'] ?? 0.0).toDouble(),
-      costType: _costTypeFromString(
-        json['costType'] ?? 'estimated',
-      ), // Parse to enum
-      startTime: DateTime.parse(
-        json['startTime'] ?? DateTime.now().toIso8601String(),
-      ),
-      duration: Duration(
-        minutes: json['duration'] ?? 0,
-      ), // Parse from backend (minutes as int)
-      endTime: DateTime.parse(
-        json['endTime'] ?? DateTime.now().toIso8601String(),
-      ),
-      eventNum: json['eventNum'] ?? 0,
+      name: json['name'] ?? 'Unnamed Event',
+      location: json['location'],
+      type: _typeFromString(json['type'] ?? 'activity'),
+      cost: (json['cost'] as num?)?.toDouble(),
+      costType: _costTypeFromString(json['costType'] ?? 'estimated'),
+      startTime: json['startTime'] != null
+          ? DateTime.parse(json['startTime'])
+          : null, // Matches DateTime?
+      duration: json['duration'] != null
+          ? Duration(minutes: json['duration'] as int)
+          : null,
+      endTime: json['endTime'] != null ? DateTime.parse(json['endTime']) : null,
+      eventNum: json['eventNum'],
       status: json['status'] ?? 'draft',
       missingFields: List<String>.from(json['missingFields'] ?? []),
-      subEvents: (json['subEvents'] ?? [])
-          .map<SubEvent>((se) => SubEvent.fromJson(se))
+      subEvents: (json['subEvents'] as List<dynamic>? ?? [])
+          .map((e) => SubEvent.fromJson(e as Map<String, dynamic>))
           .toList(),
-      urlLinks: (json['urlLinks'] ?? [])
-          .map<UrlLink>((l) => UrlLink.fromJson(l))
+      urlLinks: (json['urlLinks'] as List<dynamic>? ?? [])
+          .map((e) => UrlLink.fromJson(e as Map<String, dynamic>))
           .toList(),
-      createdAt: DateTime.parse(
-        json['createdAt'] ?? DateTime.now().toIso8601String(),
-      ),
+      details: json['details'],
+      customType: json['customType'],
+      serviceProvider: json['serviceProvider'],
+      bookingReference: json['bookingReference'],
+      extras: Map<String, dynamic>.from(json['extras'] ?? {}),
+      createdAt: json['createdAt'] != null
+          ? DateTime.parse(json['createdAt'])
+          : null,
     );
   }
 
-  // To JSON for API sends
   Map<String, dynamic> toJson() {
+    // Check for negative duration and adjust if needed
+    final effectiveDuration = duration != null && duration!.isNegative
+        ? Duration
+              .zero // Avoid negative durations
+        : duration;
+
     return {
-      if (id != null) 'id': id, // Only send if not null (for updates)
+      if (id != null) '_id': id,
       'planId': planId,
       'name': name,
-      'location': location,
-      'details': details,
+      'location': location ?? '',
       'type': type.toString().split('.').last,
-      'customType': customType,
-      'cost': cost,
-      'costType': costType
-          .toString()
-          .split('.')
-          .last, // Enum to string for backend
-      'startTime': startTime?.toIso8601String() ?? '',
-      'duration':
-          duration?.inMinutes ?? 0, // Fixed: ?. for null-safe, ?? 0 for default
-      'endTime': endTime?.toIso8601String() ?? '',
-      'urlLinks': urlLinks.map((l) => l.toJson()).toList(), // Serialize array
-      'subEvents': subEvents.map((se) => se.toJson()).toList(),
-      'createdAt': createdAt?.toIso8601String() ?? '',
+      'cost': cost ?? 0.0,
+      'costType': costType?.toString().split('.').last ?? 'estimated',
+      'startTime': startTime?.toIso8601String(),
+      'duration': effectiveDuration?.inMinutes ?? 0, // Use adjusted duration
+      'endTime': endTime?.toIso8601String(),
+      'eventNum': eventNum ?? 0,
+      'status': status ?? 'draft',
+      'missingFields': missingFields ?? [],
+      'subEvents': subEvents.map((e) => e.toJson()).toList(),
+      'urlLinks': urlLinks.map((e) => e.toJson()).toList(),
+      'details': details ?? '',
+      'customType': customType ?? '',
+      if (serviceProvider != null) 'serviceProvider': serviceProvider,
+      if (bookingReference != null) 'bookingReference': bookingReference,
+      'extras': extras,
+      if (createdAt != null) 'createdAt': createdAt!.toIso8601String(),
     };
   }
 
-  DateTime get finishTime {
-    if (duration?.isNegative ?? false) {
-      return startTime ??
-          DateTime.now(); // Fixed: ?. for null-safe, ?? false for default
+  // Helper methods outside the class
+  static EventType _typeFromString(String typeStr) {
+    switch (typeStr.toLowerCase()) {
+      case 'flight':
+        return EventType.flight;
+      case 'hotel':
+        return EventType.hotel;
+      case 'train':
+        return EventType.train;
+      case 'carrental':
+        return EventType.carRental;
+      case 'carservice':
+        return EventType.carService;
+      case 'drive':
+        return EventType.drive;
+      case 'bus':
+        return EventType.bus;
+      case 'ferry':
+        return EventType.ferry;
+      default:
+        return EventType.activity;
     }
-    return (startTime ?? DateTime.now()).add(
-      duration ?? Duration.zero,
-    ); // Null-safe add
   }
 
-  // Helper for costType parsing
   static CostType _costTypeFromString(String typeStr) {
     switch (typeStr.toLowerCase()) {
+      case 'estimated':
+        return CostType.estimated;
       case 'actual':
         return CostType.actual;
       default:
         return CostType.estimated;
     }
+  }
+
+  DateTime get finishTime {
+    if (duration?.isNegative ?? false) {
+      // Use this.duration for class field
+      return startTime ?? DateTime.now(); // Null-safe fallback
+    }
+    return (startTime ?? DateTime.now()).add(
+      duration ?? Duration.zero, // Null-safe add
+    );
+  }
+}
+
+// Helper for costType parsing
+CostType _costTypeFromString(String typeStr) {
+  switch (typeStr.toLowerCase()) {
+    case 'actual':
+      return CostType.actual;
+    default:
+      return CostType.estimated;
   }
 }

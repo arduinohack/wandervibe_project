@@ -146,8 +146,9 @@ class _SignupScreenState extends State<SignupScreen> {
                   if (value == null || value.isEmpty) return 'Email required';
                   if (!RegExp(
                     r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
-                  ).hasMatch(value))
+                  ).hasMatch(value)) {
                     return 'Invalid email';
+                  }
                   return null;
                 },
               ),
@@ -161,10 +162,12 @@ class _SignupScreenState extends State<SignupScreen> {
                 ),
                 obscureText: true,
                 validator: (value) {
-                  if (value == null || value.isEmpty)
+                  if (value == null || value.isEmpty) {
                     return 'Password required';
-                  if (value.length < 6)
+                  }
+                  if (value.length < 6) {
                     return 'Password must be at least 6 characters';
+                  }
                   return null;
                 },
               ),

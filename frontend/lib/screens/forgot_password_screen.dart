@@ -76,8 +76,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                   if (value == null || value.isEmpty) return 'Email required';
                   if (!RegExp(
                     r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
-                  ).hasMatch(value))
+                  ).hasMatch(value)) {
                     return 'Invalid email';
+                  }
                   return null;
                 },
               ),

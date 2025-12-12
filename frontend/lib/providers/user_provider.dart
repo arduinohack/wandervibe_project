@@ -97,7 +97,6 @@ class UserProvider extends ChangeNotifier {
             }),
           )
           .timeout(timeoutDuration);
-      ;
 
       if (response.statusCode == 201) {
         final data = json.decode(response.body);
@@ -130,7 +129,6 @@ class UserProvider extends ChangeNotifier {
               },
             )
             .timeout(timeoutDuration);
-        ;
         if (response.statusCode != 200) {
           logger.i(
             'Backend logout failed: ${response.statusCode}',
@@ -167,7 +165,6 @@ class UserProvider extends ChangeNotifier {
               },
             )
             .timeout(timeoutDuration);
-        ;
 
         if (response.statusCode == 200) {
           final data = json.decode(response.body);
@@ -180,7 +177,7 @@ class UserProvider extends ChangeNotifier {
           ); // Parse real user from backend
           notifyListeners();
           logger.i(
-            'Loaded and verified user from backend: ${data['user']['firstName']} (${_currentUserRole})',
+            'Loaded and verified user from backend: ${data['user']['firstName']} ($_currentUserRole)',
           );
         } else {
           logger.i('Token invalid—clearing');
@@ -284,7 +281,6 @@ class UserProvider extends ChangeNotifier {
             body: json.encode({'email': email}),
           )
           .timeout(timeoutDuration);
-      ;
 
       if (response.statusCode == 200) {
         logger.i('Forgot password email sent for $email');

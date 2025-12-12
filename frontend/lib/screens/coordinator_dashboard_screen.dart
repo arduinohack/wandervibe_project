@@ -126,8 +126,8 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
               children: [
                 Text(
                   _showAllPlans
-                      ? 'No plans matching your role yet'
-                      : 'No plans yet—create one!',
+                      ? 'No trips matching your role yet'
+                      : 'No trips yet—create one!',
                 ),
                 if (!_showAllPlans)
                   ElevatedButton(
@@ -194,7 +194,7 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
               child: ElevatedButton.icon(
                 onPressed: () => _showCreatePlanDialog(context),
                 icon: const Icon(Icons.add),
-                label: const Text('Create New Plan'),
+                label: const Text('Plan New Trip'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.green,
                   minimumSize: const Size(double.infinity, 50),
@@ -309,7 +309,7 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Create New Plan'),
+        title: const Text('PLan New Trip'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -357,7 +357,7 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
                 if (mounted) Navigator.pop(context);
               }
             },
-            child: const Text('Create'),
+            child: const Text('Plan New'),
           ),
         ],
       ),

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/user_provider.dart'; // For preferences
-import '../models/user.dart'; // For NotificationPreferences
+// For NotificationPreferences
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -68,10 +68,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       notificationPreferences: userProvider.currentUser!.notificationPreferences
           .copyWith(email: value),
     );
-    if (updatedUser != null) {
-      userProvider.setCurrentUser(updatedUser);
-    }
-    print('Email notifications: $value');
+    userProvider.setCurrentUser(updatedUser);
+      print('Email notifications: $value');
   }
 
   void _toggleSms(bool value) {
@@ -82,10 +80,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       notificationPreferences: userProvider.currentUser!.notificationPreferences
           .copyWith(sms: value),
     );
-    if (updatedUser != null) {
-      userProvider.setCurrentUser(updatedUser);
-    }
-    print('SMS notifications: $value');
+    userProvider.setCurrentUser(updatedUser);
+      print('SMS notifications: $value');
   }
 
   @override

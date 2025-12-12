@@ -1,10 +1,20 @@
+import 'package:flutter/foundation.dart'; // For kIsWeb (platform detection)
 import 'package:shared_preferences/shared_preferences.dart'; // Add for settings
+import 'dart:io'; // For Platform checks (Windows/Mac/Linux detection)
 
-// Load backend URL from local storage (default to emulator IP)
+// Load backend URL: localhost for web, stored/emulator for mobile
+// Load backend URL: localhost for web/desktop, stored/emulator for mobile
 Future<String> get backendBaseUrl async {
+  if (kIsWeb) {
+    return 'http://localhost:3000'; // Web (browser)
+  }
+  // Check for desktop platforms (Windows/Mac/Linux)—use localhost
+  if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
+    return 'http://localhost:3000'; // Native desktop app
+  }
+  // For mobile (Android/iOS): Use stored value or emulator default
   final prefs = await SharedPreferences.getInstance();
-  return prefs.getString('backendUrl') ??
-      'http://10.0.2.2:3000'; // Default emulator IP
+  return prefs.getString('backendUrl') ?? 'http://10.0.2.2:3000';
 }
 
 // API paths (use with await getBackendUrl() + path)

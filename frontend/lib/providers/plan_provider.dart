@@ -1,12 +1,14 @@
-import 'package:flutter/foundation.dart'; // For ChangeNotifier
+// For ChangeNotifier
 import 'package:http/http.dart'
     as http; // For API calls (add to pubspec.yaml if not there)
 import 'dart:convert'; // For JSON
-import 'package:provider/provider.dart'; // Added for Provider.of (token from UserProvider)
+// Added for Provider.of (token from UserProvider)
 import '../config/constants.dart'; // Add this line for backendBaseUrl
-import '../providers/user_provider.dart'; // Add this line for UserProvider (token)
+// Add this line for UserProvider (token)
+import 'package:flutter/material.dart'; // Added: Required for Icon
 import '../models/plan.dart'; // Your Plan model
 import '../models/event.dart'; // Your Event model
+import '../models/event_type.dart'; // Your Event model
 import '../models/user.dart'; // Your User model
 import '../utils/logger.dart';
 
@@ -66,7 +68,7 @@ class PlanProvider extends ChangeNotifier {
         );
         // Optional: Handle 'grouped' if used (e.g.,
         //_groupedEvents = data['grouped'] ?? {});
-        _computeDayNumbers(planId); // Calculate day numbers
+        // _computeDayNumbers(planId); // Calculate day numbers
       }
     } catch (e) {
       logger.i('Error fetching itinerary: $e');
@@ -75,60 +77,6 @@ class PlanProvider extends ChangeNotifier {
     } finally {
       _isLoading = false;
       notifyListeners();
-    }
-  }
-
-  // Private method to compute Day Numbers (TZ logic from requirements)
-  void _computeDayNumbers(String planId) {
-    final plan = _plans.firstWhere(
-      (t) => t.id == planId,
-      orElse: () => Plan(
-        id: '',
-        type: '',
-        name: '',
-        destination: '',
-        startDate: DateTime.now(),
-        endDate: DateTime.now(),
-        autoCalculateStartDate: false,
-        autoCalculateEndDate: false,
-        location: '',
-        budget: 0.0,
-        planningState: 'initial',
-        timeZone: 'UTC',
-        ownerId: '',
-        createdAt: DateTime.now(),
-      ),
-    );
-    final planTz = plan
-        .timeZone; // Mock TZ location (add luxon or flutter_timezone later for DST)
-
-    _events.sort((a, b) {
-      final dateA = a.startTime;
-      final dateB = b.startTime;
-      if (dateA != null && dateB != null) {
-        return dateA.compareTo(dateB); // Safe compare if both non-null
-      }
-      return 0; // Or sort nulls last: return (dateA == null ? 1 : 0) - (dateB == null ? 1 : 0);
-    });
-
-    int currentDay = 1;
-    DateTime? prevEndTime = _events.isNotEmpty
-        ? _events[0].endTime
-        : DateTime.now();
-
-    for (int i = 1; i < _events.length; i++) {
-      Event event = _events[i];
-      DateTime eventStart =
-          event.startTime ??
-          DateTime.now(); // Adjust for TZ/DST in real (use tz.TZDateTime.from)
-
-      // Increment day if startTime is after midnight relative to prevEndTime in relevant TZ
-      if (eventStart.isAfter(prevEndTime!.add(const Duration(days: 1)))) {
-        // Fixed line
-        currentDay++;
-      }
-      event.dayNumber = currentDay;
-      prevEndTime = event.endTime;
     }
   }
 
@@ -193,7 +141,7 @@ class PlanProvider extends ChangeNotifier {
       if (token == null) throw Exception('No token—log in first');
 
       final response = await http.get(
-        Uri.parse((await backendBaseUrl) + '/api/plans/$planId/users'),
+        Uri.parse('${await backendBaseUrl}/api/plans/$planId/users'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
@@ -243,12 +191,12 @@ class PlanProvider extends ChangeNotifier {
         ); // Backend returns the created plan
         _plans.add(createdPlan);
         notifyListeners();
-        print('Created plan: ${createdPlan.name} from backend');
+        logger.i('Created plan: ${createdPlan.name} from backend');
       } else {
         throw Exception('Failed to create plan: ${response.statusCode}');
       }
     } catch (e) {
-      print('Error creating plan: $e');
+      logger.e('Error creating plan: $e');
       // Fallback: Add mock
       _plans.add(newPlan);
       notifyListeners();
@@ -281,7 +229,10 @@ class PlanProvider extends ChangeNotifier {
         notifyListeners();
         logger.i('Added event: ${createdEvent.name} from backend');
       } else {
-        throw Exception('Failed to add event: ${response.statusCode}');
+        final errorData = json.decode(response.body);
+        throw Exception(
+          errorData['message'] ?? 'Failed to add event: ${response.statusCode}',
+        );
       }
     } catch (e) {
       logger.e('Error adding event: $e');
@@ -308,16 +259,21 @@ class PlanProvider extends ChangeNotifier {
 
       final baseUrl = await backendBaseUrl; // Await first (get the string)
       final url = Uri.parse('$baseUrl$apiEvents/${updatedEvent.id}');
-      final response = await http.post(
+      final body = json.encode(updatedEvent.toJson());
+      logger.i('Updating event: $body'); // Log data sent
+      final response = await http.put(
         url,
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
         },
-        body: json.encode(updatedEvent.toJson()),
+        body: body,
       );
 
-      if (response.statusCode == 201) {
+      logger.i(
+        'Update response: ${response.statusCode} ${response.body}',
+      ); // Log response
+      if (response.statusCode == 200) {
         final index = _events.indexWhere((e) => e.id == updatedEvent.id);
         if (index != -1) {
           _events[index] = updatedEvent;
@@ -334,6 +290,136 @@ class PlanProvider extends ChangeNotifier {
       // _events.add(updatedEvent);
       _computeDayNumbers(updatedEvent.planId);
       notifyListeners();
+    }
+  }
+
+  Future<void> deleteEvent(String deleteEventId, String? token) async {
+    if (deleteEventId.isEmpty) {
+      throw Exception('Invalid event ID'); // Early check for empty ID
+    }
+
+    _isLoading = true;
+    notifyListeners(); // Show spinner
+
+    try {
+      if (token == null) throw Exception('No token—log in first');
+
+      final baseUrl = await backendBaseUrl; // Await first (get the string)
+      final url = Uri.parse('$baseUrl$apiEvents/$deleteEventId');
+      final response = await http.delete(
+        url,
+        headers: {'Authorization': 'Bearer $token'},
+      );
+
+      if (response.statusCode == 200) {
+        _events.removeWhere(
+          (event) => event.id == deleteEventId,
+        ); // Remove from local list
+        logger.i('Deleted event $deleteEventId');
+      } else {
+        throw Exception('Delete event failed: ${response.statusCode}');
+      }
+    } catch (e) {
+      logger.e('Delete event error: $e');
+      rethrow; // Bubble up for UI handling (e.g., SnackBar)
+    } finally {
+      _isLoading = false;
+      notifyListeners(); // Refresh UI
+    }
+  }
+
+  // Full comparator for sorting (Cases 1-4: Time prevails, eventNum fallback)
+  int _compareEvents(Event a, Event b) {
+    // Primary: effectiveStartTime (Cases 1-3)
+    final aStart =
+        a.effectiveStartTime ?? DateTime(2100); // Nulls last (far future)
+    final bStart = b.effectiveStartTime ?? DateTime(2100);
+    final compareStart = aStart.compareTo(bStart);
+    if (compareStart != 0) return compareStart;
+
+    // Secondary: effectiveEndTime if start ties
+    final aEnd = a.effectiveEndTime ?? DateTime(2100);
+    final bEnd = b.effectiveEndTime ?? DateTime(2100);
+    final compareEnd = aEnd.compareTo(bEnd);
+    if (compareEnd != 0) return compareEnd;
+
+    // Tertiary: eventNum fallback (Case 4)
+    return (a.eventNum ?? 0).compareTo(b.eventNum ?? 0);
+  }
+
+  Map<String, int> _computeDayNumbers(String planId) {
+    final planEvents = List<Event>.from(
+      _events.where((e) => e.planId == planId),
+    );
+    if (planEvents.isEmpty) return {};
+
+    planEvents.sort(_compareEvents);
+
+    final dayNumbers = <String, int>{}; // Map to store eventId -> dayNumber
+    int currentDay = 1;
+    DateTime? priorEnd = planEvents.first.effectiveStartTime ?? DateTime.now();
+
+    for (var event in planEvents) {
+      final eventId = event.id ?? ''; // Use event ID as key
+      dayNumbers[eventId] = currentDay;
+
+      final nextStart = event.effectiveStartTime ?? priorEnd;
+      final priorEndNonNull = priorEnd ?? DateTime.now();
+      if ((nextStart?.isAfter(priorEndNonNull) ?? false) &&
+          (nextStart?.day ?? 0) > (priorEndNonNull.day)) {
+        currentDay++;
+      }
+      priorEnd =
+          event.effectiveEndTime ??
+          nextStart!.add(event.duration ?? Duration.zero);
+    }
+    return dayNumbers; // Return the computed map
+  }
+
+  Map<String, int> getDayNumbersForPlan(String planId) {
+    return _computeDayNumbers(planId);
+  }
+
+  // Getter for sorted events with all logic (Cases 1-6)
+  List<Event> get sortedEvents {
+    final planEvents = List<Event>.from(
+      _events.where((e) => e.planId == (_currentPlanId ?? '')),
+    ); // Fixed: ?? '' for filter
+    _computeDayNumbers(_currentPlanId ?? ''); // Fixed: ?? '' for parameter
+    return planEvents..sort(_compareEvents);
+  }
+
+  // Setter for current plan ID
+  set currentPlanId(String? planId) {
+    _currentPlanId = planId;
+    notifyListeners();
+  }
+
+  // Getter for current plan ID
+  String? get currentPlanId => _currentPlanId;
+
+  // NEW: Method to get icon based on event type
+  // Method to get icon data based on event type
+  IconData getIcon(EventType type) {
+    switch (type) {
+      case EventType.flight:
+        return Icons.flight;
+      case EventType.hotel:
+        return Icons.hotel;
+      case EventType.train:
+        return Icons.train;
+      case EventType.carRental:
+      case EventType.carService:
+      case EventType.drive:
+        return Icons.directions_car;
+      case EventType.taxi:
+        return Icons.local_taxi;
+      case EventType.bus:
+        return Icons.directions_bus;
+      case EventType.ferry:
+        return Icons.directions_boat;
+      default:
+        return Icons.event;
     }
   }
 }
