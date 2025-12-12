@@ -2,6 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const authMiddleware = require('../middleware/auth.js');  // Token validation
 const Event = require('../models/Event.js');  // Your Event model
+const { checkPermission } = require('../utils/permissions');
 const Joi = require('joi');  // For validation (npm i joi if missing)
 const logger = require('../utils/logger');
 const { v4: uuidv4 } = require('uuid');  // Add at top if using UUID (npm i uuid)
@@ -10,22 +11,27 @@ const router = express.Router();
 
 // Validation schema for core event fields
 const eventValidationSchema = Joi.object({
-  name: Joi.string().required(),
+  _id: Joi.string().optional(),
+  name: Joi.string().required().min(1),
   location: Joi.string().optional().allow(''),
   type: Joi.string().required(),
+  serviceProvider: Joi.string().optional().allow(''),
+  bookingReference: Joi.string().optional().allow(''),
   cost: Joi.number().min(0).optional().default(0),
-  startTime: Joi.date().optional(),
+  startTime: Joi.date().allow(null).optional().default(null), // Fixed: Allow null explicitly
   duration: Joi.number().min(0).optional().default(0),
   planId: Joi.string().required(),
   details: Joi.string().optional().allow(''),
   customType: Joi.string().optional().allow(''),
   costType: Joi.string().valid('estimated', 'actual').default('estimated'),
-  endTime: Joi.date().optional(),
+  endTime: Joi.date().allow(null).optional().default(null), // Fixed: Allow null explicitly
   eventNum: Joi.number().integer().min(0).optional().default(0),
   status: Joi.string().valid('draft', 'complete').default('draft').optional(),
   missingFields: Joi.array().items(Joi.string()).optional().default([]),
   subEvents: Joi.array().optional().default([]),
+  urlLinks: Joi.array().optional().default([]),
   extras: Joi.object().optional().default({}),
+  createdAt: Joi.date().allow('').optional().default(null),
 });
 
 // Type-specific validation helper
@@ -75,11 +81,10 @@ router.get('/', authMiddleware , async (req, res) => {
 // GET /api/events/:id - Fetch single event
 router.get('/:id', authMiddleware, async (req, res) => {
   try {
+    const canRead = await checkPermission(req.user.userId, event.planId, 'read');
+    if (!canRead) return res.status(403).json({ message: 'Not authorized to read event' });
     const event = await Event.findById(req.params.id).populate('planId');
     if (!event) return res.status(404).json({ message: 'Event not found' });
-    if (event.planId.ownerId !== req.user.id && !event.planId.participants.includes(req.user.id)) {
-      return res.status(403).json({ message: 'Not authorized' });
-    }
     res.json({ event });
   } catch (error) {
     logger.error('Error fetching event:', error);
@@ -94,16 +99,23 @@ router.post('/', authMiddleware, async (req, res) => {
     // Always validate basics (Joi for all, but skip custom for draft)
     const { error, value } = eventValidationSchema.validate(req.body, { allowUnknown: true });
     if (error) {
-      return res.status(400).json({ message: error.details[0].message });
+      logger.error('Event Validation Schema: ',  error.details[0].message)
+       return res.status(400).json({ message: error.details[0].message });
     }
 
     // Destructure from validated value (defaults applied)
     const { name, location, type, cost, startTime, duration, planId, details, customType, costType, endTime, eventNum, status, missingFields, subEvents, extras } = value;
     
+    const canUpdate = await checkPermission(req.user.userId, planId, 'update');
+    if (!canUpdate) return res.status(403).json({ message: 'Not authorized to update event' });
+    
     // Skip additional validation for drafts
     if (status !== 'draft') {
       const validationError = validateEventSpecific(value);
-      if (validationError) return res.status(400).json({ message: validationError });
+      if (validationError) {
+        logger.error('Event Specific Validation Error: ', validationError);
+        return res.status(400).json({ message: validationError });
+      } 
     }
 
     // Calculate endTime if duration provided
@@ -115,6 +127,7 @@ router.post('/', authMiddleware, async (req, res) => {
     }
 
     if (calculatedEndTime <= new Date(startTime)) {
+      logger.error('endTime must be after StartTime');
       return res.status(400).json({ message: 'endTime must be after startTime' });
     }
 
@@ -174,21 +187,62 @@ router.put('/:id/reorder', authMiddleware, async (req, res) => {
 // PUT /api/events/:id - Update event
 router.put('/:id', authMiddleware, async (req, res) => {
   try {
-    const event = await Event.findById(req.params.id);
-    if (!event) return res.status(404).json({ message: 'Event not found' });
-    if (event.ownerId !== req.user.id) return res.status(403).json({ message: 'Not authorized' });
+    logger.info('In Update Event...');
 
-    const { error } = eventValidationSchema.validate(req.body);
-    if (error) return res.status(400).json({ message: error.details[0].message });
+    const { id: eventId } = req.params;
+    console.log('PUT route: ID from params:', eventId, 'Type:', typeof eventId, 'Length:', eventId.length);  // Log type/length
 
-    const validationError = validateEventSpecific(req.body);
-    if (validationError) return res.status(400).json({ message: validationError });
+    // Test direct query (bypass findById)
+    // const directEvent = await Event.findOne({ _id: eventId });
+    // console.log('Direct findOne result:', directEvent ? directEvent.name : 'null');
 
-    Object.assign(event, req.body);
+    const { error, value } = eventValidationSchema.validate(req.body);
+    if (error) {
+      console.log('Joi validation error:', error.details[0].message);
+      return res.status(400).json({ message: error.details[0].message });
+    }
+
+    console.log('Validated body:', value);  // Optional: Log cleaned body
+
+    const { name, location, type, cost, startTime, duration, planId, details, customType, costType, endTime, eventNum, status, missingFields, subEvents, extras } = value;
+    
+    const canUpdate = await checkPermission(req.user.userId, planId, 'update');
+    if (!canUpdate) return res.status(403).json({ message: 'Not authorized to update event' });
+
+    const event = await Event.findById({_id: eventId});  // Your original query
+    console.log('findById result:', event ? event.name : 'null');
+
+    if (event) {
+      console.log('Found event:', event ? event.name : 'null');  // Log result
+    } else {
+      console.log('Event not found for ID:', eventId);  // Fixed: Use eventId
+      return res.status(404).json({ message: 'Event not found' });
+    }
+  
+    // Conditional validation for non-draft
+    if (value.status !== 'draft') {
+      const validationError = validateEventSpecific(value);
+      if (validationError) {
+        console.log('Specific validation error:', validationError);  // Log specific error
+        return res.status(400).json({ message: validationError });
+      }
+    }
+
+    // Update the event (use value directly—no destructuring needed)
+    Object.assign(event, value);
     await event.save();
-    res.json({ message: 'Event updated!', event });
+    console.log('Updated event:', event.name);
+
+    // Optional: Map _id to id in response if needed
+    const responseEvent = event.toObject();
+    if (responseEvent._id) {
+      responseEvent.id = responseEvent._id.toString();  // Alias for frontend
+      delete responseEvent._id;  // Clean up
+    }
+
+    res.status(200).json({ message: 'Event updated!', event: responseEvent });
   } catch (error) {
-    console.error('Error updating event:', error);
+    console.error('PUT event error:', error);  // Log full error (e.g., CastError)
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -196,19 +250,25 @@ router.put('/:id', authMiddleware, async (req, res) => {
 // DELETE /api/events/:id - Delete event if owner
 router.delete('/:id', authMiddleware, async (req, res) => {
   try {
-    const deletedEvent = await Event.findOneAndDelete({ 
-      _id: req.params.id,  // Match ID
-      ownerId: req.user.userId  // FIXED: Combined check with ownerId
-    });
 
-    if (!deletedEvent) {
-      return res.status(404).json({ message: 'Event not found or unauthorized' });  // 404 for both (secure)
+    const event = await Event.findById(req.params.id);
+
+    if (!event) {
+      return res.status(404).json({ message: 'Event not found' });
     }
 
-    res.json({ message: 'Event deleted!', deletedEvent });  // Optional: Return deleted for confirmation
+    // NOW it's safe to use event.planId
+    const canDelete = await checkPermission(req.user.userId, event.planId, 'delete');   
+    if (!canDelete) {
+      return res.status(403).json({ message: 'Permission denied' });
+    }
+
+    await Event.findByIdAndDelete(req.params.id);
+    res.json({ message: 'Event deleted successfully' });
   } catch (error) {
-    console.error('Error deleting event:', error);
+    console.error('Delete event error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
+
 module.exports = router;

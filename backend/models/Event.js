@@ -5,12 +5,18 @@ const { v4: uuidv4 } = require('uuid');  // Generate UUID
 const subEventSchema = new mongoose.Schema({
   name: { type: String, required: true },  // e.g., 'Departure'
   location: { type: String, default: '' },
-  time: { type: Date },
+  startTime: { type: Date },
   timeZone: {type: String, default: ''}, // Time zone of time in this subevent
   duration: { type: Number, default: 0 },  // Minutes
   details: { type: String, default: '' },
   subType: { type: String, required: true },  // 'departure', 'arrival', etc.
   extras: { type: mongoose.Schema.Types.Mixed },  // Added: User-defined fields (anything)
+  serviceNumber: { type: String },     // leveraged across a few different event types: flight number, train number, room number?
+  serviceClass: { 
+    type: String, 
+    enum: ['Economy', 'Premium Economy', 'Business', 'First'],
+    default: 'Economy'
+  },     // Economy / Business / First
 
   // Type-specific fields (optional, validated in pre-save)
   gate: { type: String },  // For departure
@@ -23,7 +29,7 @@ const subEventSchema = new mongoose.Schema({
 
   // Main Event schema
   const eventSchema = new mongoose.Schema({
-    _id: { type: String, default: uuidv4 },  // Added: Auto-generate UUID string (or omit for ObjectId)
+    _id: { type: String, default: () => require('uuid').v4() },  // Added: Auto-generate UUID string (or omit for ObjectId)
     name: { type: String, required: true },
     location: { type: String, default: '' },  // Fixed: Optional with default
     type: { type: String, required: true },  // 'flight', 'hotel', etc.
@@ -38,10 +44,15 @@ const subEventSchema = new mongoose.Schema({
     eventNum: { type: Number, default: 0, min: 0 },  // Added: Optional order number within plan for drafts (0 for dated)
     status: { type: String, enum: ['draft', 'complete'], default: 'draft' },  // Added: Draft/complete for incomplete itineraries
     missingFields: [{ type: String }],  // Array of missing field names (e.g., ['flightNumber'])
+    // === Generic transit fields (shared by flight, train, ferry, car, etc.) ===    
+    serviceProvider: { type: String },           // replaces 'airline', trainline
+    bookingReference: { type: String }, // replaces any old PNR field
+    // subEvents now carry per-leg details
     subEvents: [subEventSchema],  // Nested array for composite
     extras: { type: mongoose.Schema.Types.Mixed },  // Dynamic user fields
     ownerId: { type: String, required: true },
-  }, { timestamps: true });  // Auto createdAt/updatedAt
+    
+    }, { timestamps: true });  // Auto createdAt/updatedAt
 
 // Pre-save hook for type-specific validation
 eventSchema.pre('save', function (next) {
@@ -75,6 +86,15 @@ eventSchema.pre('save', function (next) {
   if (validationError) return next(new Error(validationError)); */
   next();
 });
+
+// Virtual 'id' alias for _id (for API consistency)
+eventSchema.virtual('id').get(function () {
+  return this._id;
+});
+
+// Include virtuals in JSON responses
+eventSchema.set('toJSON', { virtuals: true });
+eventSchema.set('toObject', { virtuals: true });
 
 // Export the model
 module.exports = mongoose.model('Event', eventSchema);

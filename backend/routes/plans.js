@@ -4,6 +4,7 @@ const PlanUser = require('../models/PlanUser');
 const User = require('../models/User');
 const Event = require('../models/Event');
 const authMiddleware = require('../middleware/auth.js');  // Add this line for token verification
+const { checkPermission } = require('../utils/permissions');
 const { DateTime } = require('luxon');  // For time zone/DST in Day Numbers
 const { v4: uuidv4 } = require('uuid');
 const { notifyUsers } = require('../utils/notifications');
@@ -66,6 +67,7 @@ router.post('/', authMiddleware, async (req, res) => {
 });
 
 // GET /api/plans (Protected: Lists user's plans as owner or participant)
+// get plans that user is an owner(VibeCoordinator), VibePlanner or Wanderer
 router.get('/', authMiddleware, async (req, res) => {
   logger.info('Lists user\'s plans as owner or participant', {
     userId: req.user.userId,
@@ -109,6 +111,7 @@ router.get('/', authMiddleware, async (req, res) => {
 */
 
 // GET /api/plans/:planId/users (Protected: Lists plan participants with roles)
+// Need to read users and role if the requesting user is owner or VibePlanner only
 router.get('/:planId/users', authMiddleware, async (req, res) => {
   const { planId } = req.params;
   logger.info('In Get /api/plans/{planID}/users - lists a plans users');
@@ -150,6 +153,7 @@ router.get('/:planId/users', authMiddleware, async (req, res) => {
 });
 
 // POST /api/plans/:planId/remove-user (Protected: Removes user by ID)
+// Owners can remove VibePlanners or Wanderers. VibePlanners can remove Wanderers.
 router.post('/:planId/remove-user', authMiddleware, async (req, res) => {
   const { planId } = req.params;
   const { userId: targetUserId } = req.body;
@@ -199,6 +203,7 @@ router.post('/:planId/remove-user', authMiddleware, async (req, res) => {
 });
 
 // POST /api/plans/:planId/reassign-coordinator (Protected: Transfers ownership to VibePlanner)
+// only owners of a plan can reassign coordinator role to an existing planner
 router.post('/:planId/reassign-coordinator', authMiddleware, async (req, res) => {
   const { planId } = req.params;
   const { targetUserId } = req.body;
@@ -242,17 +247,16 @@ router.post('/:planId/reassign-coordinator', authMiddleware, async (req, res) =>
 });
 
 // GET /api/plans/:planId/itinerary (Protected: Fetches sorted events with Day Numbers)
+// owners, assigned planners and assigned wanderers can get the plan itinierary
 router.get('/:planId/itinerary', authMiddleware, async (req, res) => {
   const { planId } = req.params;
 
   logger.info('In Get /api/plans/{planID}/itinerary - fetches sorted events with Day Numbers');
 
   try {
-    // Check caller is participant
-    const callerPlanUser = await PlanUser.findOne({ planId, userId: req.user.userId });
-    if (!callerPlanUser) {
-      return res.status(403).json({ msg: 'Access denied: Not a plan participant' });
-    }
+
+    const canRead = await checkPermission(req.user.userId, planId, 'read');
+    if (!canRead) return res.status(403).json({ message: 'Not authorized to read plan' });
 
     // Fetch plan for timeZone
     const plan = await Plan.findById(planId);

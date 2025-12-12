@@ -16,7 +16,10 @@ const planSchema = new mongoose.Schema({
   planningState: { type: String, enum: ['initial', 'reviewing', 'complete'], default: 'initial' },
   timeZone: { type: String, required: false },
   ownerId: { type: String, ref: 'User', required: true },
-  participants: [{ type: Schema.Types.ObjectId, ref: 'PlanUser', }],
+  participants: [{
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    role: { type: String, enum: ['VibePlanner', 'Wanderer'], required: true }
+  }],
   activityIds: [{ type: String, ref: 'Event' }]  // NEW: For eventPlan activities
 }, { timestamps: true });
 
