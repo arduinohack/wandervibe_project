@@ -1,7 +1,7 @@
 const express = require('express');
 const Invitation = require('../models/Invitation');
 const User = require('../models/User');
-const TripUser = require('../models/TripUser');  // FIXED: Import for role assignment on accept
+const PlanUser = require('../models/PlanUser');
 const { v4: uuidv4 } = require('uuid');
 const { notifyUsers } = require('../utils/notifications');
 const { roleCheck } = require('../middleware/roleCheck');  // Fixed: Destructure to get the function
@@ -31,7 +31,7 @@ router.post('/trips/:tripId/invite', roleCheck('VibePlanner'), async (req, res) 
     }
 
     // Check if already invited/participant
-    const existing = await Invitation.findOne({ tripId, userId: invitee._id });
+    const existing = await Invitation.findOne({ planId: tripId, userId: invitee._id });
     if (existing) {
       return res.status(400).json({ msg: 'User already invited' });
     }
@@ -40,9 +40,9 @@ router.post('/trips/:tripId/invite', roleCheck('VibePlanner'), async (req, res) 
     const invitationId = uuidv4();
     const invitation = new Invitation({
       _id: invitationId,
-      tripId,
+      planId: tripId,
       userId: invitee._id,
-      invitedBy: req.user.id,  // From auth
+      invitedBy: req.user.userId,  // From auth
       role
     });
     await invitation.save();
@@ -50,7 +50,7 @@ router.post('/trips/:tripId/invite', roleCheck('VibePlanner'), async (req, res) 
     // Notify invitee and inviter
     const inviteMessage = `You\'ve been invited to "${req.trip?.name || 'a trip'}" as ${role}! Check app to accept.`;
     await notifyUsers([invitee._id], inviteMessage, 'email');
-    await notifyUsers([req.user.id], `Invited ${invitee.firstName} ${invitee.lastName} as ${role}.`, 'email');
+    await notifyUsers([req.user.userId], `Invited ${invitee.firstName} ${invitee.lastName} as ${role}.`, 'email');
 
     res.status(201).json({ msg: 'Invitation sent!', invitation });
   } catch (err) {
@@ -70,12 +70,12 @@ router.post('/invitations/:invitationId/respond', async (req, res) => {
 
   try {
     // Fetch and check invitation (only invitee can respond)
-    const invitation = await Invitation.findById(invitationId).populate('invitedBy', 'firstName lastName');
+    const invitation = await Invitation.findById(invitationId);
     if (!invitation || invitation.status !== 'pending') {
       return res.status(404).json({ msg: 'Invitation not found or already responded' });
     }
 
-    if (invitation.userId.toString() !== req.user.id) {
+    if (invitation.userId.toString() !== req.user.userId) {
       return res.status(403).json({ msg: 'Access denied: Not your invitation' });
     }
 
@@ -84,16 +84,14 @@ router.post('/invitations/:invitationId/respond', async (req, res) => {
     await invitation.save();
 
     if (status === 'accepted') {
-      // Add to trip_users with role
-      const tripUser = new TripUser({
-        tripId: invitation.tripId,
-        userId: invitation.userId,
-        role: invitation.role
-      });
-      await tripUser.save();
+      await PlanUser.findOneAndUpdate(
+        { planId: invitation.planId, userId: invitation.userId },
+        { planId: invitation.planId, userId: invitation.userId, role: invitation.role },
+        { upsert: true, new: true }
+      );
 
       // Notify all trip participants (fetch them)
-      const tripParticipants = await TripUser.find({ tripId: invitation.tripId }).select('userId');
+      const tripParticipants = await PlanUser.find({ planId: invitation.planId }).select('userId');
       const participantIds = tripParticipants.map(tu => tu.userId);
       const acceptMsg = `${invitation.invitedBy.firstName} ${invitation.invitedBy.lastName} accepted your invite as ${invitation.role}!`;
       await notifyUsers(participantIds, acceptMsg, 'email');
@@ -105,7 +103,7 @@ router.post('/invitations/:invitationId/respond', async (req, res) => {
 
     // Final notify to responder
     const responseMsg = status === 'accepted' ? `Welcome to the trip as ${invitation.role}!` : 'Invite rejected.';
-    await notifyUsers([req.user.id], responseMsg, 'email');
+    await notifyUsers([req.user.userId], responseMsg, 'email');
 
     res.json({ msg: `Invitation ${status}!`, invitation });
   } catch (err) {

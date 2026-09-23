@@ -1,17 +1,17 @@
 const PlanUser = require('../models/PlanUser');
 const authMiddleware = require('../middleware/auth.js')
 
-// Middleware: Checks if req.user.id has required role for planId
+// Middleware: Checks the caller's PlanUser role for planId or tripId
 const roleCheck =  (requiredRole) => {
   return async (req, res, next) => {
 
     authMiddleware(req, res, async (err) => {
       if (err) return next(err);
 
-      const { planId } = req.params;
+      const planId = req.params.planId || req.params.tripId;
 
       try {
-        const planUser = await PlanUser.findOne({ planId, userId: req.user.id });
+        const planUser = await PlanUser.findOne({ planId, userId: req.user.userId });
         if (!planUser) {
           return res.status(403).json({ msg: 'Access denied: Not a plan participant' });
         }
@@ -27,14 +27,9 @@ const roleCheck =  (requiredRole) => {
         }
 
         req.planUser = planUser;  // Attach for use in route (e.g., invitedBy)
-
-        if (req.user.role !== requiredRole) {
-          return res.status(403).json({ message: `Access denied. Requires ${requiredRole} role` });
-        }
-      } catch (err) {
-        res.status(500).json({ msg: 'Server error checking role' });
-      } finally {
-        next();
+        return next();
+      } catch (error) {
+        return res.status(500).json({ msg: 'Server error checking role' });
       }
     });
   };

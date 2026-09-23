@@ -2,7 +2,7 @@ const express = require('express');
 const Plan = require('../models/Plan');
 const PlanUser = require('../models/PlanUser');
 const User = require('../models/User');
-const Event = require('../models/Event');
+const { Event } = require('../models/Event');
 const authMiddleware = require('../middleware/auth.js');  // Add this line for token verification
 const { checkPermission } = require('../utils/permissions');
 const { DateTime } = require('luxon');  // For time zone/DST in Day Numbers
@@ -265,19 +265,23 @@ router.get('/:planId/itinerary', authMiddleware, async (req, res) => {
     }
 
     // Fetch and sort events by startTime
-    let events = await Event.find({ $or: [{ planId: planId }, { eventPlanId: planId }] });
+    let events = await Event.find({ $or: [{ planId: planId }, { eventPlanId: planId }] }).sort({ startTime: 1 });
     events = events.map(event => ({
       ...event.toObject(),
-      relevantTimeZone: event.type === 'flight' ? event.destinationTimeZone : plan.timeZone
+      relevantTimeZone: event.type === 'flight'
+        ? (event.destinationTimeZone || plan.timeZone)
+        : plan.timeZone
     }));
 
-    // Compute Day Numbers (loop, compare to previous)
+    // Compute Day Numbers (loop, compare to previous). First event is day 1.
     let dayNumber = 1;
     let previousEnd = null;
     events.forEach(event => {
-      const start = DateTime.fromJSDate(event.startTime, { zone: event.relevantTimeZone });
-      const isNewDay = !previousEnd || start.startOf('day') > DateTime.fromJSDate(previousEnd, { zone: event.relevantTimeZone }).startOf('day');
-      if (isNewDay) dayNumber++;
+      if (previousEnd) {
+        const start = DateTime.fromJSDate(event.startTime, { zone: event.relevantTimeZone });
+        const prev = DateTime.fromJSDate(previousEnd, { zone: event.relevantTimeZone });
+        if (start.startOf('day') > prev.startOf('day')) dayNumber++;
+      }
       event.dayNumber = dayNumber;
       previousEnd = event.endTime;
     });

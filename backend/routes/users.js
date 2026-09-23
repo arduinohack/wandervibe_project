@@ -11,7 +11,7 @@ router.post('/:userId/delete', adminCheck, async (req, res) => {
 
   try {
     // Self-deletion or admin (adjust as needed)
-    if (userId !== req.user.id && req.user.role !== 'admin') {
+    if (userId !== req.user.userId && req.user.role !== 'admin') {
       return res.status(403).json({ msg: 'Admin access required for deleting others' });
     }
 

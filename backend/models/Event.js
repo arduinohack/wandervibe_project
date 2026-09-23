@@ -1,58 +1,44 @@
 const mongoose = require('mongoose');
-const { v4: uuidv4 } = require('uuid');  // Generate UUID
+const { v4: uuidv4 } = require('uuid');
 
-// Sub-event schema for composite events (e.g., flight departure/arrival)
-const subEventSchema = new mongoose.Schema({
-  name: { type: String, required: true },  // e.g., 'Departure'
-  location: { type: String, default: '' },
+// Main Event schema (recursive for sub-events)
+const eventSchema = new mongoose.Schema({
+  _id: { type: String, default: uuidv4 },  // Auto-generate UUID string (or omit for ObjectId)
+  name: { type: String, required: true },
+  location: { type: String, default: '' },  // Fixed: Optional with default
+  type: { type: String, required: true },  // 'flight', 'hotel', etc.
+  cost: { type: Number, default: 0 },
   startTime: { type: Date },
-  timeZone: {type: String, default: ''}, // Time zone of time in this subevent
+  timeZone: { type: String, default: '' }, // Time zone of time in this event
+  originTimeZone: { type: String },
+  destinationTimeZone: { type: String },
   duration: { type: Number, default: 0 },  // Minutes
+  endTime: { type: Date },  // Fixed: Optional (no required)
+  planId: { type: String, required: true },
   details: { type: String, default: '' },
-  subType: { type: String, required: true },  // 'departure', 'arrival', etc.
-  extras: { type: mongoose.Schema.Types.Mixed },  // Added: User-defined fields (anything)
-  serviceNumber: { type: String },     // leveraged across a few different event types: flight number, train number, room number?
-  serviceClass: { 
-    type: String, 
-    enum: ['Economy', 'Premium Economy', 'Business', 'First'],
-    default: 'Economy'
-  },     // Economy / Business / First
+  customType: { type: String, default: '' },
+  costType: { type: String, enum: ['estimated', 'actual'], default: 'estimated' },
+  eventNum: { type: Number, default: 0, min: 0 },  // Added: Optional order number within plan for drafts (0 for dated)
+  status: { type: String, enum: ['draft', 'complete'], default: 'draft' },  // Added: Draft/complete for incomplete itineraries
+  missingFields: [{ type: String }],  // Array of missing field names (e.g., ['flightNumber'])
+  serviceProvider: { type: String },           // replaces 'airline', trainline
+  bookingReference: { type: String }, // replaces any old PNR field
+  urlLinks: [
+    {
+      linkName: { type: String, default: '' },
+      linkUrl: { type: String, required: true },
+    }
+  ],
+  subEvents: [this],  // Recursive: array of nested Events
+  extras: { type: mongoose.Schema.Types.Mixed },  // Dynamic user fields
+  ownerId: { type: String, required: true },
 
   // Type-specific fields (optional, validated in pre-save)
   gate: { type: String },  // For departure
   baggageClaim: { type: String },  // For arrival
   roomNumber: { type: String },  // For hotel check-in
   // Add more as types evolve (Mongoose ignores unused)
-}, {
-  _id: false,  // No _id for sub-documents
-});
-
-  // Main Event schema
-  const eventSchema = new mongoose.Schema({
-    _id: { type: String, default: () => require('uuid').v4() },  // Added: Auto-generate UUID string (or omit for ObjectId)
-    name: { type: String, required: true },
-    location: { type: String, default: '' },  // Fixed: Optional with default
-    type: { type: String, required: true },  // 'flight', 'hotel', etc.
-    cost: { type: Number, default: 0 },
-    startTime: { type: Date },
-    duration: { type: Number, default: 0 },  // Minutes
-    planId: { type: String, required: true },
-    details: { type: String, default: '' },
-    customType: { type: String, default: '' },
-    costType: { type: String, enum: ['estimated', 'actual'], default: 'estimated' },
-    endTime: { type: Date },  // Fixed: Optional (no required)
-    eventNum: { type: Number, default: 0, min: 0 },  // Added: Optional order number within plan for drafts (0 for dated)
-    status: { type: String, enum: ['draft', 'complete'], default: 'draft' },  // Added: Draft/complete for incomplete itineraries
-    missingFields: [{ type: String }],  // Array of missing field names (e.g., ['flightNumber'])
-    // === Generic transit fields (shared by flight, train, ferry, car, etc.) ===    
-    serviceProvider: { type: String },           // replaces 'airline', trainline
-    bookingReference: { type: String }, // replaces any old PNR field
-    // subEvents now carry per-leg details
-    subEvents: [subEventSchema],  // Nested array for composite
-    extras: { type: mongoose.Schema.Types.Mixed },  // Dynamic user fields
-    ownerId: { type: String, required: true },
-    
-    }, { timestamps: true });  // Auto createdAt/updatedAt
+}, { timestamps: true });  // Auto createdAt/updatedAt
 
 // Pre-save hook for type-specific validation
 eventSchema.pre('save', function (next) {
@@ -71,7 +57,7 @@ eventSchema.pre('save', function (next) {
       if (e.subEvents && e.subEvents.length < 2) validationError = 'Flight requires 2 sub-events (departure, arrival)';
       e.subEvents.forEach(se => {
         if (se.subType === 'departure' && !se.gate) validationError = 'Departure gate required';
-        if (se.subType === 'arrival' && !se.baggageClaim) validationError = 'Arrival baggage claim required';
+        if (se.subType == 'arrival' && !se.baggageClaim) validationError = 'Arrival baggage claim required';
       });
       break;
     case 'hotel':
@@ -96,5 +82,17 @@ eventSchema.virtual('id').get(function () {
 eventSchema.set('toJSON', { virtuals: true });
 eventSchema.set('toObject', { virtuals: true });
 
-// Export the model
-module.exports = mongoose.model('Event', eventSchema);
+// Guard against redefinition
+const Event = mongoose.models.Event || mongoose.model('Event', eventSchema);
+
+// Plan schema extends Event via discriminator
+const planSchema = new mongoose.Schema({
+  budget: { type: Number, default: 0 },
+  destination: { type: String, default: '' },
+  planningState: { type: String, default: '' },
+  planType: { type: String, enum: ['trip', 'plan'], default: 'trip' }, // Kept
+});
+
+const Plan = mongoose.models.Plan || Event.discriminator('Plan', planSchema);
+
+module.exports = { Event, Plan };

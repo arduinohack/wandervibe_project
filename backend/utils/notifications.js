@@ -1,19 +1,27 @@
 const sgMail = require('@sendgrid/mail');  // For email sending
+const User = require('../models/User');
 
 // Set API key from .env
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
-// Stub function: Notify users (expand for SMS/push later)
+// Notify users by email when their preferences allow it
 async function notifyUsers(userIds, message, type = 'email') {
   try {
-    // TODO: Fetch full user data (e.g., email/phone) from DB
-    // For now, log and send to test email (replace with real user emails)
     console.log(`🔔 Notifying ${userIds.length} users via ${type}: "${message}"`);
 
-    if (type === 'email') {
-      // Example: Send to a test email (update to dynamic user.emails later)
+    if (type !== 'email') {
+      console.log(`Notification type "${type}" is not sent in this pass`);
+      return;
+    }
+
+    const users = await User.find({ _id: { $in: userIds } }).select('email notificationPreferences');
+    for (const user of users) {
+      const prefs = user.notificationPreferences || {};
+      if (prefs.email === false) continue;
+      if (!user.email) continue;
+
       const msg = {
-        to: 'w.ken.allen@gmail.com',  // Placeholder—pull from users collection in full impl
+        to: user.email,
         from: 'ken@eratespecialists.com',  // Your verified sender from SendGrid setup
         subject: 'WanderVibe Update',
         text: message,
@@ -21,7 +29,6 @@ async function notifyUsers(userIds, message, type = 'email') {
       await sgMail.send(msg);
       console.log('✅ Email sent via SendGrid');
     }
-    // TODO: Add Twilio for 'sms', Firebase for 'push'
   } catch (err) {
     console.error('Notification error:', err);  // Logs but doesn't crash
   }

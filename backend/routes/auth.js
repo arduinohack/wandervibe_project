@@ -119,11 +119,7 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ msg: 'User already exists with this email' });
     }
 
-    // Hash password (salt rounds 12 for security)
-    const saltRounds = 12;
-    const hashedPassword = await bcrypt.hash(password, saltRounds);
-
-    // Create user (UUID for _id)
+    // Create user (UUID for _id). User pre-save hashes the password once.
     const userId = uuidv4();
     const newUser = new User({
       _id: userId,
@@ -131,7 +127,7 @@ router.post('/register', async (req, res) => {
       lastName,
       email,
       phoneNumber,
-      password: hashedPassword,  // Store hashed only
+      password,
       address: address || undefined, // Use if provided
       notificationPreferences: { email: true, sms: false }  // Default
     });
@@ -143,7 +139,7 @@ router.post('/register', async (req, res) => {
     await newUser.save();
 
     // Generate JWT token (no password in payload)
-    const payload = { id: userId };
+    const payload = { userId };
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' });
 
     logger.info('Generated new token and sent to newly registered user', {
@@ -275,7 +271,7 @@ router.post('/reset-password', async (req, res) => {
     await user.save();
 
     // Generate new JWT token
-    const payload = { id: user._id };
+    const payload = { userId: user._id };
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' });
 
     logger.info('Generated new token and sent to user', {
@@ -303,7 +299,7 @@ router.post('/verify-token', async (req, res) => {
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_secret_key');  // Verify token
-    const user = await User.findById(decoded.userId).select('-password');  // Fetch user without password
+    const user = await User.findById(decoded.userId || decoded.id).select('-password');  // Fetch user without password
     if (!user) {
       return res.status(401).json({ message: 'User not found' });
     }
