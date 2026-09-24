@@ -38,6 +38,20 @@ Also implemented: `POST /api/auth/verify-token`, `POST /api/auth/logout`, and `P
 
 The JWT claim is `userId`. Verify-token and the auth middleware accept `id` as an alias when `userId` is absent.
 
+### Logout token blacklist (Redis)
+
+After `POST /api/auth/logout`, that JWT is rejected until it expires. This is an application operation and a security control: revocation after logout.
+
+The blacklist is stored in Redis when Redis is configured, at `localhost:6379` or `REDIS_URL`. MongoDB remains the system of record for users, plans, events, and invitations. Redis is not a second copy of those records.
+
+If Redis is down, the API still serves auth, plans, and invites. Logout revocation is not reliable in that state. That is degraded development mode.
+
+For alpha, Redis should be running so the logout blacklist works. On Windows that process is Memurai.
+
+Jest (`npx jest`) and Newman (`npm run test:postman`) do not require Redis.
+
+`authMiddleware` does not read the blacklist today, and the logout handler calls `redisClient.set` while startup stores the client on `global.redisClient`. Startup currently dials `redis://localhost:6379` only. `REDIS_URL` is the decided configuration name.
+
 ## Events and itinerary
 
 `POST /api/events` accepts `name`, `type`, `planId`, `startTime`, and `endTime`. The route sets `ownerId` from `req.user.userId`.
