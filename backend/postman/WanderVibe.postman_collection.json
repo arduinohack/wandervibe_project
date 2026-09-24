@@ -1,0 +1,440 @@
+{
+  "info": {
+    "name": "WanderVibe",
+    "description": "Live /api/plans and /api/invites flow. Run the collection in order against a server that is already listening.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "let stamp = pm.variables.get('stamp');",
+          "if (!stamp) {",
+          "  stamp = Date.now().toString();",
+          "  pm.variables.set('stamp', stamp);",
+          "  pm.environment.set('emailA', 'usera.' + stamp + '@example.com');",
+          "  pm.environment.set('emailB', 'userb.' + stamp + '@example.com');",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "1 Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "auth": { "type": "noauth" },
+        "url": "{{baseUrl}}/"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('health is running', function () {",
+              "  pm.response.to.have.status(200);",
+              "  pm.expect(pm.response.text()).to.include('WanderVibe Backend is running');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2 Register A",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "auth": { "type": "noauth" },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"firstName\": \"Ada\",\n  \"lastName\": \"Lovelace\",\n  \"email\": \"{{emailA}}\",\n  \"password\": \"{{password}}\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": "{{baseUrl}}/api/auth/register"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('register A returns 201', function () {",
+              "  pm.response.to.have.status(201);",
+              "  pm.expect(pm.response.json().token).to.be.a('string').and.not.empty;",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "3 Register B",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "auth": { "type": "noauth" },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"firstName\": \"Grace\",\n  \"lastName\": \"Hopper\",\n  \"email\": \"{{emailB}}\",\n  \"password\": \"{{password}}\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": "{{baseUrl}}/api/auth/register"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('register B returns 201', function () {",
+              "  pm.response.to.have.status(201);",
+              "  pm.expect(pm.response.json().token).to.be.a('string').and.not.empty;",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "4 Login A",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "auth": { "type": "noauth" },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{emailA}}\",\n  \"password\": \"{{password}}\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": "{{baseUrl}}/api/auth/login"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('login A saves tokenA', function () {",
+              "  pm.response.to.have.status(200);",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.token).to.be.a('string').and.not.empty;",
+              "  pm.environment.set('tokenA', body.token);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "5 List plans without token",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "auth": { "type": "noauth" },
+        "url": "{{baseUrl}}/api/plans"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('missing token is 401', function () {",
+              "  pm.response.to.have.status(401);",
+              "  pm.expect(pm.response.json().message).to.eql('No token, authorization denied');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "6 Create plan",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            { "key": "token", "value": "{{tokenA}}", "type": "string" }
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"type\": \"trip\",\n  \"name\": \"Paris\",\n  \"destination\": \"Paris\",\n  \"timeZone\": \"UTC\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": "{{baseUrl}}/api/plans"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('create plan saves planId', function () {",
+              "  pm.response.to.have.status(201);",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.plan._id).to.be.a('string').and.not.empty;",
+              "  pm.expect(body.plan.type).to.eql('trip');",
+              "  pm.environment.set('planId', body.plan._id);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "7 Invite B as VibePlanner",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            { "key": "token", "value": "{{tokenA}}", "type": "string" }
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{emailB}}\",\n  \"role\": \"VibePlanner\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": "{{baseUrl}}/api/invites/trips/{{planId}}/invite"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('invite saves invitationId', function () {",
+              "  pm.response.to.have.status(201);",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.invitation._id).to.be.a('string').and.not.empty;",
+              "  pm.expect(body.invitation.role).to.eql('VibePlanner');",
+              "  pm.expect(body.invitation.planId).to.eql(pm.environment.get('planId'));",
+              "  pm.environment.set('invitationId', body.invitation._id);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "8 Login B",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "auth": { "type": "noauth" },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{emailB}}\",\n  \"password\": \"{{password}}\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": "{{baseUrl}}/api/auth/login"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('login B saves tokenB', function () {",
+              "  pm.response.to.have.status(200);",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.token).to.be.a('string').and.not.empty;",
+              "  pm.environment.set('tokenB', body.token);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "9 Accept invite",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            { "key": "token", "value": "{{tokenB}}", "type": "string" }
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"accepted\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": "{{baseUrl}}/api/invites/invitations/{{invitationId}}/respond"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('accept returns 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "  pm.expect(pm.response.json().invitation.status).to.eql('accepted');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "10 List plan users",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            { "key": "token", "value": "{{tokenA}}", "type": "string" }
+          ]
+        },
+        "url": "{{baseUrl}}/api/plans/{{planId}}/users"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('plan has at least two members', function () {",
+              "  pm.response.to.have.status(200);",
+              "  const users = pm.response.json().users;",
+              "  pm.expect(users).to.be.an('array');",
+              "  pm.expect(users.length).to.be.at.least(2);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "11 Event later day",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            { "key": "token", "value": "{{tokenA}}", "type": "string" }
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Later dinner\",\n  \"type\": \"dining\",\n  \"planId\": \"{{planId}}\",\n  \"startTime\": \"2026-06-02T15:00:00.000Z\",\n  \"endTime\": \"2026-06-02T18:00:00.000Z\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": "{{baseUrl}}/api/events"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('later event is created', function () {",
+              "  pm.response.to.have.status(201);",
+              "  pm.expect(pm.response.json().type).to.eql('dining');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "12 Event earlier day",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            { "key": "token", "value": "{{tokenA}}", "type": "string" }
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Earlier dinner\",\n  \"type\": \"dining\",\n  \"planId\": \"{{planId}}\",\n  \"startTime\": \"2026-06-01T15:00:00.000Z\",\n  \"endTime\": \"2026-06-01T18:00:00.000Z\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": "{{baseUrl}}/api/events"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('earlier event is created', function () {",
+              "  pm.response.to.have.status(201);",
+              "  pm.expect(pm.response.json().name).to.eql('Earlier dinner');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "13 Itinerary",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            { "key": "token", "value": "{{tokenA}}", "type": "string" }
+          ]
+        },
+        "url": "{{baseUrl}}/api/plans/{{planId}}/itinerary"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('first event is day 1 and events are ordered by startTime', function () {",
+              "  pm.response.to.have.status(200);",
+              "  const events = pm.response.json().events;",
+              "  pm.expect(events.length).to.be.at.least(2);",
+              "  pm.expect(events[0].dayNumber).to.eql(1);",
+              "  pm.expect(new Date(events[0].startTime).toISOString()).to.eql('2026-06-01T15:00:00.000Z');",
+              "  pm.expect(events[1].dayNumber).to.eql(2);",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
