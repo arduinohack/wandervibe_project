@@ -1,5 +1,9 @@
 module.exports = {
   testEnvironment: 'node',  // Run in Node.js mode (handles async/await natively)
+  setupFiles: ['<rootDir>/__tests__/jest.setup.js'],
+  moduleNameMapper: {
+    '^uuid$': '<rootDir>/__tests__/uuid-cjs.js',
+  },
   transform: {},  // No Babel needed for plain JS—Jest handles ES6+
   testMatch: ['**/__tests__/**/*.test.js'],  // Find tests in __tests__ folders
   collectCoverageFrom: [
