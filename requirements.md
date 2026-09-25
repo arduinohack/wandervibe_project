@@ -50,7 +50,7 @@ For alpha, Redis should be running so the logout blacklist works. On Windows tha
 
 Jest (`npx jest`) and Newman (`npm run test:postman`) do not require Redis.
 
-Startup uses `REDIS_URL` when that value is a non-empty string, and otherwise `redis://localhost:6379`. The client is stored on `global.redisClient`. Logout writes the bearer token on that client when Redis is connected. `authMiddleware` does not read the blacklist, so a later request with that JWT is not rejected yet.
+Startup uses `REDIS_URL` when that value is a non-empty string, and otherwise `redis://localhost:6379`. The client is stored on `global.redisClient`. Logout still writes the bearer token on that client when Redis is up, with a 24-hour TTL. When Redis is up, `authMiddleware` rejects a blacklisted bearer token with 401 and `{ message: 'Token has been revoked' }`. When Redis is down, the middleware skips the check (degraded mode).
 
 ### Logging for support
 
@@ -58,9 +58,9 @@ Logs are for systems administration and support inquiries. The app logger is Win
 
 A support log includes a timestamp, a level, an event name, `userId` when it is known, and resource ids such as `planId` or `invitationId` when the event is about those records.
 
-Logs must not include a password, a JWT string, `SENDGRID_API_KEY`, or an `Authorization` header.
+Logs must not include a password, a JWT string, `RESEND_API_KEY`, `SENDGRID_API_KEY`, or an `Authorization` header.
 
-Register and login log the email and `userId` only. Password reset logs the email and `userId` and does not log the new JWT. `notifyUsers` logs whether delivery is in override mode or user-email mode. On a SendGrid failure it logs the error message and status, not the API key.
+Register and login log the email and `userId` only. Password reset logs the email and `userId` and does not log the new JWT. A forgot-password send failure logs the provider name, the error message, and the HTTP status. It does not log the API key or the reset token. `notifyUsers` logs whether delivery is in override mode or user-email mode. On a send failure it logs the provider name, the error message, and the HTTP status. It does not log the API key.
 
 ## Events and itinerary
 
@@ -74,7 +74,9 @@ Event types in the product are the original list plus the Flutter `EventType` va
 
 ## Notifications
 
-Email is sent through SendGrid. SMS and push are not implemented.
+Email is sent through a provider selected by `EMAIL_PROVIDER`: `resend`, `sendgrid`, or `console`. When `EMAIL_PROVIDER` is unset or empty, the provider is `resend`. SendGrid remains implemented. SMS and push are not implemented.
+
+`EMAIL_FROM` is optional. When it is empty, From is `ken@eratespecialists.com`.
 
 `notifyUsers` loads each user id, skips a user with no email, and skips a user whose `notificationPreferences.email` is `false`. Missing preferences still allow email.
 
@@ -85,6 +87,8 @@ The recipient is chosen in this order:
 3. Otherwise each user’s own email is used.
 
 These actions notify today: plan created, invite sent, invite accepted or rejected, user removed, and coordinator reassigned. Creating an event does not notify.
+
+`POST /api/auth/forgot-password` sends through `sendEmail` to the account email. It does not use `NOTIFY_OVERRIDE_EMAIL` or the development address `w.ken.allen@gmail.com`. The account holder must receive the reset link. From is `EMAIL_FROM`, or `ken@eratespecialists.com` when `EMAIL_FROM` is empty. A send failure still returns 500 `{ msg: 'Server error' }`.
 
 ## Tests
 

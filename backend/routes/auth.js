@@ -6,6 +6,7 @@ const User = require('../models/User');
 const logger = require('../utils/logger');  // Added: Borrow exported logger from ../util/logger.js
 const authMiddleware = require('../middleware/auth.js');  // Add this line for token verification
 const { v4: uuidv4 } = require('uuid');  // For reset token
+const { sendEmail, selectedProviderName } = require('../utils/email/sendEmail');
 
 // POST /api/auth/login (Verifies email/password, returns token)
 router.post('/login', async (req, res) => {
@@ -197,21 +198,30 @@ router.post('/forgot-password', async (req, res) => {
     });
     await user.save();
 
-    // Send email with reset link (using SendGrid)
+    // Send the reset link to the account email.
     const resetUrl = `http://localhost:3000/reset-password?token=${resetToken}&email=${email}`;  // Frontend link
-    const msg = {
-      to: email,
-      from: 'noreply@wandervibe.com',  // Your verified sender
-      subject: 'Password Reset Request',
-      text: `Click to reset your password: ${resetUrl}\nThis link expires in 1 hour.`,
-      html: `<p>Click <a href="${resetUrl}">here</a> to reset your password. Expires in 1 hour.</p>`
-    };
-    logger.info('Requesting SendGrid password reset email to user', {
+    logger.info('Requesting password reset email to user', {
       userId: userId,
       event: 'AuthForgotPWRequest',
       context: { email: email }
     });
-    await sgMail.send(msg);
+    try {
+      await sendEmail({
+        to: email,
+        subject: 'Password Reset Request',
+        text: `Click to reset your password: ${resetUrl}\nThis link expires in 1 hour.`,
+        html: `<p>Click <a href="${resetUrl}">here</a> to reset your password. Expires in 1 hour.</p>`
+      });
+    } catch (err) {
+      const status = (err.response && err.response.statusCode) || err.statusCode;
+      const provider = err.provider || selectedProviderName();
+      logger.error(`Password reset email failed: provider ${provider}: ${err.message}${status ? ` status ${status}` : ''}`, {
+        userId: userId,
+        event: 'AuthForgotPWRequest',
+        context: { email: email, provider, status: status || undefined }
+      });
+      return res.status(500).json({ msg: 'Server error' });
+    }
 
     res.json({ msg: 'If the email exists, a reset link has been sent' });
   } catch (err) {
