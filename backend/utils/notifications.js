@@ -1,8 +1,5 @@
-const sgMail = require('@sendgrid/mail');  // For email sending
 const User = require('../models/User');
-
-// Set API key from .env
-sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+const { sendEmail, selectedProviderName } = require('./email/sendEmail');
 
 const DEV_EMAIL = 'w.ken.allen@gmail.com';
 
@@ -36,18 +33,17 @@ async function notifyUsers(userIds, message, type = 'email') {
       if (prefs.email === false) continue;
       if (!user.email) continue;
 
-      const msg = {
+      await sendEmail({
         to: overrideTo || user.email,
-        from: 'ken@eratespecialists.com',  // Your verified sender from SendGrid setup
         subject: 'WanderVibe Update',
         text: message,
-      };
-      await sgMail.send(msg);
-      console.log('✅ Email sent via SendGrid');
+      });
+      console.log(`✅ Email sent via ${selectedProviderName()}`);
     }
   } catch (err) {
-    const status = err.response && err.response.statusCode;
-    console.error(`Notification error: ${err.message}${status ? ` status ${status}` : ''}`);
+    const status = (err.response && err.response.statusCode) || err.statusCode;
+    const provider = err.provider || selectedProviderName();
+    console.error(`Notification error: provider ${provider}: ${err.message}${status ? ` status ${status}` : ''}`);
   }
 }
 
