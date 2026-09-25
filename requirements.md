@@ -90,6 +90,154 @@ These actions notify today: plan created, invite sent, invite accepted or reject
 
 `POST /api/auth/forgot-password` sends through `sendEmail` to the account email. It does not use `NOTIFY_OVERRIDE_EMAIL` or the development address `w.ken.allen@gmail.com`. The account holder must receive the reset link. From is `EMAIL_FROM`, or `ken@eratespecialists.com` when `EMAIL_FROM` is empty. A send failure still returns 500 `{ msg: 'Server error' }`.
 
+## Data model (live MongoDB)
+
+As of 2026-09-25. This is the Mongoose schema the mounted API loads. Model `Plan` comes from `backend/models/Plan.js`. The app loads that file before `backend/models/Event.js`, so the Plan discriminator inside `Event.js` is not registered.
+
+### User
+
+Model `User`, collection `users`.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `_id` | string, default UUID | optional on input |
+| `firstName`, `lastName` | string | optional |
+| `email` | string | optional on the schema |
+| `phoneNumber` | string | optional |
+| `address` | object: `street`, `city`, `state`, `country`, `postalCode`, each a string | optional |
+| `notificationPreferences` | object: `email` boolean default true, `sms` boolean default false | optional |
+| `role` | enum `VibeCoordinator`, `VibePlanner`, `Wanderer`, `admin`; default `VibeCoordinator` | optional |
+| `password` | string | required |
+| `resetToken` | string | optional |
+| `resetTokenExpiry` | date | optional |
+| `createdAt` | date, default now | optional |
+
+`password` is hashed in a pre-save hook with bcrypt, 12 rounds. The hash must not be logged. There is no push field on `notificationPreferences`. `role` on this document is separate from the per-plan role on `PlanUser`.
+
+Index: unique index on `email` from `unique: true`. No other indexes are declared. The schema does not set `timestamps`, so there is no `updatedAt`.
+
+### Plan
+
+Model `Plan`, collection `plans`. `timestamps` adds `createdAt` and `updatedAt` dates.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `_id` | string, no schema default | required |
+| `type` | enum `trip`, `plan` | required |
+| `name` | string | required |
+| `destination` | string | required when `type` is `trip` |
+| `location` | string | required when `type` is `plan` |
+| `startDate`, `endDate` | date | optional |
+| `autoCalculateStartDate`, `autoCalculateEndDate` | boolean, default false | optional |
+| `budget` | number, default 0 | optional |
+| `planningState` | enum `initial`, `reviewing`, `complete`; default `initial` | optional |
+| `timeZone` | string | optional |
+| `ownerId` | string, ref `User` | required |
+| `participants` | array of `{ userId, role }` | optional array |
+| `participants.userId` | ObjectId, ref `User` | required on a participant entry |
+| `participants.role` | enum `VibePlanner`, `Wanderer` | required on a participant entry |
+| `activityIds` | array of strings, ref `Event` | optional |
+
+`ownerId` points at `User._id`. `participants.userId` is declared as an ObjectId while `User._id` is a string. Per-plan membership used by invites and role checks is the `PlanUser` collection.
+
+Indexes: text index on `name` and `destination`; index on `ownerId`.
+
+### PlanUser
+
+Model `PlanUser`, collection `planusers`. `timestamps` adds `createdAt` and `updatedAt`. `_id` is the default ObjectId. The schema does not declare `_id`.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `planId` | string, ref `Plan` | required |
+| `userId` | string, ref `User` | required |
+| `role` | enum `VibeCoordinator`, `VibePlanner`, `Wanderer` | required |
+
+`planId` points at `Plan._id`. `userId` points at `User._id`.
+
+Index: unique compound `{ planId: 1, userId: 1 }`.
+
+### Invitation
+
+Model `Invitation`, collection `invitations`. `timestamps` adds `createdAt` and `updatedAt`.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `_id` | string, no schema default | required |
+| `planId` | string | required |
+| `userId` | string | required |
+| `invitedBy` | string | required |
+| `role` | enum `VibePlanner`, `Wanderer` | required |
+| `status` | enum `pending`, `accepted`, `rejected`; default `pending` | optional |
+
+`planId` points at `Plan._id`. `userId` is the invitee's user id. `invitedBy` is the inviter's user id. The schema does not set `ref` on those three strings.
+
+Index: `{ planId: 1, userId: 1, status: 1 }`, not unique.
+
+### Event
+
+Model `Event`, collection `events`. `timestamps` adds `createdAt` and `updatedAt`. A virtual `id` returns `_id`, and JSON output includes virtuals.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `_id` | string, default UUID | optional on input |
+| `name` | string | required |
+| `location` | string, default `''` | optional |
+| `type` | string | required |
+| `cost` | number, default 0 | optional |
+| `startTime`, `endTime` | date | optional |
+| `timeZone` | string, default `''` | optional |
+| `originTimeZone`, `destinationTimeZone` | string | optional |
+| `duration` | number, default 0 | optional |
+| `planId` | string | required |
+| `details` | string, default `''` | optional |
+| `customType` | string, default `''` | optional |
+| `costType` | enum `estimated`, `actual`; default `estimated` | optional |
+| `eventNum` | number, default 0, minimum 0 | optional |
+| `status` | enum `draft`, `complete`; default `draft` | optional |
+| `missingFields` | array of strings | optional |
+| `serviceProvider`, `bookingReference` | string | optional |
+| `urlLinks` | array of `{ linkName` string default `''`, `linkUrl` string required `}` | optional array |
+| `subEvents` | written as `[this]` in the schema literal | not a nested Event schema |
+| `extras` | mixed | optional |
+| `ownerId` | string | required |
+| `gate`, `baggageClaim`, `roomNumber` | string | optional |
+
+`type` is a string. The product type list is in Events and itinerary. The schema does not enum-enforce it. `planId` points at `Plan._id`. `ownerId` points at `User._id`. The schema does not set `ref` on either string.
+
+The pre-save hook returns immediately when `status` is `draft`. The type-specific checks under that are comments, so the hook does not require `gate` or the other optional strings.
+
+No indexes are declared besides `_id`.
+
+### Present in code but not the live product path
+
+These files are not the collections the mounted plan, event, and invite routes use.
+
+**Trip** (`backend/models/Trip.js`), model `Trip`, would use collection `trips` if loaded. No mounted route requires it. Fields: `_id` string required; `name` string required; `destination` string required; `startDate` and `endDate` dates required; `budget` number default 0; `planningState` enum `initial`, `complete`, default `initial`; `timeZone` string required; `notificationSettings` object with `initialFrequency` string default `daily` and `completeFrequency` string default `weekly`; `ownerId` string required. `timestamps` adds `createdAt` and `updatedAt`. Indexes: text on `name` and `destination`; index on `ownerId`.
+
+**TripUser** (`backend/models/TripUser.js`), model `TripUser`, would use collection `tripusers` if loaded. The only require is `backend/routes/users.js`, and that router is not mounted. Fields: `planId` string ref `Plan` required; `userId` string ref `User` required; `role` enum `VibeCoordinator`, `VibePlanner`, `Wanderer` required. `timestamps` adds `createdAt` and `updatedAt`. The unique index is declared on `{ tripId: 1, userId: 1 }`. The schema path is `planId`, not `tripId`.
+
+**Plan discriminator inside `Event.js`.** The file builds a second schema with `budget` number default 0, `destination` string default `''`, `planningState` string default `''`, and `planType` enum `trip`, `plan`, default `trip`, and would call `Event.discriminator('Plan', ...)`. On startup, `models/Plan.js` has already registered the model name `Plan`, and this line keeps that model. The live plan documents are the `plans` collection from `Plan.js`, not plan documents stored on `events`.
+
+### Difference from reuirements.md (Oct 2025)
+
+- `trips` is `plans`, `trip_users` is `PlanUser`, and `tripId` is `planId`.
+- The live invite URL is still `POST /api/invites/trips/:tripId`. That path value is the plan id.
+- Event types are the expanded product list. The backend stores `type` as a string and does not enum-enforce it.
+- Notifications are email-only through `EMAIL_PROVIDER`. SMS and push are not Mongo collections.
+- Redis holds the logout blacklist. It is not a Mongo collection.
+
+### Open model questions
+
+- [ ] Q1. `User.email` is optional on the schema while register requires an email.
+- [ ] Q2. `User.role` is a global enum on the user document, separate from the per-plan `PlanUser.role`.
+- [ ] Q3. `Plan.participants` and `PlanUser` both describe membership, and which one is the source of truth is open.
+- [ ] Q4. `Event.subEvents` is written as `[this]`, so it is not an array of nested Event documents.
+- [ ] Q5. `Trip`, `TripUser`, and the Plan discriminator in `Event.js` are present in code and are not on the live product path.
+- [ ] Q6. `TripUser` declares a unique index on `tripId` while the schema path is `planId`.
+- [ ] Q7. `Plan.participants.userId` is an ObjectId while `User._id` is a string.
+- [ ] Q8. `Event.type` is an unconstrained string while the product type list is documented separately.
+- [ ] Q9. `Invitation` does not set `ref` on `planId`, `userId`, or `invitedBy`.
+
 ## Tests
 
 From `backend`, `npx jest` runs the in-memory suite. It does not use Atlas.
