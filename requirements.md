@@ -8,6 +8,16 @@ WanderVibe is a collaborative trip and event planning app. The live API and mode
 
 `POST /api/invites/trips/:tripId/invite` still uses the path segment `tripId`. That value is the plan id. It is stored on `Invitation.planId` and `PlanUser.planId`.
 
+## Naming
+
+- A Plan is one collaborative occasion.
+- Plan type is `trip` or `event`.
+- A `trip` is travel, and `destination` is required, which the schema already enforces.
+- An `event` is a conference, wedding weekend, or gathering, and `location` is required. In the live schema the stored enum value is still `plan`; that value means event until a later migration.
+- An Activity is one timed row on the itinerary. The live model and routes still use the name Event and `/api/events`.
+- An itinerary is the list of activities sorted by `startTime` with day numbers. It is not its own collection.
+- Industry wording "the event" means a Plan of type event, not an Activity.
+
 ## Roles
 
 `VibeCoordinator` is the single owner, stored as `Plan.ownerId`. `VibePlanner` and `Wanderer` are values of `PlanUser.role`. Roles are per plan.
@@ -71,6 +81,14 @@ Register and login log the email and `userId` only. Password reset logs the emai
 `GET /api/plans/:planId/itinerary` returns events sorted by `startTime`. The first event has `dayNumber` 1. A later event increments the day when its start calendar day, in the relevant zone, is after the previous event’s end. Flights use `destinationTimeZone` when that field is set, and `plan.timeZone` otherwise. Every other type uses `plan.timeZone`. Luxon applies daylight-saving rules when the zone is an IANA name.
 
 Event types in the product are the original list plus the Flutter `EventType` values. The extras are current types. The original list is `flight`, `car`, `dining`, `hotel`, `tour`, `attraction`, and `cruise`. The Flutter enum also includes `train`, `carRental`, `carService`, `drive`, `taxi`, `bus`, `walk`, `ferry`, `activity`, `meal`, `transport`, `setup`, `ceremony`, `reception`, `vendor`, and `custom`. The backend stores `type` as a string and does not enforce that enum. `setup`, `ceremony`, `reception`, and `vendor` are in the enum and have no icon entry.
+
+### Breakouts and rooms
+
+- Breakouts share the same Plan and the same itinerary list.
+- An Activity may include `room` (a string label) and an optional `parentActivityId` (another Activity on that plan).
+- Parallel breakouts are activities with the same or overlapping `startTime` and different `room` values.
+- The itinerary remains a flat list sorted by `startTime`. The client may group by room or by parent.
+- Do not use a nested `subEvents` array or a child Plan per room.
 
 ## Notifications
 
@@ -237,6 +255,8 @@ These files are not the collections the mounted plan, event, and invite routes u
 - [ ] Q7. `Plan.participants.userId` is an ObjectId while `User._id` is a string.
 - [ ] Q8. `Event.type` is an unconstrained string while the product type list is documented separately.
 - [ ] Q9. `Invitation` does not set `ref` on `planId`, `userId`, or `invitedBy`.
+- [ ] Q10. Migrate the `Plan.type` enum value `plan` to `event`, and optionally rename Event to Activity in code.
+- [ ] Q11. Add `parentActivityId` and `room` on the Event schema and API; grouping is a client concern.
 
 ## Tests
 
