@@ -50,7 +50,17 @@ For alpha, Redis should be running so the logout blacklist works. On Windows tha
 
 Jest (`npx jest`) and Newman (`npm run test:postman`) do not require Redis.
 
-`authMiddleware` does not read the blacklist today, and the logout handler calls `redisClient.set` while startup stores the client on `global.redisClient`. Startup currently dials `redis://localhost:6379` only. `REDIS_URL` is the decided configuration name.
+Startup uses `REDIS_URL` when that value is a non-empty string, and otherwise `redis://localhost:6379`. The client is stored on `global.redisClient`. Logout writes the bearer token on that client when Redis is connected. `authMiddleware` does not read the blacklist, so a later request with that JWT is not rejected yet.
+
+### Logging for support
+
+Logs are for systems administration and support inquiries. The app logger is Winston. File output is structured text with a timestamp, level, `userId`, `event`, message, and `context`. The console transport is a timestamped text line. The default level is `info`, which is the level used in development.
+
+A support log includes a timestamp, a level, an event name, `userId` when it is known, and resource ids such as `planId` or `invitationId` when the event is about those records.
+
+Logs must not include a password, a JWT string, `SENDGRID_API_KEY`, or an `Authorization` header.
+
+Register and login log the email and `userId` only. Password reset logs the email and `userId` and does not log the new JWT. `notifyUsers` logs whether delivery is in override mode or user-email mode. On a SendGrid failure it logs the error message and status, not the API key.
 
 ## Events and itinerary
 

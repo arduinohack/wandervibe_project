@@ -27,15 +27,21 @@ mongoose.connection.on('disconnected', () => {
 });
 
 (async () => {
+  const override = process.env.REDIS_URL;
+  const redisSource = typeof override === 'string' && override.trim() !== ''
+    ? 'REDIS_URL'
+    : 'localhost:6379';
+  const redisUrl = redisSource === 'REDIS_URL' ? override.trim() : 'redis://localhost:6379';
   try {
     const redis = require('redis');
-    const client = redis.createClient({ url: 'redis://localhost:6379' });
+    const client = redis.createClient({ url: redisUrl });
     client.on('error', err => console.log('Redis Client Error', err));
     await client.connect();
-    logger.info('Redis connected successfully');
+    logger.info('Redis connected', { source: redisSource });
     global.redisClient = client;
   } catch (err) {
     logger.error('Redis connection failed:', err);
+    logger.info('Logout blacklist disabled');
     global.redisClient = null;
   }
 })();

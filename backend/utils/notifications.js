@@ -46,7 +46,8 @@ async function notifyUsers(userIds, message, type = 'email') {
       console.log('✅ Email sent via SendGrid');
     }
   } catch (err) {
-    console.error('Notification error:', err);  // Logs but doesn't crash
+    const status = err.response && err.response.statusCode;
+    console.error(`Notification error: ${err.message}${status ? ` status ${status}` : ''}`);
   }
 }
 

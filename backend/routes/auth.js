@@ -2,7 +2,6 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');  // For password hashing
 const jwt = require('jsonwebtoken');
-const redis = require('redis');  // Optional for blacklist
 const User = require('../models/User');
 const logger = require('../utils/logger');  // Added: Borrow exported logger from ../util/logger.js
 const authMiddleware = require('../middleware/auth.js');  // Add this line for token verification
@@ -145,7 +144,7 @@ router.post('/register', async (req, res) => {
     logger.info('Generated new token and sent to newly registered user', {
       userId: userId,
       event: 'AuthRegister',
-      context: { token: token }
+      context: { email: email }
     });
     res.status(201).json({ msg: 'User registered successfully!', token });
   } catch (err) {
@@ -275,9 +274,9 @@ router.post('/reset-password', async (req, res) => {
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' });
 
     logger.info('Generated new token and sent to user', {
-      userId: userId,
+      userId: user._id,
       event: 'AuthPWReset',
-      context: { token: token }
+      context: { email: email }
     });
     res.json({ msg: 'Password reset successfully!', token });
   } catch (err) {
@@ -362,21 +361,24 @@ router.post('/logout', authMiddleware, async (req, res) => {
   });
   try {
     const token = req.header('Authorization')?.replace('Bearer ', '');
-    if (global.redisClient) {
-      if (token) {
-      // Optional: Blacklist token for 24h
-        logger.info('Blacklisting token', {
+    if (global.redisClient && token) {
+      await global.redisClient.set(token, 'blacklisted', { EX: 86400 });  // 24h expiration
+      logger.info('Token blacklisted', {
         userId: req.user.userId,
         event: 'AuthLogout',
-        context: { Token: token }
-        });
-        await redisClient.set(token, 'blacklisted', { EX: 86400 });  // 24h expiration
-      }
+        context: {}
+      });
+    } else if (!global.redisClient) {
+      logger.info('Blacklist skipped, Redis unavailable', {
+        userId: req.user.userId,
+        event: 'AuthLogout',
+        context: {}
+      });
     }
     logger.info('User logged out', {
       userId: req.user.userId,
       event: 'AuthLogout',
-      context: { tokenLength: token ? token.length : 0 }
+      context: {}
     });
     res.status(200).json({ message: 'Logged out successfully' });
   } catch (error) {
