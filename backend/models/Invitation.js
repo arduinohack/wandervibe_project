@@ -5,7 +5,7 @@ const invitationSchema = new mongoose.Schema({
   planId: { type: String, required: true },
   userId: { type: String, required: true },
   invitedBy: { type: String, required: true },
-  role: { type: String, enum: ['VibePlanner', 'Wanderer'], required: true },
+  role: { type: String, enum: ['Owner', 'Collaborator', 'Guest'], required: true },
   status: { type: String, enum: ['pending', 'accepted', 'rejected'], default: 'pending' }
 }, { timestamps: true });
 

@@ -9,17 +9,17 @@ const planInviteRouter = express.Router();
 const invitesRouter = express.Router();
 
 const INVITE_ROLES = {
-  Collaborator: 'VibePlanner',
-  VibePlanner: 'VibePlanner',
-  planner: 'VibePlanner',
-  Guest: 'Wanderer',
-  Wanderer: 'Wanderer',
-  wanderer: 'Wanderer',
+  Collaborator: 'Collaborator',
+  VibePlanner: 'Collaborator',
+  planner: 'Collaborator',
+  Guest: 'Guest',
+  Wanderer: 'Guest',
+  wanderer: 'Guest',
 };
 
 // POST /api/plans/:planId/invite
 // Coordinator may invite a planner or wanderer. Planner may invite a wanderer.
-planInviteRouter.post('/:planId/invite', roleCheck(['VibeCoordinator', 'VibePlanner']), async (req, res) => {
+planInviteRouter.post('/:planId/invite', roleCheck(['Owner', 'Collaborator']), async (req, res) => {
   const { planId } = req.params;
   const { email, role } = req.body;
   const storedRole = INVITE_ROLES[role];
@@ -29,11 +29,11 @@ planInviteRouter.post('/:planId/invite', roleCheck(['VibeCoordinator', 'VibePlan
   }
 
   const callerRole = canonicalMembershipRole(req.planUser && req.planUser.role);
-  if (storedRole === 'VibePlanner' && callerRole !== 'VibeCoordinator') {
-    return res.status(403).json({ msg: 'Only VibeCoordinator can invite VibePlanners' });
+  if (storedRole === 'Collaborator' && callerRole !== 'Owner') {
+    return res.status(403).json({ msg: 'Only Owner can invite Collaborators' });
   }
-  if (storedRole === 'Wanderer' && callerRole !== 'VibeCoordinator' && callerRole !== 'VibePlanner') {
-    return res.status(403).json({ msg: 'Only VibeCoordinator or VibePlanner can invite Wanderers' });
+  if (storedRole === 'Guest' && callerRole !== 'Owner' && callerRole !== 'Collaborator') {
+    return res.status(403).json({ msg: 'Only Owner or Collaborator can invite Guests' });
   }
 
   try {
@@ -92,7 +92,8 @@ invitesRouter.post('/invitations/:invitationId/respond', async (req, res) => {
       return res.status(403).json({ msg: 'Access denied: Not your invitation' });
     }
 
-    // Update status
+    const storedRole = canonicalMembershipRole(invitation.role);
+    if (storedRole) invitation.role = storedRole;
     invitation.status = status;
     await invitation.save();
 

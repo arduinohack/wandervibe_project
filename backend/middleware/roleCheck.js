@@ -2,12 +2,15 @@ const PlanUser = require('../models/PlanUser');
 const authMiddleware = require('../middleware/auth.js');
 
 const MEMBERSHIP_ROLES = {
-  VibeCoordinator: 'VibeCoordinator',
-  coordinator: 'VibeCoordinator',
-  VibePlanner: 'VibePlanner',
-  planner: 'VibePlanner',
-  Wanderer: 'Wanderer',
-  wanderer: 'Wanderer',
+  Owner: 'Owner',
+  VibeCoordinator: 'Owner',
+  coordinator: 'Owner',
+  Collaborator: 'Collaborator',
+  VibePlanner: 'Collaborator',
+  planner: 'Collaborator',
+  Guest: 'Guest',
+  Wanderer: 'Guest',
+  wanderer: 'Guest',
 };
 
 function canonicalMembershipRole(role) {
@@ -15,7 +18,7 @@ function canonicalMembershipRole(role) {
   return MEMBERSHIP_ROLES[role] || null;
 }
 
-// requiredRole is one membership role or a list. Short names match the stored Vibe* role.
+// requiredRole is one membership role or a list. Old Vibe* and short names match Owner, Collaborator, or Guest.
 // The caller must already hold one of those roles. This does not decide which role they may invite.
 const roleCheck = (requiredRole) => {
   const allowed = (Array.isArray(requiredRole) ? requiredRole : [requiredRole])

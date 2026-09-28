@@ -5,6 +5,7 @@ const User = require('../models/User');
 const { Event } = require('../models/Event');
 const authMiddleware = require('../middleware/auth.js');  // Add this line for token verification
 const { checkPermission } = require('../utils/permissions');
+const { canonicalMembershipRole } = require('../middleware/roleCheck');
 const { DateTime } = require('luxon');  // For time zone/DST in Day Numbers
 const { v4: uuidv4 } = require('uuid');
 const { notifyUsers } = require('../utils/notifications');
@@ -12,11 +13,11 @@ const router = express.Router();
 const logger = require('../utils/logger');  // Added: Borrow exported logger from ../util/logger.js
 
 
-// POST /api/plans (Protected: Creates plan and assigns VibeCoordinator role)
+// POST /api/plans (Protected: Creates plan and assigns Owner role)
 router.post('/', authMiddleware, async (req, res) => {
   const { type, name, destination, startDate, endDate, timeZone, budget } = req.body;
 
-  logger.info('In Post /api/plans - Creates plan and assigns VibeCoordinator role to requestor');
+  logger.info('In Post /api/plans - Creates plan and assigns Owner role to requestor');
   // Validate required fields
   if (!type || !name) {
     return res.status(400).json({ msg: 'Missing required fields: type, name' });
@@ -43,12 +44,12 @@ router.post('/', authMiddleware, async (req, res) => {
       autoCalculateEndDate: req.body.autoCalculateEndDate || true,
       ownerId: req.user.userId
     });
-    await plan.save();  // Now saves with null dates    // Assign VibeCoordinator role
+    await plan.save();  // Now saves with null dates    // Assign Owner role
 
     const planUser = new PlanUser({
       planId,
       userId: req.user.userId,
-      role: 'VibeCoordinator'
+      role: 'Owner'
     });
     await planUser.save();
 
@@ -142,9 +143,9 @@ router.get('/:planId/users', authMiddleware, async (req, res) => {
 
     // Group by role
     const grouped = {
-      VibeCoordinator: formatted.filter(u => u.role === 'VibeCoordinator'),
-      VibePlanners: formatted.filter(u => u.role === 'VibePlanner'),
-      Wanderers: formatted.filter(u => u.role === 'Wanderer')
+      Owner: formatted.filter(u => canonicalMembershipRole(u.role) === 'Owner'),
+      Collaborator: formatted.filter(u => canonicalMembershipRole(u.role) === 'Collaborator'),
+      Guest: formatted.filter(u => canonicalMembershipRole(u.role) === 'Guest')
     };
 
     res.json({ 
@@ -185,12 +186,14 @@ router.post('/:planId/remove-user', authMiddleware, async (req, res) => {
       return res.status(404).json({ msg: 'Target user not found on plan' });
     }
 
-    if (callerPlanUser.role !== 'VibeCoordinator' && targetPlanUser.role !== 'Wanderer') {
-      return res.status(403).json({ msg: 'VibePlanners can only remove Wanderers' });
+    const callerRole = canonicalMembershipRole(callerPlanUser.role);
+    const targetRole = canonicalMembershipRole(targetPlanUser.role);
+    if (callerRole !== 'Owner' && targetRole !== 'Guest') {
+      return res.status(403).json({ msg: 'Collaborators can only remove Guests' });
     }
 
-    if (targetPlanUser.role === 'VibeCoordinator') {
-      return res.status(400).json({ msg: 'Cannot remove VibeCoordinator—use reassign instead' });
+    if (targetRole === 'Owner') {
+      return res.status(400).json({ msg: 'Cannot remove Owner—use reassign instead' });
     }
 
     await PlanUser.deleteOne({ planId, userId: targetUserId });
@@ -222,17 +225,17 @@ router.post('/:planId/reassign-coordinator', authMiddleware, async (req, res) =>
 
   try {
     const callerPlanUser = await PlanUser.findOne({ planId, userId: req.user.userId });
-    if (!callerPlanUser || callerPlanUser.role !== 'VibeCoordinator') {
-      return res.status(403).json({ msg: 'Only VibeCoordinator can reassign' });
+    if (!callerPlanUser || canonicalMembershipRole(callerPlanUser.role) !== 'Owner') {
+      return res.status(403).json({ msg: 'Only Owner can reassign' });
     }
 
     const targetPlanUser = await PlanUser.findOne({ planId, userId: targetUserId }).populate('userId', 'firstName lastName');
-    if (!targetPlanUser || targetPlanUser.role !== 'VibePlanner') {
-      return res.status(400).json({ msg: 'Target must be a VibePlanner' });
+    if (!targetPlanUser || canonicalMembershipRole(targetPlanUser.role) !== 'Collaborator') {
+      return res.status(400).json({ msg: 'Target must be a Collaborator' });
     }
 
-    callerPlanUser.role = 'VibePlanner';
-    targetPlanUser.role = 'VibeCoordinator';
+    callerPlanUser.role = 'Collaborator';
+    targetPlanUser.role = 'Owner';
     await callerPlanUser.save();
     await targetPlanUser.save();
 

@@ -1,5 +1,6 @@
 const PlanUser = require('../models/PlanUser');
 const Plan = require('../models/Plan');
+const { canonicalMembershipRole } = require('../middleware/roleCheck');
 
 // Helper to check if user can perform action on plan
 async function checkPermission(userId, planId, action) {
@@ -12,10 +13,10 @@ async function checkPermission(userId, planId, action) {
     const userRoleEntry = await PlanUser.findOne({ planId, userId });
     if (!userRoleEntry) return false;  // Not participant—no access
 
-    const role = userRoleEntry.role;
-    const isOwner = role === 'VibeCoordinator';
-    const isPlanner = role === 'VibePlanner';
-    const isWanderer = role === 'Wanderer';
+    const role = canonicalMembershipRole(userRoleEntry.role);
+    const isOwner = role === 'Owner';
+    const isPlanner = role === 'Collaborator';
+    const isWanderer = role === 'Guest';
 
     switch (action) {
       case 'read':

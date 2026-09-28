@@ -229,7 +229,7 @@
               "  pm.response.to.have.status(201);",
               "  const body = pm.response.json();",
               "  pm.expect(body.invitation._id).to.be.a('string').and.not.empty;",
-              "  pm.expect(body.invitation.role).to.eql('VibePlanner');",
+              "  pm.expect(body.invitation.role).to.eql('Collaborator');",
               "  pm.expect(body.invitation.planId).to.eql(pm.environment.get('planId'));",
               "  pm.environment.set('invitationId', body.invitation._id);",
               "});"
@@ -425,7 +425,7 @@
               "pm.test('planner invite of Guest returns 201', function () {",
               "  pm.response.to.have.status(201);",
               "  const body = pm.response.json();",
-              "  pm.expect(body.invitation.role).to.eql('Wanderer');",
+              "  pm.expect(body.invitation.role).to.eql('Guest');",
               "  pm.expect(body.invitation.planId).to.eql(pm.environment.get('planId'));",
               "});"
             ]
