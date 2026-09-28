@@ -5,11 +5,12 @@ const PlanUser = require('../models/PlanUser');
 const { v4: uuidv4 } = require('uuid');
 const { notifyUsers } = require('../utils/notifications');
 const { roleCheck } = require('../middleware/roleCheck');  // Fixed: Destructure to get the function
-const router = express.Router();
+const planInviteRouter = express.Router();
+const invitesRouter = express.Router();
 
-// POST /api/trips/:tripId/invite (Protected: Invites user by email as role)
-router.post('/trips/:tripId/invite', roleCheck('VibePlanner'), async (req, res) => {  // Note: We'll adjust for Wanderer later
-  const { tripId } = req.params;
+// POST /api/plans/:planId/invite (Protected: Invites user by email as role)
+planInviteRouter.post('/:planId/invite', roleCheck('VibePlanner'), async (req, res) => {  // Note: We'll adjust for Wanderer later
+  const { planId } = req.params;
   const { email, role } = req.body;  // role: 'VibePlanner' or 'Wanderer'
 
   // Validate
@@ -31,7 +32,7 @@ router.post('/trips/:tripId/invite', roleCheck('VibePlanner'), async (req, res) 
     }
 
     // Check if already invited/participant
-    const existing = await Invitation.findOne({ planId: tripId, userId: invitee._id });
+    const existing = await Invitation.findOne({ planId, userId: invitee._id });
     if (existing) {
       return res.status(400).json({ msg: 'User already invited' });
     }
@@ -40,7 +41,7 @@ router.post('/trips/:tripId/invite', roleCheck('VibePlanner'), async (req, res) 
     const invitationId = uuidv4();
     const invitation = new Invitation({
       _id: invitationId,
-      planId: tripId,
+      planId,
       userId: invitee._id,
       invitedBy: req.user.userId,  // From auth
       role
@@ -60,7 +61,7 @@ router.post('/trips/:tripId/invite', roleCheck('VibePlanner'), async (req, res) 
 });
 
 // POST /api/invitations/:invitationId/respond (Protected: Accept/reject invite)
-router.post('/invitations/:invitationId/respond', async (req, res) => {
+invitesRouter.post('/invitations/:invitationId/respond', async (req, res) => {
   const { invitationId } = req.params;
   const { status } = req.body;  // 'accepted' or 'rejected'
 
@@ -112,4 +113,4 @@ router.post('/invitations/:invitationId/respond', async (req, res) => {
   }
 });
 
-module.exports = router;
+module.exports = { planInviteRouter, invitesRouter };

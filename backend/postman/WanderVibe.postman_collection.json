@@ -216,7 +216,7 @@
           "raw": "{\n  \"email\": \"{{emailB}}\",\n  \"role\": \"VibePlanner\"\n}",
           "options": { "raw": { "language": "json" } }
         },
-        "url": "{{baseUrl}}/api/invites/trips/{{planId}}/invite"
+        "url": "{{baseUrl}}/api/plans/{{planId}}/invite"
       },
       "event": [
         {

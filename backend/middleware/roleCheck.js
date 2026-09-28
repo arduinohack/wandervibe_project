@@ -1,14 +1,14 @@
 const PlanUser = require('../models/PlanUser');
 const authMiddleware = require('../middleware/auth.js')
 
-// Middleware: Checks the caller's PlanUser role for planId or tripId
+// Middleware: Checks the caller's PlanUser role for planId
 const roleCheck =  (requiredRole) => {
   return async (req, res, next) => {
 
     authMiddleware(req, res, async (err) => {
       if (err) return next(err);
 
-      const planId = req.params.planId || req.params.tripId;
+      const planId = req.params.planId;
 
       try {
         const planUser = await PlanUser.findOne({ planId, userId: req.user.userId });

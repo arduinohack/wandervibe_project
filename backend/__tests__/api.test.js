@@ -121,8 +121,14 @@ describe('invites', () => {
       .send({ type: 'trip', name: 'Paris', destination: 'Paris', timeZone: 'UTC' });
     const planId = planRes.body.plan._id;
 
-    const inviteRes = await request(app)
+    const oldInvite = await request(app)
       .post(`/api/invites/trips/${planId}/invite`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'grace@example.com', role: 'VibePlanner' });
+    expect(oldInvite.status).toBe(404);
+
+    const inviteRes = await request(app)
+      .post(`/api/plans/${planId}/invite`)
       .set('Authorization', `Bearer ${ada.token}`)
       .send({ email: 'grace@example.com', role: 'VibePlanner' });
 
@@ -174,7 +180,7 @@ describe('invites', () => {
     const planId = planRes.body.plan._id;
 
     const wandererInvite = await request(app)
-      .post(`/api/invites/trips/${planId}/invite`)
+      .post(`/api/plans/${planId}/invite`)
       .set('Authorization', `Bearer ${ada.token}`)
       .send({ email: 'grace@example.com', role: 'Wanderer' });
     expect(wandererInvite.status).toBe(201);
@@ -186,7 +192,7 @@ describe('invites', () => {
     expect(acceptRes.status).toBe(200);
 
     const denied = await request(app)
-      .post(`/api/invites/trips/${planId}/invite`)
+      .post(`/api/plans/${planId}/invite`)
       .set('Authorization', `Bearer ${grace.token}`)
       .send({ email: 'alan@example.com', role: 'VibePlanner' });
 

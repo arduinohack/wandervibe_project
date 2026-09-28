@@ -15,14 +15,16 @@ app.use(morgan('dev'));  // Logs requests to console
 app.use('/api/auth', require('./routes/auth'));
 
 // Mount plans routes WITH authMiddleware (protects all /api/plans/*)
-app.use('/api/plans', authMiddleware, require('./routes/plans'));
+const plansRouter = require('./routes/plans');
+const { planInviteRouter, invitesRouter } = require('./routes/invites');
+app.use('/api/plans', authMiddleware, plansRouter, planInviteRouter);
 
 // Mount events under /api/events (uses events.js handler)
 const eventRoutes = require('./routes/events');
 app.use('/api/events', eventRoutes);
 
 // Mount invites routes WITH authMiddleware (protects all /api/invites/*)
-app.use('/api/invites', authMiddleware, require('./routes/invites'));
+app.use('/api/invites', authMiddleware, invitesRouter);
 
 // Temp test routes for auth (remove after Phase 2 testing)
 app.get('/api/test-auth', authMiddleware, (req, res) => {
