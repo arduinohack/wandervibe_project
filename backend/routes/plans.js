@@ -76,10 +76,16 @@ router.get('/', authMiddleware, async (req, res) => {
   });
 
   try {
-    const userId = req.user.userId;  // From token
-    const plans = await Plan.find({ ownerId: userId })  // Or your filter
-      .populate('participants');  // Added: Embed PlanUser data (userId, role)
-    res.status(200).json({ plans });  // Response now has participants array
+    const userId = req.user.userId || req.user.id;
+    const memberships = await PlanUser.find({ userId }).select('planId');
+    const planIds = memberships.map((membership) => membership.planId);
+    const plans = await Plan.find({
+      $or: [
+        { _id: { $in: planIds } },
+        { ownerId: userId },
+      ],
+    }).populate('participants');
+    res.status(200).json({ plans });
   } catch (error) {
     console.error('Fetch plans error:', error);
     res.status(500).json({ message: 'Server error' });

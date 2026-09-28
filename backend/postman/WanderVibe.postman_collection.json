@@ -335,6 +335,37 @@
       ]
     },
     {
+      "name": "14 B lists joined plans",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            { "key": "token", "value": "{{tokenB}}", "type": "string" }
+          ]
+        },
+        "url": "{{baseUrl}}/api/plans"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('joined user B sees the created plan', function () {",
+              "  pm.response.to.have.status(200);",
+              "  const plans = pm.response.json().plans;",
+              "  pm.expect(plans).to.be.an('array');",
+              "  const ids = plans.map(function (plan) { return plan._id; });",
+              "  pm.expect(ids).to.include(pm.environment.get('planId'));",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
       "name": "11 Event later day",
       "request": {
         "method": "POST",

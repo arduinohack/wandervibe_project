@@ -98,6 +98,135 @@ describe('plans', () => {
     expect(membership).toBeTruthy();
     expect(membership.role).toBe('VibeCoordinator');
   });
+
+  test('creator sees the plan on GET /api/plans', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+      password: 'password1',
+    });
+
+    const planRes = await request(app)
+      .post('/api/plans')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ type: 'trip', name: 'Paris', destination: 'Paris', timeZone: 'UTC' });
+    const planId = planRes.body.plan._id;
+
+    const listRes = await request(app)
+      .get('/api/plans')
+      .set('Authorization', `Bearer ${ada.token}`);
+
+    expect(listRes.status).toBe(200);
+    expect(listRes.body.plans.map((plan) => plan._id)).toContain(planId);
+  });
+
+  test('creator still sees the plan when the PlanUser row is missing', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+      password: 'password1',
+    });
+
+    const planRes = await request(app)
+      .post('/api/plans')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ type: 'trip', name: 'Paris', destination: 'Paris', timeZone: 'UTC' });
+    const planId = planRes.body.plan._id;
+    await PlanUser.deleteOne({ planId, userId: ada.userId });
+
+    const listRes = await request(app)
+      .get('/api/plans')
+      .set('Authorization', `Bearer ${ada.token}`);
+
+    expect(listRes.status).toBe(200);
+    expect(listRes.body.plans.map((plan) => plan._id)).toContain(planId);
+  });
+
+  test('an accepted member sees the plan and the owner still does', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+      password: 'password1',
+    });
+    const grace = await registerAndLogin({
+      firstName: 'Grace',
+      lastName: 'Hopper',
+      email: 'grace@example.com',
+      password: 'password2',
+    });
+
+    const planRes = await request(app)
+      .post('/api/plans')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ type: 'trip', name: 'Paris', destination: 'Paris', timeZone: 'UTC' });
+    const planId = planRes.body.plan._id;
+
+    const inviteRes = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'grace@example.com', role: 'VibePlanner' });
+    expect(inviteRes.status).toBe(201);
+
+    const acceptRes = await request(app)
+      .post(`/api/invites/invitations/${inviteRes.body.invitation._id}/respond`)
+      .set('Authorization', `Bearer ${grace.token}`)
+      .send({ status: 'accepted' });
+    expect(acceptRes.status).toBe(200);
+
+    const graceList = await request(app)
+      .get('/api/plans')
+      .set('Authorization', `Bearer ${grace.token}`);
+    expect(graceList.status).toBe(200);
+    expect(graceList.body.plans.map((plan) => plan._id)).toContain(planId);
+
+    const adaList = await request(app)
+      .get('/api/plans')
+      .set('Authorization', `Bearer ${ada.token}`);
+    expect(adaList.status).toBe(200);
+    expect(adaList.body.plans.map((plan) => plan._id)).toContain(planId);
+  });
+
+  test('a pending invitation does not add the plan', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+      password: 'password1',
+    });
+    const alan = await registerAndLogin({
+      firstName: 'Alan',
+      lastName: 'Turing',
+      email: 'alan@example.com',
+      password: 'password3',
+    });
+
+    const planRes = await request(app)
+      .post('/api/plans')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ type: 'trip', name: 'Paris', destination: 'Paris', timeZone: 'UTC' });
+    const planId = planRes.body.plan._id;
+
+    const inviteRes = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'alan@example.com', role: 'Wanderer' });
+    expect(inviteRes.status).toBe(201);
+
+    const alanList = await request(app)
+      .get('/api/plans')
+      .set('Authorization', `Bearer ${alan.token}`);
+    expect(alanList.status).toBe(200);
+    expect(alanList.body.plans.map((plan) => plan._id)).not.toContain(planId);
+
+    const adaList = await request(app)
+      .get('/api/plans')
+      .set('Authorization', `Bearer ${ada.token}`);
+    expect(adaList.status).toBe(200);
+    expect(adaList.body.plans.map((plan) => plan._id)).toContain(planId);
+  });
 });
 
 describe('invites', () => {
