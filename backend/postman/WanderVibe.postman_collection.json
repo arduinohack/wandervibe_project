@@ -16,6 +16,7 @@
           "  pm.variables.set('stamp', stamp);",
           "  pm.environment.set('emailA', 'usera.' + stamp + '@example.com');",
           "  pm.environment.set('emailB', 'userb.' + stamp + '@example.com');",
+          "  pm.environment.set('emailC', 'userc.' + stamp + '@example.com');",
           "}"
         ]
       }
@@ -359,6 +360,73 @@
               "  pm.expect(plans).to.be.an('array');",
               "  const ids = plans.map(function (plan) { return plan._id; });",
               "  pm.expect(ids).to.include(pm.environment.get('planId'));",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "15 Register C",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "auth": { "type": "noauth" },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"firstName\": \"Alan\",\n  \"lastName\": \"Turing\",\n  \"email\": \"{{emailC}}\",\n  \"password\": \"{{password}}\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": "{{baseUrl}}/api/auth/register"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('register C returns 201', function () {",
+              "  pm.response.to.have.status(201);",
+              "  pm.expect(pm.response.json().token).to.be.a('string').and.not.empty;",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "16 B invites C as Guest",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            { "key": "token", "value": "{{tokenB}}", "type": "string" }
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{emailC}}\",\n  \"role\": \"Guest\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": "{{baseUrl}}/api/plans/{{planId}}/invite"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('planner invite of Guest returns 201', function () {",
+              "  pm.response.to.have.status(201);",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.invitation.role).to.eql('Wanderer');",
+              "  pm.expect(body.invitation.planId).to.eql(pm.environment.get('planId'));",
               "});"
             ]
           }

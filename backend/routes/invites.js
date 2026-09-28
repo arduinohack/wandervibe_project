@@ -4,24 +4,36 @@ const User = require('../models/User');
 const PlanUser = require('../models/PlanUser');
 const { v4: uuidv4 } = require('uuid');
 const { notifyUsers } = require('../utils/notifications');
-const { roleCheck } = require('../middleware/roleCheck');  // Fixed: Destructure to get the function
+const { roleCheck, canonicalMembershipRole } = require('../middleware/roleCheck');
 const planInviteRouter = express.Router();
 const invitesRouter = express.Router();
 
-// POST /api/plans/:planId/invite (Protected: Invites user by email as role)
-planInviteRouter.post('/:planId/invite', roleCheck('VibePlanner'), async (req, res) => {  // Note: We'll adjust for Wanderer later
-  const { planId } = req.params;
-  const { email, role } = req.body;  // role: 'VibePlanner' or 'Wanderer'
+const INVITE_ROLES = {
+  Collaborator: 'VibePlanner',
+  VibePlanner: 'VibePlanner',
+  planner: 'VibePlanner',
+  Guest: 'Wanderer',
+  Wanderer: 'Wanderer',
+  wanderer: 'Wanderer',
+};
 
-  // Validate
-  if (!email || !['VibePlanner', 'Wanderer'].includes(role)) {
+// POST /api/plans/:planId/invite
+// Coordinator may invite a planner or wanderer. Planner may invite a wanderer.
+planInviteRouter.post('/:planId/invite', roleCheck(['VibeCoordinator', 'VibePlanner']), async (req, res) => {
+  const { planId } = req.params;
+  const { email, role } = req.body;
+  const storedRole = INVITE_ROLES[role];
+
+  if (!email || !storedRole) {
     return res.status(400).json({ msg: 'Missing email or invalid role' });
   }
 
-  // For Wanderer: Use looser roleCheck
-  if (role === 'Wanderer') {
-    // Re-run with Wanderer check (middleware is per-route, so we call it dynamically)
-    // Note: For simplicity, we'll use the same middleware—adjust in use below
+  const callerRole = canonicalMembershipRole(req.planUser && req.planUser.role);
+  if (storedRole === 'VibePlanner' && callerRole !== 'VibeCoordinator') {
+    return res.status(403).json({ msg: 'Only VibeCoordinator can invite VibePlanners' });
+  }
+  if (storedRole === 'Wanderer' && callerRole !== 'VibeCoordinator' && callerRole !== 'VibePlanner') {
+    return res.status(403).json({ msg: 'Only VibeCoordinator or VibePlanner can invite Wanderers' });
   }
 
   try {
@@ -43,15 +55,15 @@ planInviteRouter.post('/:planId/invite', roleCheck('VibePlanner'), async (req, r
       _id: invitationId,
       planId,
       userId: invitee._id,
-      invitedBy: req.user.userId,  // From auth
-      role
+      invitedBy: req.user.userId || req.user.id,
+      role: storedRole
     });
     await invitation.save();
 
     // Notify invitee and inviter
-    const inviteMessage = `You\'ve been invited to "${req.trip?.name || 'a trip'}" as ${role}! Check app to accept.`;
+    const inviteMessage = `You\'ve been invited to "${req.trip?.name || 'a trip'}" as ${storedRole}! Check app to accept.`;
     await notifyUsers([invitee._id], inviteMessage, 'email');
-    await notifyUsers([req.user.userId], `Invited ${invitee.firstName} ${invitee.lastName} as ${role}.`, 'email');
+    await notifyUsers([req.user.userId || req.user.id], `Invited ${invitee.firstName} ${invitee.lastName} as ${storedRole}.`, 'email');
 
     res.status(201).json({ msg: 'Invitation sent!', invitation });
   } catch (err) {

@@ -328,6 +328,199 @@ describe('invites', () => {
     expect(denied.status).toBe(403);
     expect(await Invitation.findOne({ userId: alan.userId })).toBeNull();
   });
+
+  test('a planner may invite a wanderer as Guest', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+      password: 'password1',
+    });
+    const grace = await registerAndLogin({
+      firstName: 'Grace',
+      lastName: 'Hopper',
+      email: 'grace@example.com',
+      password: 'password2',
+    });
+    const alan = await registerAndLogin({
+      firstName: 'Alan',
+      lastName: 'Turing',
+      email: 'alan@example.com',
+      password: 'password3',
+    });
+
+    const planRes = await request(app)
+      .post('/api/plans')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ type: 'trip', name: 'Paris', destination: 'Paris', timeZone: 'UTC' });
+    const planId = planRes.body.plan._id;
+
+    const plannerInvite = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'grace@example.com', role: 'VibePlanner' });
+    expect(plannerInvite.status).toBe(201);
+
+    const acceptRes = await request(app)
+      .post(`/api/invites/invitations/${plannerInvite.body.invitation._id}/respond`)
+      .set('Authorization', `Bearer ${grace.token}`)
+      .send({ status: 'accepted' });
+    expect(acceptRes.status).toBe(200);
+
+    const guestInvite = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${grace.token}`)
+      .send({ email: 'alan@example.com', role: 'Guest' });
+
+    expect(guestInvite.status).toBe(201);
+    expect(guestInvite.body.invitation.planId).toBe(planId);
+    expect(guestInvite.body.invitation.role).toBe('Wanderer');
+    expect(guestInvite.body.invitation.userId).toBe(alan.userId);
+
+    const alanAccept = await request(app)
+      .post(`/api/invites/invitations/${guestInvite.body.invitation._id}/respond`)
+      .set('Authorization', `Bearer ${alan.token}`)
+      .send({ status: 'accepted' });
+    expect(alanAccept.status).toBe(200);
+
+    const membership = await PlanUser.findOne({ planId, userId: alan.userId });
+    expect(membership).toBeTruthy();
+    expect(membership.role).toBe('Wanderer');
+  });
+
+  test('a planner cannot invite a VibePlanner', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+      password: 'password1',
+    });
+    const grace = await registerAndLogin({
+      firstName: 'Grace',
+      lastName: 'Hopper',
+      email: 'grace@example.com',
+      password: 'password2',
+    });
+    const alan = await registerAndLogin({
+      firstName: 'Alan',
+      lastName: 'Turing',
+      email: 'alan@example.com',
+      password: 'password3',
+    });
+
+    const planRes = await request(app)
+      .post('/api/plans')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ type: 'trip', name: 'Paris', destination: 'Paris', timeZone: 'UTC' });
+    const planId = planRes.body.plan._id;
+
+    const plannerInvite = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'grace@example.com', role: 'VibePlanner' });
+    expect(plannerInvite.status).toBe(201);
+
+    const acceptRes = await request(app)
+      .post(`/api/invites/invitations/${plannerInvite.body.invitation._id}/respond`)
+      .set('Authorization', `Bearer ${grace.token}`)
+      .send({ status: 'accepted' });
+    expect(acceptRes.status).toBe(200);
+
+    const denied = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${grace.token}`)
+      .send({ email: 'alan@example.com', role: 'VibePlanner' });
+
+    expect(denied.status).toBe(403);
+    expect(await Invitation.findOne({ userId: alan.userId })).toBeNull();
+  });
+
+  test('short membership names follow the same invite rules', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+      password: 'password1',
+    });
+    const grace = await registerAndLogin({
+      firstName: 'Grace',
+      lastName: 'Hopper',
+      email: 'grace@example.com',
+      password: 'password2',
+    });
+    const alan = await registerAndLogin({
+      firstName: 'Alan',
+      lastName: 'Turing',
+      email: 'alan@example.com',
+      password: 'password3',
+    });
+
+    const planRes = await request(app)
+      .post('/api/plans')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ type: 'trip', name: 'Paris', destination: 'Paris', timeZone: 'UTC' });
+    const planId = planRes.body.plan._id;
+    await PlanUser.updateOne({ planId, userId: ada.userId }, { $set: { role: 'coordinator' } });
+
+    const plannerInvite = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'grace@example.com', role: 'planner' });
+    expect(plannerInvite.status).toBe(201);
+    expect(plannerInvite.body.invitation.role).toBe('VibePlanner');
+
+    const acceptRes = await request(app)
+      .post(`/api/invites/invitations/${plannerInvite.body.invitation._id}/respond`)
+      .set('Authorization', `Bearer ${grace.token}`)
+      .send({ status: 'accepted' });
+    expect(acceptRes.status).toBe(200);
+    await PlanUser.updateOne({ planId, userId: grace.userId }, { $set: { role: 'planner' } });
+
+    const guestInvite = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${grace.token}`)
+      .send({ email: 'alan@example.com', role: 'wanderer' });
+    expect(guestInvite.status).toBe(201);
+    expect(guestInvite.body.invitation.role).toBe('Wanderer');
+
+    await PlanUser.updateOne({ planId, userId: grace.userId }, { $set: { role: 'wanderer' } });
+    const denied = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${grace.token}`)
+      .send({ email: 'alan@example.com', role: 'Guest' });
+    expect(denied.status).toBe(403);
+  });
+
+  test('invite rejects owner and UI role labels', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+      password: 'password1',
+    });
+    const grace = await registerAndLogin({
+      firstName: 'Grace',
+      lastName: 'Hopper',
+      email: 'grace@example.com',
+      password: 'password2',
+    });
+
+    const planRes = await request(app)
+      .post('/api/plans')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ type: 'trip', name: 'Paris', destination: 'Paris', timeZone: 'UTC' });
+    const planId = planRes.body.plan._id;
+
+    for (const role of ['Owner', 'VibeCoordinator', 'Organizer', 'Host', 'Co-Planner', 'Attendee', 'Planner']) {
+      const res = await request(app)
+        .post(`/api/plans/${planId}/invite`)
+        .set('Authorization', `Bearer ${ada.token}`)
+        .send({ email: 'grace@example.com', role });
+      expect(res.status).toBe(400);
+    }
+
+    expect(await Invitation.countDocuments({ userId: grace.userId })).toBe(0);
+  });
 });
 
 describe('itinerary', () => {
