@@ -688,3 +688,206 @@ describe('itinerary', () => {
     expect(res.body.events[1].dayNumber).toBe(2);
   });
 });
+
+describe('activity permissions', () => {
+  const dinner = (planId, name) => ({
+    name,
+    type: 'dining',
+    planId,
+    startTime: '2026-06-01T15:00:00.000Z',
+    endTime: '2026-06-01T18:00:00.000Z',
+  });
+
+  test('the owner can create an activity', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+      password: 'password1',
+    });
+    const planRes = await request(app)
+      .post('/api/plans')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ type: 'trip', name: 'Paris', destination: 'Paris', timeZone: 'UTC' });
+    const planId = planRes.body.plan._id;
+
+    const created = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send(dinner(planId, 'Owner dinner'));
+
+    expect(created.status).toBe(201);
+    expect(created.body.planId).toBe(planId);
+  });
+
+  test('an owner without a PlanUser row can still create an activity', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+      password: 'password1',
+    });
+    const planRes = await request(app)
+      .post('/api/plans')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ type: 'trip', name: 'Paris', destination: 'Paris', timeZone: 'UTC' });
+    const planId = planRes.body.plan._id;
+    await PlanUser.deleteOne({ planId, userId: ada.userId });
+
+    const created = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send(dinner(planId, 'Owner dinner'));
+
+    expect(created.status).toBe(201);
+  });
+
+  test('a collaborator can create and update an activity', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+      password: 'password1',
+    });
+    const grace = await registerAndLogin({
+      firstName: 'Grace',
+      lastName: 'Hopper',
+      email: 'grace@example.com',
+      password: 'password2',
+    });
+    const planRes = await request(app)
+      .post('/api/plans')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ type: 'trip', name: 'Paris', destination: 'Paris', timeZone: 'UTC' });
+    const planId = planRes.body.plan._id;
+
+    const inviteRes = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'grace@example.com', role: 'Collaborator' });
+    expect(inviteRes.status).toBe(201);
+    const acceptRes = await request(app)
+      .post(`/api/invites/invitations/${inviteRes.body.invitation._id}/respond`)
+      .set('Authorization', `Bearer ${grace.token}`)
+      .send({ status: 'accepted' });
+    expect(acceptRes.status).toBe(200);
+
+    const created = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${grace.token}`)
+      .send(dinner(planId, 'Collaborator dinner'));
+    expect(created.status).toBe(201);
+
+    const ownerEvent = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send(dinner(planId, 'Owner dinner'));
+    expect(ownerEvent.status).toBe(201);
+
+    const updated = await request(app)
+      .put(`/api/events/${ownerEvent.body._id}`)
+      .set('Authorization', `Bearer ${grace.token}`)
+      .send({ name: 'Updated by collaborator' });
+    expect(updated.status).toBe(200);
+    expect(updated.body.name).toBe('Updated by collaborator');
+
+    await PlanUser.updateOne({ planId, userId: grace.userId }, { $set: { role: 'planner' } });
+    const aliasCreate = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${grace.token}`)
+      .send(dinner(planId, 'Alias dinner'));
+    expect(aliasCreate.status).toBe(201);
+
+    const removed = await request(app)
+      .delete(`/api/events/${ownerEvent.body._id}`)
+      .set('Authorization', `Bearer ${grace.token}`);
+    expect(removed.status).toBe(200);
+    expect(await Event.findById(ownerEvent.body._id)).toBeNull();
+  });
+
+  test('a guest cannot create or update an activity', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+      password: 'password1',
+    });
+    const grace = await registerAndLogin({
+      firstName: 'Grace',
+      lastName: 'Hopper',
+      email: 'grace@example.com',
+      password: 'password2',
+    });
+    const planRes = await request(app)
+      .post('/api/plans')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ type: 'trip', name: 'Paris', destination: 'Paris', timeZone: 'UTC' });
+    const planId = planRes.body.plan._id;
+
+    const ownerEvent = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send(dinner(planId, 'Owner dinner'));
+    expect(ownerEvent.status).toBe(201);
+
+    const inviteRes = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'grace@example.com', role: 'Guest' });
+    expect(inviteRes.status).toBe(201);
+    const acceptRes = await request(app)
+      .post(`/api/invites/invitations/${inviteRes.body.invitation._id}/respond`)
+      .set('Authorization', `Bearer ${grace.token}`)
+      .send({ status: 'accepted' });
+    expect(acceptRes.status).toBe(200);
+
+    const before = await Event.countDocuments({ planId });
+    const denied = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${grace.token}`)
+      .send(dinner(planId, 'Guest dinner'));
+    expect(denied.status).toBe(403);
+    expect(await Event.countDocuments({ planId })).toBe(before);
+
+    const deniedUpdate = await request(app)
+      .put(`/api/events/${ownerEvent.body._id}`)
+      .set('Authorization', `Bearer ${grace.token}`)
+      .send({ name: 'Guest edit' });
+    expect(deniedUpdate.status).toBe(403);
+    expect((await Event.findById(ownerEvent.body._id)).name).toBe('Owner dinner');
+
+    const itinerary = await request(app)
+      .get(`/api/plans/${planId}/itinerary`)
+      .set('Authorization', `Bearer ${grace.token}`);
+    expect(itinerary.status).toBe(200);
+  });
+
+  test('a user who is not a member cannot create an activity', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+      password: 'password1',
+    });
+    const alan = await registerAndLogin({
+      firstName: 'Alan',
+      lastName: 'Turing',
+      email: 'alan@example.com',
+      password: 'password3',
+    });
+    const planRes = await request(app)
+      .post('/api/plans')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ type: 'trip', name: 'Paris', destination: 'Paris', timeZone: 'UTC' });
+    const planId = planRes.body.plan._id;
+
+    const before = await Event.countDocuments({ planId });
+    const denied = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${alan.token}`)
+      .send(dinner(planId, 'Stranger dinner'));
+
+    expect(denied.status).toBe(403);
+    expect(await Event.countDocuments({ planId })).toBe(before);
+  });
+});

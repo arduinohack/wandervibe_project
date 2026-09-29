@@ -534,6 +534,43 @@
           }
         }
       ]
+    },
+    {
+      "name": "17 B creates an activity",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            { "key": "token", "value": "{{tokenB}}", "type": "string" }
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Collaborator dinner\",\n  \"type\": \"dining\",\n  \"planId\": \"{{planId}}\",\n  \"startTime\": \"2026-06-03T15:00:00.000Z\",\n  \"endTime\": \"2026-06-03T18:00:00.000Z\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": "{{baseUrl}}/api/events"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('collaborator B creates an activity', function () {",
+              "  pm.response.to.have.status(201);",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.planId).to.eql(pm.environment.get('planId'));",
+              "  pm.expect(body.name).to.eql('Collaborator dinner');",
+              "});"
+            ]
+          }
+        }
+      ]
     }
   ]
 }
