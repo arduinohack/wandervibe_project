@@ -639,6 +639,93 @@ describe('invites', () => {
   });
 });
 
+describe('invitation inbox', () => {
+  test('unauthenticated GET /api/invites is 401', async () => {
+    const res = await request(app).get('/api/invites');
+    expect(res.status).toBe(401);
+    expect(res.body.message).toBe('No token, authorization denied');
+  });
+
+  test('the invitee sees the invitation and the inviter does not', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+      password: 'password1',
+    });
+    const grace = await registerAndLogin({
+      firstName: 'Grace',
+      lastName: 'Hopper',
+      email: 'grace@example.com',
+      password: 'password2',
+    });
+
+    const planRes = await request(app)
+      .post('/api/plans')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ type: 'trip', name: 'Paris', destination: 'Paris', timeZone: 'UTC' });
+    const planId = planRes.body.plan._id;
+
+    const inviteRes = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'grace@example.com', role: 'Collaborator' });
+    expect(inviteRes.status).toBe(201);
+    const invitationId = inviteRes.body.invitation._id;
+
+    const graceList = await request(app)
+      .get('/api/invites')
+      .set('Authorization', `Bearer ${grace.token}`);
+    expect(graceList.status).toBe(200);
+    expect(Array.isArray(graceList.body)).toBe(true);
+    const pending = graceList.body.find((invitation) => invitation._id === invitationId);
+    expect(pending).toBeTruthy();
+    expect(pending.planId).toBe(planId);
+    expect(pending.role).toBe('Collaborator');
+    expect(pending.status).toBe('pending');
+    expect(pending.invitedBy).toBe(ada.userId);
+    expect(pending.createdAt).toBeTruthy();
+    expect(pending.planName).toBe('Paris');
+
+    const adaList = await request(app)
+      .get('/api/invites')
+      .set('Authorization', `Bearer ${ada.token}`);
+    expect(adaList.status).toBe(200);
+    expect(adaList.body.map((invitation) => invitation._id)).not.toContain(invitationId);
+
+    const acceptRes = await request(app)
+      .post(`/api/invites/invitations/${invitationId}/respond`)
+      .set('Authorization', `Bearer ${grace.token}`)
+      .send({ status: 'accepted' });
+    expect(acceptRes.status).toBe(200);
+
+    const afterAccept = await request(app)
+      .get('/api/invites')
+      .set('Authorization', `Bearer ${grace.token}`);
+    const accepted = afterAccept.body.find((invitation) => invitation._id === invitationId);
+    expect(accepted).toBeTruthy();
+    expect(accepted.status).toBe('accepted');
+
+    const pendingOnly = await request(app)
+      .get('/api/invites')
+      .query({ status: 'pending' })
+      .set('Authorization', `Bearer ${grace.token}`);
+    expect(pendingOnly.body.map((invitation) => invitation._id)).not.toContain(invitationId);
+
+    const acceptedOnly = await request(app)
+      .get('/api/invites')
+      .query({ status: 'accepted' })
+      .set('Authorization', `Bearer ${grace.token}`);
+    expect(acceptedOnly.body.map((invitation) => invitation._id)).toContain(invitationId);
+
+    const invalid = await request(app)
+      .get('/api/invites')
+      .query({ status: 'nope' })
+      .set('Authorization', `Bearer ${grace.token}`);
+    expect(invalid.status).toBe(400);
+  });
+});
+
 describe('itinerary', () => {
   test('orders events by startTime and numbers the first event as day 1', async () => {
     const ada = await registerAndLogin({

@@ -1,6 +1,7 @@
 const express = require('express');
 const Invitation = require('../models/Invitation');
 const User = require('../models/User');
+const Plan = require('../models/Plan');
 const PlanUser = require('../models/PlanUser');
 const { v4: uuidv4 } = require('uuid');
 const { notifyUsers } = require('../utils/notifications');
@@ -68,6 +69,48 @@ planInviteRouter.post('/:planId/invite', roleCheck(['Owner', 'Collaborator']), a
     res.status(201).json({ msg: 'Invitation sent!', invitation });
   } catch (err) {
     console.error('Invite error:', err);
+    res.status(500).json({ msg: 'Server error' });
+  }
+});
+
+const INVITE_STATUSES = ['pending', 'accepted', 'rejected'];
+
+// GET /api/invites — invitations where the caller is the invitee
+invitesRouter.get('/', async (req, res) => {
+  const callerId = req.user.userId || req.user.id;
+  const { status } = req.query;
+
+  if (status !== undefined && !INVITE_STATUSES.includes(status)) {
+    return res.status(400).json({ msg: 'Invalid status—must be pending, accepted, or rejected' });
+  }
+
+  try {
+    const filter = { userId: callerId };
+    if (status) filter.status = status;
+
+    const invitations = await Invitation.find(filter).sort({ createdAt: -1 }).lean();
+    const planIds = [...new Set(invitations.map((invitation) => invitation.planId))];
+    const inviterIds = [...new Set(invitations.map((invitation) => invitation.invitedBy))];
+    const [plans, inviters] = await Promise.all([
+      Plan.find({ _id: { $in: planIds } }).select('name').lean(),
+      User.find({ _id: { $in: inviterIds } }).select('firstName lastName email').lean(),
+    ]);
+    const plansById = new Map(plans.map((plan) => [plan._id, plan]));
+    const usersById = new Map(inviters.map((user) => [user._id, user]));
+
+    res.json(invitations.map((invitation) => {
+      const plan = plansById.get(invitation.planId);
+      const inviter = usersById.get(invitation.invitedBy);
+      return {
+        ...invitation,
+        planName: plan ? plan.name : null,
+        inviter: inviter
+          ? { firstName: inviter.firstName, lastName: inviter.lastName, email: inviter.email }
+          : null,
+      };
+    }));
+  } catch (err) {
+    console.error('List invitations error:', err);
     res.status(500).json({ msg: 'Server error' });
   }
 });

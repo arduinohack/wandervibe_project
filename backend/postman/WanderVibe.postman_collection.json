@@ -271,6 +271,43 @@
       ]
     },
     {
+      "name": "18 B lists invites",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            { "key": "token", "value": "{{tokenB}}", "type": "string" }
+          ]
+        },
+        "url": "{{baseUrl}}/api/invites"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('B sees the invitation addressed to them', function () {",
+              "  pm.response.to.have.status(200);",
+              "  const body = pm.response.json();",
+              "  pm.expect(body).to.be.an('array');",
+              "  const invitationId = pm.environment.get('invitationId');",
+              "  const planId = pm.environment.get('planId');",
+              "  const match = body.find(function (item) {",
+              "    return item._id === invitationId || item.planId === planId;",
+              "  });",
+              "  pm.expect(match).to.be.an('object');",
+              "  pm.expect(match.status).to.eql('pending');",
+              "  pm.expect(match.planId).to.eql(planId);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
       "name": "9 Accept invite",
       "request": {
         "method": "POST",
