@@ -977,4 +977,53 @@ describe('activity permissions', () => {
     expect(denied.status).toBe(403);
     expect(await Event.countDocuments({ planId })).toBe(before);
   });
+
+  test('changing a flight to a hotel clears flight-only fields', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+      password: 'password1',
+    });
+    const planRes = await request(app)
+      .post('/api/plans')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ type: 'trip', name: 'Paris', destination: 'Paris', timeZone: 'UTC' });
+    const planId = planRes.body.plan._id;
+
+    const created = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({
+        name: 'AA 100',
+        type: 'flight',
+        planId,
+        location: 'JFK',
+        startTime: '2026-06-01T15:00:00.000Z',
+        endTime: '2026-06-01T18:00:00.000Z',
+        originTimeZone: 'America/New_York',
+        destinationTimeZone: 'Europe/Paris',
+        gate: 'B12',
+        baggageClaim: '4',
+      });
+    expect(created.status).toBe(201);
+
+    const updated = await request(app)
+      .put(`/api/events/${created.body._id}`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ type: 'hotel', gate: 'Z9' });
+    expect(updated.status).toBe(200);
+    expect(updated.body.type).toBe('hotel');
+    expect(updated.body.name).toBe('AA 100');
+    expect(updated.body.location).toBe('JFK');
+
+    const stored = await Event.findById(created.body._id);
+    expect(stored.type).toBe('hotel');
+    expect(stored.name).toBe('AA 100');
+    expect(stored.location).toBe('JFK');
+    expect(stored.originTimeZone).toBeFalsy();
+    expect(stored.destinationTimeZone).toBeFalsy();
+    expect(stored.gate).toBeFalsy();
+    expect(stored.baggageClaim).toBeFalsy();
+  });
 });

@@ -5,6 +5,7 @@ const Plan = require('../models/Plan');
 const PlanUser = require('../models/PlanUser');
 const authMiddleware = require('../middleware/auth');
 const { canonicalMembershipRole } = require('../middleware/roleCheck');
+const { applyTypeChange, assertTypeRequirements } = require('../utils/activityTypeFields');
 
 async function callerMayEditActivities(planId, callerId) {
   const membership = await PlanUser.findOne({ planId, userId: callerId });
@@ -61,7 +62,18 @@ router.put('/:id', authMiddleware, async (req, res) => {
       return res.status(403).json({ message: 'Only Owner or Collaborator can change activities' });
     }
 
-    const updatedEvent = await Event.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const body = req.body || {};
+    const nextType = Object.prototype.hasOwnProperty.call(body, 'type') ? body.type : event.type;
+    const fields = applyTypeChange(event.toObject(), nextType, body);
+    const requirementError = assertTypeRequirements(fields.type, fields);
+    if (requirementError) {
+      return res.status(400).json({ message: requirementError.message });
+    }
+
+    for (const [key, value] of Object.entries(fields)) {
+      event.set(key, value);
+    }
+    const updatedEvent = await event.save();
     res.json(updatedEvent);
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
