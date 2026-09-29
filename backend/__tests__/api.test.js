@@ -11,6 +11,7 @@ const Plan = require('../models/Plan');
 const PlanUser = require('../models/PlanUser');
 const Invitation = require('../models/Invitation');
 const { Event } = require('../models/Event');
+const ActivityRevision = require('../models/ActivityRevision');
 
 jest.setTimeout(30000);
 
@@ -43,6 +44,7 @@ afterEach(async () => {
     PlanUser.deleteMany({}),
     Invitation.deleteMany({}),
     Event.deleteMany({}),
+    ActivityRevision.deleteMany({}),
   ]);
 });
 
@@ -1025,5 +1027,270 @@ describe('activity permissions', () => {
     expect(stored.destinationTimeZone).toBeFalsy();
     expect(stored.gate).toBeFalsy();
     expect(stored.baggageClaim).toBeFalsy();
+  });
+});
+
+describe('activity history', () => {
+  const flight = (planId) => ({
+    name: 'AA 100',
+    type: 'flight',
+    planId,
+    location: 'JFK',
+    startTime: '2026-06-01T15:00:00.000Z',
+    endTime: '2026-06-01T18:00:00.000Z',
+    originTimeZone: 'America/New_York',
+    destinationTimeZone: 'Europe/Paris',
+    gate: 'B12',
+    baggageClaim: '4',
+  });
+
+  async function planFor(token) {
+    const planRes = await request(app)
+      .post('/api/plans')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ type: 'trip', name: 'Paris', destination: 'Paris', timeZone: 'UTC' });
+    return planRes.body.plan._id;
+  }
+
+  async function acceptInvite(ownerToken, planId, email, role, memberToken) {
+    const inviteRes = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ email, role });
+    expect(inviteRes.status).toBe(201);
+    const acceptRes = await request(app)
+      .post(`/api/invites/invitations/${inviteRes.body.invitation._id}/respond`)
+      .set('Authorization', `Bearer ${memberToken}`)
+      .send({ status: 'accepted' });
+    expect(acceptRes.status).toBe(200);
+  }
+
+  test('create, update, and delete record revisions that stay readable after delete', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+      password: 'password1',
+    });
+    const grace = await registerAndLogin({
+      firstName: 'Grace',
+      lastName: 'Hopper',
+      email: 'grace@example.com',
+      password: 'password2',
+    });
+    const sam = await registerAndLogin({
+      firstName: 'Sam',
+      lastName: 'Guest',
+      email: 'sam@example.com',
+      password: 'password3',
+    });
+    const planId = await planFor(ada.token);
+    await acceptInvite(ada.token, planId, 'grace@example.com', 'Collaborator', grace.token);
+    await acceptInvite(ada.token, planId, 'sam@example.com', 'Guest', sam.token);
+
+    const created = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send(flight(planId));
+    expect(created.status).toBe(201);
+    const eventId = created.body._id;
+
+    const afterCreate = await request(app)
+      .get(`/api/events/${eventId}/history`)
+      .set('Authorization', `Bearer ${ada.token}`);
+    expect(afterCreate.status).toBe(200);
+    expect(afterCreate.body).toHaveLength(1);
+    expect(afterCreate.body[0].action).toBe('create');
+    expect(afterCreate.body[0].eventId).toBe(eventId);
+    expect(afterCreate.body[0].planId).toBe(planId);
+    expect(afterCreate.body[0].userId).toBe(ada.userId);
+    expect(afterCreate.body[0].snapshot.name).toBe('AA 100');
+    expect(afterCreate.body[0].snapshot.type).toBe('flight');
+    expect(afterCreate.body[0].snapshot.gate).toBe('B12');
+    expect(afterCreate.body[0].deleted).toBe(false);
+
+    const updated = await request(app)
+      .put(`/api/events/${eventId}`)
+      .set('Authorization', `Bearer ${grace.token}`)
+      .send({ type: 'hotel', gate: 'Z9' });
+    expect(updated.status).toBe(200);
+    const stored = await Event.findById(eventId);
+    expect(stored.type).toBe('hotel');
+    expect(stored.name).toBe('AA 100');
+    expect(stored.gate).toBeFalsy();
+    expect(stored.originTimeZone).toBeFalsy();
+
+    const afterUpdate = await request(app)
+      .get(`/api/events/${eventId}/history`)
+      .set('Authorization', `Bearer ${grace.token}`);
+    expect(afterUpdate.status).toBe(200);
+    expect(afterUpdate.body.map((row) => row.action)).toEqual(['update', 'create']);
+    const updateRow = afterUpdate.body[0];
+    expect(updateRow.userId).toBe(grace.userId);
+    expect(updateRow.planId).toBe(planId);
+    expect(updateRow.snapshot.name).toBe(stored.name);
+    expect(updateRow.snapshot.type).toBe(stored.type);
+    expect(updateRow.snapshot.location).toBe(stored.location);
+    expect(updateRow.snapshot.gate).toBeFalsy();
+    expect(updateRow.snapshot.originTimeZone).toBeFalsy();
+    expect(updateRow.snapshot.destinationTimeZone).toBeFalsy();
+    expect(updateRow.snapshot.baggageClaim).toBeFalsy();
+    expect(await ActivityRevision.countDocuments({ eventId, action: 'update' })).toBe(1);
+
+    const guestPut = await request(app)
+      .put(`/api/events/${eventId}`)
+      .set('Authorization', `Bearer ${sam.token}`)
+      .send({ name: 'Guest edit' });
+    expect(guestPut.status).toBe(403);
+    const guestDelete = await request(app)
+      .delete(`/api/events/${eventId}`)
+      .set('Authorization', `Bearer ${sam.token}`);
+    expect(guestDelete.status).toBe(403);
+    expect(await ActivityRevision.countDocuments({ eventId })).toBe(2);
+    expect((await Event.findById(eventId)).name).toBe('AA 100');
+
+    const removed = await request(app)
+      .delete(`/api/events/${eventId}`)
+      .set('Authorization', `Bearer ${ada.token}`);
+    expect(removed.status).toBe(200);
+    expect(await Event.findById(eventId)).toBeNull();
+
+    await PlanUser.updateOne({ planId, userId: sam.userId }, { $set: { role: 'Wanderer' } });
+    const history = await request(app)
+      .get(`/api/events/${eventId}/history`)
+      .set('Authorization', `Bearer ${sam.token}`);
+    expect(history.status).toBe(200);
+    expect(Array.isArray(history.body)).toBe(true);
+    expect(history.body.map((row) => row.action)).toEqual(['delete', 'update', 'create']);
+    expect(history.body[0].deleted).toBe(true);
+    expect(history.body[0].userId).toBe(ada.userId);
+    expect(history.body[0].snapshot.name).toBe('AA 100');
+    expect(history.body[0].snapshot.type).toBe('hotel');
+    expect(history.body[0].snapshot.deleted).toBeUndefined();
+    expect(history.body[1].snapshot.type).toBe('hotel');
+    expect(history.body[2].snapshot.name).toBe('AA 100');
+    expect(history.body[2].snapshot.gate).toBe('B12');
+    for (const row of history.body) {
+      expect(row).toEqual(expect.objectContaining({
+        _id: expect.any(String),
+        eventId,
+        planId,
+        userId: expect.any(String),
+        action: expect.any(String),
+        snapshot: expect.any(Object),
+        createdAt: expect.any(String),
+      }));
+    }
+  });
+
+  test('a failed type change does not record a revision', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+      password: 'password1',
+    });
+    const planId = await planFor(ada.token);
+    const created = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({
+        name: 'Lunch',
+        type: 'dining',
+        planId,
+        startTime: '2026-06-01T15:00:00.000Z',
+        endTime: '2026-06-01T16:00:00.000Z',
+      });
+    expect(created.status).toBe(201);
+
+    const denied = await request(app)
+      .put(`/api/events/${created.body._id}`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ type: 'flight' });
+    expect(denied.status).toBe(400);
+    expect((await Event.findById(created.body._id)).type).toBe('dining');
+    expect(await ActivityRevision.countDocuments({ eventId: created.body._id })).toBe(1);
+    expect(await ActivityRevision.countDocuments({ eventId: created.body._id, action: 'update' })).toBe(0);
+  });
+
+  test('the plan owner can read history without a PlanUser row', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+      password: 'password1',
+    });
+    const planId = await planFor(ada.token);
+    const created = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({
+        name: 'Owner dinner',
+        type: 'dining',
+        planId,
+        startTime: '2026-06-01T15:00:00.000Z',
+        endTime: '2026-06-01T18:00:00.000Z',
+      });
+    expect(created.status).toBe(201);
+    await PlanUser.deleteOne({ planId, userId: ada.userId });
+
+    const history = await request(app)
+      .get(`/api/events/${created.body._id}/history`)
+      .set('Authorization', `Bearer ${ada.token}`);
+    expect(history.status).toBe(200);
+    expect(history.body).toHaveLength(1);
+    expect(history.body[0].snapshot.name).toBe('Owner dinner');
+  });
+
+  test('a non-member cannot read history', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+      password: 'password1',
+    });
+    const alan = await registerAndLogin({
+      firstName: 'Alan',
+      lastName: 'Turing',
+      email: 'alan@example.com',
+      password: 'password3',
+    });
+    const planId = await planFor(ada.token);
+    const created = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({
+        name: 'Owner dinner',
+        type: 'dining',
+        planId,
+        startTime: '2026-06-01T15:00:00.000Z',
+        endTime: '2026-06-01T18:00:00.000Z',
+      });
+    expect(created.status).toBe(201);
+
+    const denied = await request(app)
+      .get(`/api/events/${created.body._id}/history`)
+      .set('Authorization', `Bearer ${alan.token}`);
+    expect(denied.status).toBe(403);
+    expect(Array.isArray(denied.body)).toBe(false);
+  });
+
+  test('history without a token is 401', async () => {
+    const res = await request(app).get('/api/events/missing-event/history');
+    expect(res.status).toBe(401);
+    expect(res.body.message).toBe('No token, authorization denied');
+  });
+
+  test('an unknown activity with no revisions is 404', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+      password: 'password1',
+    });
+    const res = await request(app)
+      .get('/api/events/does-not-exist/history')
+      .set('Authorization', `Bearer ${ada.token}`);
+    expect(res.status).toBe(404);
   });
 });
