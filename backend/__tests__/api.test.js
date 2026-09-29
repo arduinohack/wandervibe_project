@@ -1294,3 +1294,501 @@ describe('activity history', () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe('activity restore', () => {
+  const flight = (planId) => ({
+    name: 'AA 100',
+    type: 'flight',
+    planId,
+    location: 'JFK',
+    startTime: '2026-06-01T15:00:00.000Z',
+    endTime: '2026-06-01T18:00:00.000Z',
+    originTimeZone: 'America/New_York',
+    destinationTimeZone: 'Europe/Paris',
+    gate: 'B12',
+    baggageClaim: '4',
+  });
+
+  async function planFor(token) {
+    const planRes = await request(app)
+      .post('/api/plans')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ type: 'trip', name: 'Paris', destination: 'Paris', timeZone: 'UTC' });
+    return planRes.body.plan._id;
+  }
+
+  async function acceptInvite(ownerToken, planId, email, role, memberToken) {
+    const inviteRes = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ email, role });
+    expect(inviteRes.status).toBe(201);
+    const acceptRes = await request(app)
+      .post(`/api/invites/invitations/${inviteRes.body.invitation._id}/respond`)
+      .set('Authorization', `Bearer ${memberToken}`)
+      .send({ status: 'accepted' });
+    expect(acceptRes.status).toBe(200);
+  }
+
+  async function historyOf(eventId, token) {
+    const res = await request(app)
+      .get(`/api/events/${eventId}/history`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    return res.body;
+  }
+
+  test('a collaborator can restore the create revision over a later edit', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+      password: 'password1',
+    });
+    const grace = await registerAndLogin({
+      firstName: 'Grace',
+      lastName: 'Hopper',
+      email: 'grace@example.com',
+      password: 'password2',
+    });
+    const planId = await planFor(ada.token);
+    await acceptInvite(ada.token, planId, 'grace@example.com', 'Collaborator', grace.token);
+
+    const created = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({
+        name: 'Lunch',
+        type: 'dining',
+        planId,
+        location: 'Cafe',
+        startTime: '2026-06-01T15:00:00.000Z',
+        endTime: '2026-06-01T16:00:00.000Z',
+      });
+    expect(created.status).toBe(201);
+    const eventId = created.body._id;
+    const createRevisionId = (await historyOf(eventId, ada.token))[0]._id;
+
+    const updated = await request(app)
+      .put(`/api/events/${eventId}`)
+      .set('Authorization', `Bearer ${grace.token}`)
+      .send({ name: 'Dinner' });
+    expect(updated.status).toBe(200);
+    expect(updated.body.name).toBe('Dinner');
+
+    const restored = await request(app)
+      .post(`/api/events/${eventId}/restore`)
+      .set('Authorization', `Bearer ${grace.token}`)
+      .send({ revisionId: createRevisionId, name: 'Hacked', location: 'Nowhere' });
+    expect(restored.status).toBe(200);
+    expect(restored.body._id).toBe(eventId);
+    expect(restored.body.name).toBe('Lunch');
+    expect(restored.body.location).toBe('Cafe');
+    expect(restored.body.type).toBe('dining');
+    expect(restored.body.planId).toBe(planId);
+
+    const stored = await Event.findById(eventId);
+    expect(stored.name).toBe('Lunch');
+    expect(stored.location).toBe('Cafe');
+
+    const history = await historyOf(eventId, ada.token);
+    expect(history.map((row) => row.action)).toEqual(['update', 'update', 'create']);
+    expect(history[0].deleted).toBe(false);
+    expect(history[0].userId).toBe(grace.userId);
+    expect(history[0].snapshot.name).toBe('Lunch');
+    expect(history[0].snapshot.location).toBe('Cafe');
+
+    const listed = await request(app)
+      .get(`/api/events/plan/${planId}`)
+      .set('Authorization', `Bearer ${ada.token}`);
+    expect(listed.status).toBe(200);
+    const row = listed.body.find((event) => event._id === eventId);
+    expect(row.name).toBe('Lunch');
+    expect(row.location).toBe('Cafe');
+    expect(row.type).toBe('dining');
+  });
+
+  test('restoring a deleted activity reinserts the same id and records an update', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+      password: 'password1',
+    });
+    const planId = await planFor(ada.token);
+    const created = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({
+        name: 'Museum',
+        type: 'tour',
+        planId,
+        location: 'Louvre',
+        startTime: '2026-06-02T10:00:00.000Z',
+        endTime: '2026-06-02T12:00:00.000Z',
+      });
+    expect(created.status).toBe(201);
+    const eventId = created.body._id;
+
+    const removed = await request(app)
+      .delete(`/api/events/${eventId}`)
+      .set('Authorization', `Bearer ${ada.token}`);
+    expect(removed.status).toBe(200);
+    expect(await Event.findById(eventId)).toBeNull();
+
+    const deleteRevisionId = (await historyOf(eventId, ada.token))[0]._id;
+    expect((await historyOf(eventId, ada.token))[0].action).toBe('delete');
+
+    const restored = await request(app)
+      .post(`/api/events/${eventId}/restore`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ revisionId: deleteRevisionId });
+    expect(restored.status).toBe(200);
+    expect(restored.body._id).toBe(eventId);
+    expect(restored.body.name).toBe('Museum');
+    expect(restored.body.type).toBe('tour');
+    expect(restored.body.location).toBe('Louvre');
+    expect(restored.body.planId).toBe(planId);
+
+    const stored = await Event.findById(eventId);
+    expect(stored).not.toBeNull();
+    expect(String(stored._id)).toBe(eventId);
+    expect(stored.name).toBe('Museum');
+
+    // Reinsert keeps the original activity id, so the new revision is action update.
+    const history = await historyOf(eventId, ada.token);
+    expect(history.map((row) => row.action)).toEqual(['update', 'delete', 'create']);
+    expect(history[0].deleted).toBe(false);
+    expect(history[0].snapshot.name).toBe('Museum');
+    expect(history[0].snapshot._id).toBe(eventId);
+    expect(history[1].action).toBe('delete');
+    expect(history[1].deleted).toBe(true);
+
+    const itinerary = await request(app)
+      .get(`/api/plans/${planId}/itinerary`)
+      .set('Authorization', `Bearer ${ada.token}`);
+    expect(itinerary.status).toBe(200);
+    const row = itinerary.body.events.find((event) => event._id === eventId);
+    expect(row).toBeTruthy();
+    expect(row.name).toBe('Museum');
+    expect(row.type).toBe('tour');
+    expect(row.location).toBe('Louvre');
+  });
+
+  test('a guest cannot restore an activity', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+      password: 'password1',
+    });
+    const sam = await registerAndLogin({
+      firstName: 'Sam',
+      lastName: 'Guest',
+      email: 'sam@example.com',
+      password: 'password3',
+    });
+    const planId = await planFor(ada.token);
+    await acceptInvite(ada.token, planId, 'sam@example.com', 'Guest', sam.token);
+
+    const created = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({
+        name: 'Lunch',
+        type: 'dining',
+        planId,
+        startTime: '2026-06-01T15:00:00.000Z',
+        endTime: '2026-06-01T16:00:00.000Z',
+      });
+    expect(created.status).toBe(201);
+    const eventId = created.body._id;
+    const createRevisionId = (await historyOf(eventId, ada.token))[0]._id;
+    const before = await ActivityRevision.countDocuments({ eventId });
+
+    const denied = await request(app)
+      .post(`/api/events/${eventId}/restore`)
+      .set('Authorization', `Bearer ${sam.token}`)
+      .send({ revisionId: createRevisionId, name: 'Guest edit' });
+    expect(denied.status).toBe(403);
+    expect((await Event.findById(eventId)).name).toBe('Lunch');
+    expect(await ActivityRevision.countDocuments({ eventId })).toBe(before);
+  });
+
+  test('a non-member cannot restore an activity', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+      password: 'password1',
+    });
+    const alan = await registerAndLogin({
+      firstName: 'Alan',
+      lastName: 'Turing',
+      email: 'alan@example.com',
+      password: 'password3',
+    });
+    const planId = await planFor(ada.token);
+    const created = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({
+        name: 'Lunch',
+        type: 'dining',
+        planId,
+        startTime: '2026-06-01T15:00:00.000Z',
+        endTime: '2026-06-01T16:00:00.000Z',
+      });
+    expect(created.status).toBe(201);
+    const eventId = created.body._id;
+    const createRevisionId = (await historyOf(eventId, ada.token))[0]._id;
+    const before = await ActivityRevision.countDocuments({ eventId });
+
+    const denied = await request(app)
+      .post(`/api/events/${eventId}/restore`)
+      .set('Authorization', `Bearer ${alan.token}`)
+      .send({ revisionId: createRevisionId });
+    expect(denied.status).toBe(403);
+    expect((await Event.findById(eventId)).name).toBe('Lunch');
+    expect(await ActivityRevision.countDocuments({ eventId })).toBe(before);
+  });
+
+  test('restore without a token is 401', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+      password: 'password1',
+    });
+    const planId = await planFor(ada.token);
+    const created = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({
+        name: 'Lunch',
+        type: 'dining',
+        planId,
+        startTime: '2026-06-01T15:00:00.000Z',
+        endTime: '2026-06-01T16:00:00.000Z',
+      });
+    expect(created.status).toBe(201);
+    const eventId = created.body._id;
+    const before = await ActivityRevision.countDocuments({ eventId });
+
+    const res = await request(app)
+      .post(`/api/events/${eventId}/restore`)
+      .send({ revisionId: 'any-revision' });
+    expect(res.status).toBe(401);
+    expect(res.body.message).toBe('No token, authorization denied');
+    expect((await Event.findById(eventId)).name).toBe('Lunch');
+    expect(await ActivityRevision.countDocuments({ eventId })).toBe(before);
+  });
+
+  test('a revision from a different activity is 400', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+      password: 'password1',
+    });
+    const planId = await planFor(ada.token);
+    const first = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({
+        name: 'Lunch',
+        type: 'dining',
+        planId,
+        startTime: '2026-06-01T15:00:00.000Z',
+        endTime: '2026-06-01T16:00:00.000Z',
+      });
+    const second = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({
+        name: 'Museum',
+        type: 'tour',
+        planId,
+        startTime: '2026-06-02T10:00:00.000Z',
+        endTime: '2026-06-02T12:00:00.000Z',
+      });
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(201);
+    const eventId = first.body._id;
+    const otherRevisionId = (await historyOf(second.body._id, ada.token))[0]._id;
+    const before = await ActivityRevision.countDocuments({ eventId });
+
+    const res = await request(app)
+      .post(`/api/events/${eventId}/restore`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ revisionId: otherRevisionId });
+    expect(res.status).toBe(400);
+    expect((await Event.findById(eventId)).name).toBe('Lunch');
+    expect(await ActivityRevision.countDocuments({ eventId })).toBe(before);
+    expect(await ActivityRevision.countDocuments({ eventId: second.body._id })).toBe(1);
+  });
+
+  test('restoring a flight snapshot keeps type flight and time zones', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+      password: 'password1',
+    });
+    const grace = await registerAndLogin({
+      firstName: 'Grace',
+      lastName: 'Hopper',
+      email: 'grace@example.com',
+      password: 'password2',
+    });
+    const planId = await planFor(ada.token);
+    await acceptInvite(ada.token, planId, 'grace@example.com', 'Collaborator', grace.token);
+
+    const created = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send(flight(planId));
+    expect(created.status).toBe(201);
+    const eventId = created.body._id;
+    const createRevisionId = (await historyOf(eventId, ada.token))[0]._id;
+
+    const updated = await request(app)
+      .put(`/api/events/${eventId}`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ type: 'hotel', roomNumber: '12' });
+    expect(updated.status).toBe(200);
+    expect(updated.body.type).toBe('hotel');
+    expect(updated.body.roomNumber).toBe('12');
+    expect(updated.body.originTimeZone).toBeFalsy();
+    expect(updated.body.destinationTimeZone).toBeFalsy();
+    expect(updated.body.gate).toBeFalsy();
+
+    const restored = await request(app)
+      .post(`/api/events/${eventId}/restore`)
+      .set('Authorization', `Bearer ${grace.token}`)
+      .send({ revisionId: createRevisionId, type: 'dining', originTimeZone: 'UTC' });
+    expect(restored.status).toBe(200);
+    expect(restored.body._id).toBe(eventId);
+    expect(restored.body.type).toBe('flight');
+    expect(restored.body.name).toBe('AA 100');
+    expect(restored.body.originTimeZone).toBe('America/New_York');
+    expect(restored.body.destinationTimeZone).toBe('Europe/Paris');
+    expect(restored.body.gate).toBe('B12');
+    expect(restored.body.baggageClaim).toBe('4');
+    expect(restored.body.roomNumber).toBeFalsy();
+
+    const stored = await Event.findById(eventId);
+    expect(stored.type).toBe('flight');
+    expect(stored.originTimeZone).toBe('America/New_York');
+    expect(stored.destinationTimeZone).toBe('Europe/Paris');
+    expect(stored.gate).toBe('B12');
+    expect(stored.baggageClaim).toBe('4');
+    expect(stored.roomNumber).toBeFalsy();
+
+    const history = await historyOf(eventId, grace.token);
+    expect(history[0].action).toBe('update');
+    expect(history[0].deleted).toBe(false);
+    expect(history[0].userId).toBe(grace.userId);
+    expect(history[0].snapshot.type).toBe('flight');
+    expect(history[0].snapshot.originTimeZone).toBe('America/New_York');
+    expect(history[0].snapshot.destinationTimeZone).toBe('Europe/Paris');
+    expect(history[0].snapshot.gate).toBe('B12');
+    expect(history[0].snapshot.roomNumber).toBeFalsy();
+  });
+
+  test('a flight snapshot without time zones is 400 and does not write', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+      password: 'password1',
+    });
+    const planId = await planFor(ada.token);
+    const created = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({
+        name: 'AA 100',
+        type: 'flight',
+        planId,
+        location: 'JFK',
+        startTime: '2026-06-01T15:00:00.000Z',
+        endTime: '2026-06-01T18:00:00.000Z',
+      });
+    expect(created.status).toBe(201);
+    const eventId = created.body._id;
+    const createRevisionId = (await historyOf(eventId, ada.token))[0]._id;
+    const before = await ActivityRevision.countDocuments({ eventId });
+
+    const denied = await request(app)
+      .put(`/api/events/${eventId}`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ name: 'AA 200' });
+    expect(denied.status).toBe(400);
+    expect((await Event.findById(eventId)).name).toBe('AA 100');
+
+    const restored = await request(app)
+      .post(`/api/events/${eventId}/restore`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ revisionId: createRevisionId, originTimeZone: 'UTC', destinationTimeZone: 'UTC' });
+    expect(restored.status).toBe(400);
+    expect(restored.body.message).toMatch(/originTimeZone/);
+    expect((await Event.findById(eventId)).name).toBe('AA 100');
+    expect((await Event.findById(eventId)).type).toBe('flight');
+    expect(await ActivityRevision.countDocuments({ eventId })).toBe(before);
+  });
+
+  test('a missing revision is 404 and a revision from another plan does not write', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+      password: 'password1',
+    });
+    const planId = await planFor(ada.token);
+    const created = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({
+        name: 'Lunch',
+        type: 'dining',
+        planId,
+        location: 'Cafe',
+        startTime: '2026-06-01T15:00:00.000Z',
+        endTime: '2026-06-01T16:00:00.000Z',
+      });
+    expect(created.status).toBe(201);
+    const eventId = created.body._id;
+
+    const missing = await request(app)
+      .post(`/api/events/${eventId}/restore`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ revisionId: 'does-not-exist' });
+    expect(missing.status).toBe(404);
+    expect((await Event.findById(eventId)).name).toBe('Lunch');
+
+    const forged = await ActivityRevision.create({
+      eventId,
+      planId: 'other-plan',
+      userId: ada.userId,
+      action: 'update',
+      snapshot: {
+        name: 'Moved',
+        type: 'dining',
+        planId: 'other-plan',
+        ownerId: ada.userId,
+        location: 'Elsewhere',
+      },
+      deleted: false,
+    });
+    const before = await ActivityRevision.countDocuments({ eventId });
+    const wrongPlan = await request(app)
+      .post(`/api/events/${eventId}/restore`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ revisionId: forged._id });
+    expect(wrongPlan.status).toBe(400);
+    expect((await Event.findById(eventId)).name).toBe('Lunch');
+    expect((await Event.findById(eventId)).planId).toBe(planId);
+    expect(await ActivityRevision.countDocuments({ eventId })).toBe(before);
+  });
+});

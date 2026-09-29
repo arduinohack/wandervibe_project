@@ -130,6 +130,72 @@ router.get('/:id/history', authMiddleware, async (req, res) => {
   }
 });
 
+// Distinct path so a later POST /:id cannot swallow restore.
+router.post('/:id/restore', authMiddleware, async (req, res) => {
+  try {
+    const eventId = req.params.id;
+    const revisionId = req.body && req.body.revisionId;
+    if (typeof revisionId !== 'string' || revisionId.trim() === '') {
+      return res.status(400).json({ message: 'revisionId is required' });
+    }
+
+    const revision = await ActivityRevision.findById(revisionId);
+    if (!revision) {
+      return res.status(404).json({ message: 'Revision not found' });
+    }
+    if (String(revision.eventId) !== String(eventId)) {
+      return res.status(400).json({ message: 'Revision does not belong to this activity' });
+    }
+
+    const event = await Event.findById(eventId);
+    const planId = (event && event.planId) || revision.planId;
+    const callerId = req.user.userId || req.user.id;
+    const allowed = await callerMayEditActivities(planId, callerId);
+    if (!allowed) {
+      return res.status(403).json({ message: 'Only Owner or Collaborator can change activities' });
+    }
+    if (event && String(revision.planId) !== String(event.planId)) {
+      return res.status(400).json({ message: 'Revision does not belong to this activity' });
+    }
+
+    // Snapshot is the only activity source. Other body fields are ignored.
+    const snapshot = revision.snapshot;
+    if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) {
+      return res.status(400).json({ message: 'Revision snapshot is missing' });
+    }
+    const requirementError = assertTypeRequirements(snapshot.type, snapshot);
+    if (requirementError) {
+      return res.status(400).json({ message: requirementError.message });
+    }
+
+    const fields = applyTypeChange(event ? event.toObject({ virtuals: false }) : {}, snapshot.type, snapshot);
+    fields.planId = planId;
+
+    let saved;
+    if (event) {
+      for (const [key, value] of Object.entries(fields)) {
+        if (key === '_id') continue;
+        event.set(key, value);
+      }
+      event.planId = planId;
+      saved = await event.save();
+    } else {
+      const payload = { _id: eventId, planId };
+      for (const [key, value] of Object.entries(fields)) {
+        if (key === '_id' || key === 'planId') continue;
+        if (value !== undefined) payload[key] = value;
+      }
+      saved = await Event.create(payload);
+    }
+
+    // Same activity id, including a reinsert after delete: action update.
+    await recordActivityRevision(saved, 'update', callerId);
+    res.json(saved);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // PUT update event (handles recursive subEvents)
 router.put('/:id', authMiddleware, async (req, res) => {
   try {
