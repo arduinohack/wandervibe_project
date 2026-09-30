@@ -278,7 +278,7 @@ function zoneAbbreviation(zone) {
 function updateCreatedAtHeader() {
   const header = document.getElementById('created-at-header');
   if (!header) return;
-  header.textContent = `createdAt (Timezone: ${zoneAbbreviation(displayTimeZone())})`;
+  header.textContent = `createdAt (TZ: ${zoneAbbreviation(displayTimeZone())})`;
 }
 
 function fillZoneSelect() {
