@@ -6,10 +6,25 @@ const cors = require('cors');
 
 const app = express();
 
-// Middleware (runs on every request)
-app.use(cors());  // Allows frontend to connect (e.g., from localhost:8080)
+// Browser calls from the static admin page. Requests with no Origin (native app, curl) stay allowed.
+const browserOrigins = new Set([
+  'http://localhost:5500',
+  'http://127.0.0.1:5500',
+  'http://localhost:8080',
+]);
+
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || browserOrigins.has(origin)) {
+      callback(null, true);
+      return;
+    }
+    callback(null, false);
+  },
+  methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Authorization', 'Content-Type'],
+}));
 app.use(express.json());  // Parses JSON bodies from requests (e.g., { name: 'Paris Trip' })
-app.use(cors());  // Allows frontend from localhost:8080 or emulator to call backend
 app.use(morgan('dev'));  // Logs requests to console
 
 // Mount auth routes (e.g., POST /api/auth/login)

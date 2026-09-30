@@ -1,0 +1,115 @@
+:root {
+  color-scheme: light;
+  font-family: Georgia, "Iowan Old Style", Palatino, serif;
+  background: #f4f1ea;
+  color: #1c1915;
+}
+
+body {
+  margin: 0 auto;
+  max-width: 960px;
+  padding: 1.5rem;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+h1, h2 {
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+h1 {
+  font-size: 1.6rem;
+  margin: 0;
+}
+
+section {
+  background: #fffdf8;
+  border: 1px solid #d9d2c5;
+  border-radius: 8px;
+  padding: 1rem 1.1rem 1.2rem;
+  margin-bottom: 1rem;
+}
+
+form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  align-items: end;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.9rem;
+}
+
+input {
+  font: inherit;
+  min-width: 16rem;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid #b7ad9e;
+  border-radius: 4px;
+  background: #fff;
+}
+
+button {
+  font: inherit;
+  padding: 0.45rem 0.8rem;
+  border-radius: 4px;
+  border: 1px solid #3d4a34;
+  background: #3d4a34;
+  color: #f7f4ee;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #2c3626;
+}
+
+#logout {
+  background: transparent;
+  color: #1c1915;
+  border-color: #1c1915;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 0.82rem;
+}
+
+th, td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid #e4ddd2;
+}
+
+th {
+  font-family: Georgia, "Iowan Old Style", Palatino, serif;
+  font-size: 0.85rem;
+}
+
+p[role="alert"],
+#delete-status.is-error,
+#logs-status.is-error {
+  color: #8a2a1a;
+}
+
+#delete-plans {
+  margin: 0.4rem 0 0;
+  padding-left: 1.2rem;
+}

@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WanderVibe Admin</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <h1>WanderVibe Admin</h1>
+    <button id="logout" type="button" hidden>Log out</button>
+  </header>
+  <main>
+    <section id="login-panel">
+      <h2>Log in</h2>
+      <form id="login-form">
+        <label>Email
+          <input id="email" name="email" type="email" autocomplete="username" required>
+        </label>
+        <label>Password
+          <input id="password" name="password" type="password" autocomplete="current-password" required>
+        </label>
+        <button type="submit">Log in</button>
+      </form>
+      <p id="login-error" role="alert"></p>
+    </section>
+
+    <div id="app-panel" hidden>
+      <section>
+        <h2>Support logs</h2>
+        <form id="logs-form">
+          <label>Event
+            <input id="filter-event" name="event" type="text" autocomplete="off">
+          </label>
+          <label>Plan id
+            <input id="filter-plan" name="planId" type="text" autocomplete="off">
+          </label>
+          <button type="submit">Load logs</button>
+        </form>
+        <p id="logs-status" role="status"></p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>createdAt</th>
+                <th>event</th>
+                <th>level</th>
+                <th>actorUserId</th>
+                <th>planId</th>
+                <th>message</th>
+              </tr>
+            </thead>
+            <tbody id="logs-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section>
+        <h2>Delete user</h2>
+        <form id="delete-form">
+          <label>User id
+            <input id="delete-user-id" name="userId" type="text" autocomplete="off" required>
+          </label>
+          <button type="submit">Delete user</button>
+        </form>
+        <p id="delete-status" role="status"></p>
+        <ul id="delete-plans"></ul>
+      </section>
+    </div>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
