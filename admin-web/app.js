@@ -278,7 +278,7 @@ function zoneAbbreviation(zone) {
 function updateCreatedAtHeader() {
   const header = document.getElementById('created-at-header');
   if (!header) return;
-  header.textContent = `createdAt (${zoneAbbreviation(displayTimeZone())})`;
+  header.textContent = `createdAt (Timezone: ${zoneAbbreviation(displayTimeZone())})`;
 }
 
 function fillZoneSelect() {
@@ -301,19 +301,67 @@ function formatCreatedAt(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
   try {
-    return new Intl.DateTimeFormat(undefined, {
+    const parts = new Intl.DateTimeFormat('en-US', {
       timeZone: displayTimeZone(),
-      year: 'numeric',
-      month: 'short',
+      year: '2-digit',
+      month: '2-digit',
       day: '2-digit',
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
-      timeZoneName: 'short',
-    }).format(date);
+      hourCycle: 'h23',
+    }).formatToParts(date);
+    const part = (type) => {
+      const found = parts.find((item) => item.type === type);
+      return found && found.value ? found.value.padStart(2, '0') : '';
+    };
+    return `${part('month')}/${part('day')}/${part('year')} ${part('hour')}:${part('minute')}:${part('second')}`;
   } catch (err) {
     return String(value);
   }
+}
+
+const STATUS_PHRASES = {
+  200: 'OK',
+  201: 'Created',
+  204: 'No content',
+  400: 'Bad request',
+  401: 'Unauthorized',
+  403: 'Forbidden',
+  404: 'Not found',
+  409: 'Conflict',
+  500: 'Server error',
+};
+
+const MESSAGE_OVERRIDES = {
+  'POST /api/auth/login': {
+    200: 'Signed in',
+    400: 'Login rejected',
+  },
+  'GET /api/admin/users': {
+    200: 'Account search',
+  },
+  'DELETE /api/admin/users/:userId': {
+    409: 'Delete blocked',
+  },
+  'GET /api/plans': {
+    401: 'Plans list denied',
+  },
+};
+
+function statusCodeFrom(message) {
+  if (typeof message === 'number' && Number.isInteger(message)) return message;
+  const text = String(message == null ? '' : message).trim();
+  if (!/^\d{3}$/.test(text)) return null;
+  return Number(text);
+}
+
+function formatLogMessage(event, message) {
+  const code = statusCodeFrom(message);
+  if (code == null) return message == null ? '' : String(message);
+  const overrides = MESSAGE_OVERRIDES[event] || {};
+  const phrase = overrides[code] || STATUS_PHRASES[code] || 'Response';
+  return `${phrase} (${code})`;
 }
 
 function showPage() {
@@ -599,7 +647,9 @@ function renderLogs(logs) {
     for (const key of ['createdAt', 'event', 'level', 'actorUserId', 'planId', 'message']) {
       const cell = document.createElement('td');
       const value = row[key];
-      cell.textContent = key === 'createdAt' ? formatCreatedAt(value) : (value == null ? '' : String(value));
+      if (key === 'createdAt') cell.textContent = formatCreatedAt(value);
+      else if (key === 'message') cell.textContent = formatLogMessage(row.event, value);
+      else cell.textContent = value == null ? '' : String(value);
       tr.appendChild(cell);
     }
     logsBody.appendChild(tr);
