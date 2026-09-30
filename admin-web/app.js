@@ -1,6 +1,7 @@
 const API = 'http://localhost:3000';
 const TOKEN_KEY = 'wandervibeAdminToken';
 const ZONE_KEY = 'wandervibe.admin.timeZone';
+const DELAY_KEY = 'wandervibe.admin.searchDelaySec';
 const ZONE_CHOICES = [
   'UTC',
   'America/New_York',
@@ -24,6 +25,7 @@ const logsPage = document.getElementById('logs-page');
 const settingsPage = document.getElementById('settings-page');
 const settingsStatus = document.getElementById('settings-status');
 const zoneSelect = document.getElementById('display-time-zone');
+const searchDelayInput = document.getElementById('search-delay');
 
 let loadedLogs = [];
 let selectedUserId = '';
@@ -74,6 +76,14 @@ function savedZone() {
 
 function displayTimeZone() {
   return savedZone() || browserZone();
+}
+
+function searchDelaySec() {
+  const raw = localStorage.getItem(DELAY_KEY);
+  if (raw == null || String(raw).trim() === '') return 2;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0.5 || value > 10) return 2;
+  return value;
 }
 
 function zoneAbbreviation(zone) {
@@ -287,7 +297,7 @@ function scheduleUserSearch(input) {
     list.replaceChildren();
     return;
   }
-  userSearchTimer = setTimeout(() => searchUsers(input, q), 300);
+  userSearchTimer = setTimeout(() => searchUsers(input, q), searchDelaySec() * 1000);
 }
 
 for (const input of document.querySelectorAll('.user-picker-query')) {
@@ -323,15 +333,23 @@ logoutButton.addEventListener('click', () => {
 document.getElementById('settings-form').addEventListener('submit', (event) => {
   event.preventDefault();
   const zone = zoneSelect.value;
+  const delay = Number(searchDelayInput.value);
   if (zone && !isValidZone(zone)) {
     settingsStatus.classList.add('is-error');
     settingsStatus.textContent = 'Choose a valid time zone.';
     return;
   }
+  if (!Number.isFinite(delay) || delay < 0.5 || delay > 10) {
+    settingsStatus.classList.add('is-error');
+    settingsStatus.textContent = 'Search delay must be a number from 0.5 to 10 seconds.';
+    return;
+  }
   localStorage.setItem(ZONE_KEY, zone);
+  localStorage.setItem(DELAY_KEY, String(delay));
   settingsStatus.classList.remove('is-error');
   const label = zone ? zone : `Browser default (${browserZone()})`;
-  settingsStatus.textContent = `Display time zone is ${label}.`;
+  const delayLabel = delay === 1 ? '1 second' : `${delay} seconds`;
+  settingsStatus.textContent = `Display time zone is ${label}. Search delay is ${delayLabel}.`;
   updateCreatedAtHeader();
   if (loadedLogs.length) renderLogs(loadedLogs);
 });
@@ -462,5 +480,6 @@ document.getElementById('delete-form').addEventListener('submit', async (event) 
 });
 
 fillZoneSelect();
+searchDelayInput.value = String(searchDelaySec());
 showLoggedIn(Boolean(token()));
 if (token()) loadLogs();
