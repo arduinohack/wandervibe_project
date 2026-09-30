@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <p id="login-banner" hidden></p>
   <header>
     <h1>WanderVibe Admin</h1>
     <nav id="app-nav" hidden>
@@ -99,6 +100,8 @@
           <label>Search delay (seconds)
             <input id="search-delay" name="searchDelaySec" type="number" min="0.5" max="10" step="0.1" value="2" inputmode="decimal">
           </label>
+          <h2>Text styles</h2>
+          <div id="style-fields"></div>
           <button type="submit">Save</button>
         </form>
         <p id="settings-status" role="status"></p>

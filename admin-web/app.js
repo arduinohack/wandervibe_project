@@ -1,7 +1,37 @@
 const API = 'http://localhost:3000';
 const TOKEN_KEY = 'wandervibeAdminToken';
+const USER_KEY = 'wandervibeAdminUser';
 const ZONE_KEY = 'wandervibe.admin.timeZone';
 const DELAY_KEY = 'wandervibe.admin.searchDelaySec';
+const STYLES_KEY = 'wandervibe.admin.styles';
+const STYLE_TYPES = ['banner', 'heading', 'label', 'input', 'button', 'table', 'error'];
+const STYLE_FONTS = ['system-ui', 'Georgia', 'Times New Roman', 'Arial', 'Verdana', 'Consolas'];
+const STYLE_LABELS = {
+  banner: 'Banner',
+  heading: 'Heading',
+  label: 'Label',
+  input: 'Input',
+  button: 'Button',
+  table: 'Table',
+  error: 'Error',
+};
+const FONT_STACKS = {
+  'system-ui': 'system-ui, sans-serif',
+  Georgia: 'Georgia, serif',
+  'Times New Roman': '"Times New Roman", Times, serif',
+  Arial: 'Arial, sans-serif',
+  Verdana: 'Verdana, sans-serif',
+  Consolas: 'Consolas, monospace',
+};
+const STYLE_DEFAULTS = {
+  banner: { font: 'Georgia', color: '#1c1915', size: 16 },
+  heading: { font: 'Georgia', color: '#1c1915', size: 24 },
+  label: { font: 'Georgia', color: '#1c1915', size: 14 },
+  input: { font: 'Georgia', color: '#1c1915', size: 16 },
+  button: { font: 'Georgia', color: '#f7f4ee', size: 16 },
+  table: { font: 'Consolas', color: '#1c1915', size: 13 },
+  error: { font: 'Georgia', color: '#8a2a1a', size: 16 },
+};
 const ZONE_CHOICES = [
   'UTC',
   'America/New_York',
@@ -26,6 +56,7 @@ const settingsPage = document.getElementById('settings-page');
 const settingsStatus = document.getElementById('settings-status');
 const zoneSelect = document.getElementById('display-time-zone');
 const searchDelayInput = document.getElementById('search-delay');
+const loginBanner = document.getElementById('login-banner');
 
 let loadedLogs = [];
 let selectedUserId = '';
@@ -39,6 +70,48 @@ function token() {
 
 function clearToken() {
   sessionStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(USER_KEY);
+}
+
+function storedUser() {
+  const raw = sessionStorage.getItem(USER_KEY);
+  if (!raw) return null;
+  try {
+    const user = JSON.parse(raw);
+    if (!user || typeof user !== 'object' || Array.isArray(user)) return null;
+    return user;
+  } catch (err) {
+    return null;
+  }
+}
+
+function saveSessionUser(user) {
+  sessionStorage.setItem(USER_KEY, JSON.stringify({
+    firstName: user && user.firstName ? String(user.firstName) : '',
+    lastName: user && user.lastName ? String(user.lastName) : '',
+    email: user && user.email ? String(user.email) : '',
+  }));
+}
+
+function bannerText() {
+  if (!token()) return '';
+  const user = storedUser();
+  if (!user) return '';
+  const name = [user.firstName, user.lastName]
+    .map((part) => String(part || '').trim())
+    .filter(Boolean)
+    .join(' ');
+  const email = String(user.email || '').trim();
+  if (name && email) return `Logged in as ${name} (${email})`;
+  if (name) return `Logged in as ${name}`;
+  if (email) return `Logged in as ${email}`;
+  return '';
+}
+
+function updateBanner() {
+  const text = bannerText();
+  loginBanner.textContent = text;
+  loginBanner.hidden = !text;
 }
 
 function showLoggedIn(isIn) {
@@ -46,7 +119,110 @@ function showLoggedIn(isIn) {
   appPanel.hidden = !isIn;
   logoutButton.hidden = !isIn;
   appNav.hidden = !isIn;
+  updateBanner();
   if (isIn) showPage();
+}
+
+function isCssColor(value) {
+  return typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value);
+}
+
+function styleFor(type, saved) {
+  const base = { ...STYLE_DEFAULTS[type] };
+  if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return base;
+  if (STYLE_FONTS.includes(saved.font)) base.font = saved.font;
+  if (isCssColor(saved.color)) base.color = saved.color;
+  const size = Number(saved.size);
+  if (Number.isFinite(size) && size >= 12 && size <= 28) base.size = size;
+  return base;
+}
+
+function loadStyles() {
+  let saved = {};
+  const raw = localStorage.getItem(STYLES_KEY);
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) saved = parsed;
+    } catch (err) {
+      saved = {};
+    }
+  }
+  const styles = {};
+  for (const type of STYLE_TYPES) styles[type] = styleFor(type, saved[type]);
+  return styles;
+}
+
+function applyStyles(styles) {
+  const root = document.documentElement;
+  for (const type of STYLE_TYPES) {
+    const style = styles[type];
+    root.style.setProperty(`--wv-${type}-font`, FONT_STACKS[style.font]);
+    root.style.setProperty(`--wv-${type}-color`, style.color);
+    root.style.setProperty(`--wv-${type}-size`, `${style.size}px`);
+  }
+}
+
+function fillStyleFields(styles) {
+  const root = document.getElementById('style-fields');
+  root.replaceChildren();
+  for (const type of STYLE_TYPES) {
+    const style = styles[type];
+    const box = document.createElement('fieldset');
+    box.className = 'style-type';
+    const legend = document.createElement('legend');
+    legend.textContent = STYLE_LABELS[type];
+    box.appendChild(legend);
+
+    const fontLabel = document.createElement('label');
+    fontLabel.append('Font');
+    const font = document.createElement('select');
+    font.id = `style-${type}-font`;
+    for (const name of STYLE_FONTS) {
+      const option = document.createElement('option');
+      option.value = name;
+      option.textContent = name;
+      font.appendChild(option);
+    }
+    font.value = style.font;
+    fontLabel.appendChild(font);
+
+    const colorLabel = document.createElement('label');
+    colorLabel.append('Color');
+    const color = document.createElement('input');
+    color.type = 'color';
+    color.id = `style-${type}-color`;
+    color.value = style.color;
+    colorLabel.appendChild(color);
+
+    const sizeLabel = document.createElement('label');
+    sizeLabel.append('Size (px)');
+    const size = document.createElement('input');
+    size.type = 'number';
+    size.id = `style-${type}-size`;
+    size.min = '12';
+    size.max = '28';
+    size.step = 'any';
+    size.value = String(style.size);
+    sizeLabel.appendChild(size);
+
+    box.append(fontLabel, colorLabel, sizeLabel);
+    root.appendChild(box);
+  }
+}
+
+function stylesFromForm() {
+  const styles = {};
+  for (const type of STYLE_TYPES) {
+    const font = document.getElementById(`style-${type}-font`).value;
+    const color = document.getElementById(`style-${type}-color`).value;
+    const size = Number(document.getElementById(`style-${type}-size`).value);
+    if (!STYLE_FONTS.includes(font) || !isCssColor(color) || !Number.isFinite(size) || size < 12 || size > 28) {
+      return null;
+    }
+    styles[type] = { font, color, size };
+  }
+  return styles;
 }
 
 function isValidZone(zone) {
@@ -197,6 +373,7 @@ document.getElementById('login-form').addEventListener('submit', async (event) =
     return;
   }
   sessionStorage.setItem(TOKEN_KEY, body.token);
+  saveSessionUser(body.user);
   showLoggedIn(true);
   document.getElementById('password').value = '';
   loadLogs();
@@ -344,12 +521,20 @@ document.getElementById('settings-form').addEventListener('submit', (event) => {
     settingsStatus.textContent = 'Search delay must be a number from 0.5 to 10 seconds.';
     return;
   }
+  const styles = stylesFromForm();
+  if (!styles) {
+    settingsStatus.classList.add('is-error');
+    settingsStatus.textContent = 'Each text style needs a listed font, a color, and a size from 12 to 28.';
+    return;
+  }
   localStorage.setItem(ZONE_KEY, zone);
   localStorage.setItem(DELAY_KEY, String(delay));
+  localStorage.setItem(STYLES_KEY, JSON.stringify(styles));
+  applyStyles(styles);
   settingsStatus.classList.remove('is-error');
   const label = zone ? zone : `Browser default (${browserZone()})`;
   const delayLabel = delay === 1 ? '1 second' : `${delay} seconds`;
-  settingsStatus.textContent = `Display time zone is ${label}. Search delay is ${delayLabel}.`;
+  settingsStatus.textContent = `Display time zone is ${label}. Search delay is ${delayLabel}. Text styles saved.`;
   updateCreatedAtHeader();
   if (loadedLogs.length) renderLogs(loadedLogs);
 });
@@ -481,5 +666,8 @@ document.getElementById('delete-form').addEventListener('submit', async (event) 
 
 fillZoneSelect();
 searchDelayInput.value = String(searchDelaySec());
+const initialStyles = loadStyles();
+applyStyles(initialStyles);
+fillStyleFields(initialStyles);
 showLoggedIn(Boolean(token()));
 if (token()) loadLogs();

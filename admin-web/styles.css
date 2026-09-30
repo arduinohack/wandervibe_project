@@ -3,12 +3,44 @@
   font-family: Georgia, "Iowan Old Style", Palatino, serif;
   background: #f4f1ea;
   color: #1c1915;
+  --wv-banner-font: Georgia, serif;
+  --wv-banner-color: #1c1915;
+  --wv-banner-size: 16px;
+  --wv-heading-font: Georgia, serif;
+  --wv-heading-color: #1c1915;
+  --wv-heading-size: 24px;
+  --wv-label-font: Georgia, serif;
+  --wv-label-color: #1c1915;
+  --wv-label-size: 14px;
+  --wv-input-font: Georgia, serif;
+  --wv-input-color: #1c1915;
+  --wv-input-size: 16px;
+  --wv-button-font: Georgia, serif;
+  --wv-button-color: #f7f4ee;
+  --wv-button-size: 16px;
+  --wv-table-font: Consolas, monospace;
+  --wv-table-color: #1c1915;
+  --wv-table-size: 13px;
+  --wv-error-font: Georgia, serif;
+  --wv-error-color: #8a2a1a;
+  --wv-error-size: 16px;
 }
 
 body {
   margin: 0 auto;
   max-width: 960px;
   padding: 1.5rem;
+}
+
+#login-banner {
+  margin: 0 0 1rem;
+  padding: 0.45rem 0.7rem;
+  background: #fffdf8;
+  border: 1px solid #d9d2c5;
+  border-radius: 6px;
+  font-family: var(--wv-banner-font);
+  font-size: var(--wv-banner-size);
+  color: var(--wv-banner-color);
 }
 
 header {
@@ -73,10 +105,12 @@ header {
 h1, h2 {
   font-weight: 600;
   letter-spacing: 0;
+  font-family: var(--wv-heading-font);
+  font-size: var(--wv-heading-size);
+  color: var(--wv-heading-color);
 }
 
 h1 {
-  font-size: 1.6rem;
   margin: 0;
 }
 
@@ -99,12 +133,16 @@ label {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  font-size: 0.9rem;
+  font-family: var(--wv-label-font);
+  font-size: var(--wv-label-size);
+  color: var(--wv-label-color);
 }
 
 input,
 select {
-  font: inherit;
+  font-family: var(--wv-input-font);
+  font-size: var(--wv-input-size);
+  color: var(--wv-input-color);
   min-width: 16rem;
   padding: 0.4rem 0.5rem;
   border: 1px solid #b7ad9e;
@@ -113,12 +151,13 @@ select {
 }
 
 button {
-  font: inherit;
+  font-family: var(--wv-button-font);
+  font-size: var(--wv-button-size);
   padding: 0.45rem 0.8rem;
   border-radius: 4px;
   border: 1px solid #3d4a34;
   background: #3d4a34;
-  color: #f7f4ee;
+  color: var(--wv-button-color);
   cursor: pointer;
 }
 
@@ -139,8 +178,9 @@ button:hover {
 table {
   width: 100%;
   border-collapse: collapse;
-  font-family: Consolas, "Courier New", monospace;
-  font-size: 0.82rem;
+  font-family: var(--wv-table-font);
+  font-size: var(--wv-table-size);
+  color: var(--wv-table-color);
 }
 
 th, td {
@@ -151,15 +191,60 @@ th, td {
 }
 
 th {
-  font-family: Georgia, "Iowan Old Style", Palatino, serif;
-  font-size: 0.85rem;
+  font-family: inherit;
+  font-size: inherit;
 }
 
 p[role="alert"],
 #delete-status.is-error,
 #logs-status.is-error,
 #settings-status.is-error {
-  color: #8a2a1a;
+  font-family: var(--wv-error-font);
+  font-size: var(--wv-error-size);
+  color: var(--wv-error-color);
+}
+
+#settings-form h2,
+#style-fields {
+  flex: 1 0 100%;
+}
+
+#style-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.style-type {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  align-items: end;
+  margin: 0;
+  border: 1px solid #d9d2c5;
+  border-radius: 6px;
+  padding: 0.6rem 0.8rem 0.8rem;
+}
+
+.style-type legend {
+  padding: 0 0.3rem;
+  font-family: var(--wv-label-font);
+  font-size: var(--wv-label-size);
+  color: var(--wv-label-color);
+}
+
+.style-type select {
+  min-width: 12rem;
+}
+
+.style-type input[type="color"] {
+  min-width: 3rem;
+  width: 3rem;
+  padding: 0.15rem;
+}
+
+.style-type input[type="number"] {
+  min-width: 5.5rem;
 }
 
 #delete-plans {
