@@ -9,6 +9,7 @@ const { canonicalMembershipRole } = require('../middleware/roleCheck');
 const { DateTime } = require('luxon');  // For time zone/DST in Day Numbers
 const { v4: uuidv4 } = require('uuid');
 const { notifyUsers } = require('../utils/notifications');
+const { logSupport } = require('../utils/logSupport');
 const router = express.Router();
 const logger = require('../utils/logger');  // Added: Borrow exported logger from ../util/logger.js
 
@@ -55,6 +56,15 @@ router.post('/', authMiddleware, async (req, res) => {
 
     // Notify the creator
     await notifyUsers([req.user.userId], `Your plan "${name}" has been created! ID: ${planId}`);
+
+    await logSupport({
+      level: 'info',
+      event: 'PlanCreated',
+      actorUserId: req.user.userId || req.user.id,
+      planId,
+      message: 'Plan created',
+      extra: { type, name },
+    });
 
     // Success response
     res.status(201).json({ 

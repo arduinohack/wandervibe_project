@@ -129,7 +129,8 @@ router.post('/register', async (req, res) => {
       phoneNumber,
       password,
       address: address || undefined, // Use if provided
-      notificationPreferences: { email: true, sms: false }  // Default
+      notificationPreferences: { email: true, sms: false },  // Default
+      role: 'member',
     });
     logger.info('Saving new user', {
       userId: userId,

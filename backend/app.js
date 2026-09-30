@@ -1,5 +1,6 @@
 const express = require('express');
 const authMiddleware = require('./middleware/auth');
+const requireAdmin = require('./middleware/requireAdmin');
 const morgan = require('morgan');
 const cors = require('cors');
 
@@ -25,6 +26,8 @@ app.use('/api/events', eventRoutes);
 
 // Mount invites routes WITH authMiddleware (protects all /api/invites/*)
 app.use('/api/invites', authMiddleware, invitesRouter);
+
+app.use('/api/admin', authMiddleware, requireAdmin, require('./routes/admin'));
 
 // Temp test routes for auth (remove after Phase 2 testing)
 app.get('/api/test-auth', authMiddleware, (req, res) => {

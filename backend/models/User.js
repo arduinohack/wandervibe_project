@@ -26,7 +26,7 @@ const userSchema = new mongoose.Schema({
   phoneNumber: String,
   address: addressSchema,  // Embed sub-schema
   notificationPreferences: notificationPreferencesSchema,  // Embed sub-schema
-  role: { type: String, enum: ['VibeCoordinator', 'VibePlanner', 'Wanderer', 'admin'], default: 'VibeCoordinator' },
+  role: { type: String, enum: ['member', 'admin'], default: 'member' },
   password: { type: String, required: true },  // For login (hashed)
   resetToken: String,  // Temporary token for reset
   resetTokenExpiry: Date,  // Expires in 1h
