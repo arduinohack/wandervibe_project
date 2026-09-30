@@ -41,6 +41,7 @@
               <label>Find account
                 <input id="admin-account-filter" class="user-picker-query" type="text" name="admin-account-filter" autocomplete="off" spellcheck="false" data-lpignore="true" data-1p-ignore data-form-type="other">
               </label>
+              <button type="button" class="user-picker-clear">Clear</button>
               <ul class="user-picker-results" role="listbox" hidden></ul>
             </div>
             <p class="user-picker-chosen"></p>
@@ -48,7 +49,9 @@
         </div>
         <form id="logs-form">
           <label>Event
-            <input id="filter-event" name="event" type="text" autocomplete="off">
+            <select id="filter-event" name="event">
+              <option value="">Any event</option>
+            </select>
           </label>
           <label>Plan id
             <input id="filter-plan" name="planId" type="text" autocomplete="off">
@@ -81,6 +84,7 @@
               <label>Find account
                 <input id="admin-account-delete" class="user-picker-query" type="text" name="admin-account-delete" autocomplete="off" spellcheck="false" data-lpignore="true" data-1p-ignore data-form-type="other">
               </label>
+              <button type="button" class="user-picker-clear">Clear</button>
               <ul class="user-picker-results" role="listbox" hidden></ul>
             </div>
             <p class="user-picker-chosen"></p>

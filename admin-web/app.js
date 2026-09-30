@@ -42,6 +42,38 @@ const ZONE_CHOICES = [
   'Europe/London',
 ];
 
+// SupportLog event strings the mounted API already writes. Product names are
+// PlanCreated and UserDeleted. The rest are request-log "METHOD route" values.
+// There is no distinct-events route; rows can add names after a successful load.
+const KNOWN_EVENTS = [
+  'DELETE /api/admin/users/:userId',
+  'DELETE /api/events/:id',
+  'GET /api/admin/users',
+  'GET /api/events/:id/history',
+  'GET /api/events/plan/:planId',
+  'GET /api/invites',
+  'GET /api/plans',
+  'GET /api/plans/:planId/itinerary',
+  'GET /api/plans/:planId/users',
+  'PATCH /api/auth/users/:userId',
+  'POST /api/auth/forgot-password',
+  'POST /api/auth/login',
+  'POST /api/auth/logout',
+  'POST /api/auth/register',
+  'POST /api/auth/reset-password',
+  'POST /api/auth/verify-token',
+  'POST /api/events',
+  'POST /api/events/:id/restore',
+  'POST /api/invites/invitations/:invitationId/respond',
+  'POST /api/plans',
+  'POST /api/plans/:planId/invite',
+  'POST /api/plans/:planId/reassign-coordinator',
+  'POST /api/plans/:planId/remove-user',
+  'PUT /api/events/:id',
+  'PlanCreated',
+  'UserDeleted',
+];
+
 const loginPanel = document.getElementById('login-panel');
 const appPanel = document.getElementById('app-panel');
 const logoutButton = document.getElementById('logout');
@@ -63,6 +95,8 @@ let selectedUserId = '';
 let selectedUserEmail = '';
 let userSearchTimer = 0;
 let userSearchSeq = 0;
+let eventOptions = KNOWN_EVENTS.slice();
+let planMenu = null;
 
 function token() {
   return sessionStorage.getItem(TOKEN_KEY) || '';
@@ -538,9 +572,18 @@ for (const input of document.querySelectorAll('.user-picker-query')) {
   });
 }
 
+for (const button of document.querySelectorAll('.user-picker-clear')) {
+  button.addEventListener('click', () => clearSelectedUser());
+}
+
 document.addEventListener('pointerdown', (event) => {
+  if (planMenu && !planMenu.contains(event.target)) closePlanMenu();
   if (event.target.closest('.user-picker')) return;
   hideUserResults();
+});
+
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') closePlanMenu();
 });
 
 logoutButton.addEventListener('click', () => {
@@ -598,7 +641,101 @@ function authHeaders() {
   };
 }
 
+function renderEventOptions() {
+  const select = document.getElementById('filter-event');
+  const current = select.value;
+  select.replaceChildren();
+  const any = document.createElement('option');
+  any.value = '';
+  any.textContent = 'Any event';
+  select.appendChild(any);
+  for (const name of eventOptions) {
+    const option = document.createElement('option');
+    option.value = name;
+    option.textContent = name;
+    select.appendChild(option);
+  }
+  select.value = eventOptions.includes(current) ? current : '';
+}
+
+function rememberEvents(logs) {
+  let added = false;
+  for (const row of logs) {
+    const name = row && row.event != null ? String(row.event).trim() : '';
+    if (!name || eventOptions.includes(name)) continue;
+    eventOptions.push(name);
+    added = true;
+  }
+  if (added) renderEventOptions();
+}
+
+function closePlanMenu() {
+  if (!planMenu) return;
+  planMenu.remove();
+  planMenu = null;
+}
+
+function copyPlanId(planId) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(planId).catch(() => copyPlanIdFallback(planId));
+    return;
+  }
+  copyPlanIdFallback(planId);
+}
+
+function copyPlanIdFallback(planId) {
+  const area = document.createElement('textarea');
+  area.value = planId;
+  area.setAttribute('readonly', '');
+  area.style.position = 'fixed';
+  area.style.top = '0';
+  area.style.left = '0';
+  area.style.width = '1px';
+  area.style.height = '1px';
+  area.style.opacity = '0';
+  document.body.appendChild(area);
+  area.select();
+  document.execCommand('copy');
+  area.remove();
+}
+
+function openPlanMenu(x, y, planId) {
+  closePlanMenu();
+  const menu = document.createElement('ul');
+  menu.className = 'plan-menu';
+  menu.setAttribute('role', 'menu');
+  const actions = [
+    ['Set plan id filter', () => {
+      document.getElementById('filter-plan').value = planId;
+      closePlanMenu();
+      loadLogs();
+    }],
+    ['Copy plan id', () => {
+      copyPlanId(planId);
+      closePlanMenu();
+    }],
+  ];
+  for (const [label, onClick] of actions) {
+    const item = document.createElement('li');
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.setAttribute('role', 'menuitem');
+    button.textContent = label;
+    button.addEventListener('click', onClick);
+    item.appendChild(button);
+    menu.appendChild(item);
+  }
+  document.body.appendChild(menu);
+  const rect = menu.getBoundingClientRect();
+  const left = Math.max(8, Math.min(x, window.innerWidth - rect.width - 8));
+  const top = Math.max(8, Math.min(y, window.innerHeight - rect.height - 8));
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+  planMenu = menu;
+}
+
 async function loadLogs() {
+  closePlanMenu();
   logsStatus.classList.remove('is-error');
   logsStatus.textContent = '';
   logsBody.replaceChildren();
@@ -631,6 +768,7 @@ async function loadLogs() {
     return;
   }
   loadedLogs = Array.isArray(body.logs) ? body.logs : [];
+  rememberEvents(loadedLogs);
   renderLogs(loadedLogs);
 }
 
@@ -649,7 +787,15 @@ function renderLogs(logs) {
       const value = row[key];
       if (key === 'createdAt') cell.textContent = formatCreatedAt(value);
       else if (key === 'message') cell.textContent = formatLogMessage(row.event, value);
-      else cell.textContent = value == null ? '' : String(value);
+      else if (key === 'planId') {
+        const planId = value == null ? '' : String(value).trim();
+        cell.textContent = planId;
+        cell.addEventListener('contextmenu', (menuEvent) => {
+          menuEvent.preventDefault();
+          if (!planId) return;
+          openPlanMenu(menuEvent.clientX, menuEvent.clientY, planId);
+        });
+      } else cell.textContent = value == null ? '' : String(value);
       tr.appendChild(cell);
     }
     logsBody.appendChild(tr);
@@ -714,6 +860,7 @@ document.getElementById('delete-form').addEventListener('submit', async (event) 
   deleteStatus.textContent = messageFrom(body, 'Delete failed.');
 });
 
+renderEventOptions();
 fillZoneSelect();
 searchDelayInput.value = String(searchDelaySec());
 const initialStyles = loadStyles();
