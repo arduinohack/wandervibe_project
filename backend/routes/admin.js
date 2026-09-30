@@ -17,6 +17,36 @@ function parseBound(value) {
   return date;
 }
 
+function escapeRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+router.get('/users', async (req, res) => {
+  try {
+    const q = String(req.query.q == null ? '' : req.query.q).trim();
+    if (q.length < 2) {
+      return res.json({ users: [] });
+    }
+    const rows = await User.find({
+      email: { $regex: escapeRegex(q), $options: 'i' },
+    })
+      .select('email firstName lastName role')
+      .sort({ email: 1 })
+      .limit(20)
+      .lean();
+    const users = rows.map((user) => ({
+      _id: user._id,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      role: user.role,
+    }));
+    res.json({ users });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 router.get('/logs', async (req, res) => {
   try {
     const query = {};

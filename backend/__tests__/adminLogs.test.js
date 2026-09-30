@@ -248,3 +248,105 @@ describe('support logs', () => {
     expect(shouldSkipRequestLog({ method: 'GET', originalUrl: '/api/plans' })).toBe(false);
   });
 });
+
+describe('admin user search', () => {
+  test('an admin search matches an email substring and omits secrets', async () => {
+    const ada = await registerAndLogin();
+    await User.updateOne({ _id: ada.userId }, { $set: { role: 'admin' } });
+    await User.create([
+      {
+        firstName: 'Ken',
+        lastName: 'Allen',
+        email: 'ken@example.com',
+        password: 'password1',
+        role: 'admin',
+        resetToken: 'reset-secret',
+      },
+      {
+        firstName: 'Ann',
+        lastName: 'Ken',
+        email: 'aaa-ken@example.com',
+        password: 'password1',
+        role: 'member',
+      },
+      {
+        firstName: 'Dot',
+        lastName: 'User',
+        email: 'a.b@example.com',
+        password: 'password1',
+      },
+      {
+        firstName: 'Any',
+        lastName: 'Char',
+        email: 'axb@example.com',
+        password: 'password1',
+      },
+    ]);
+
+    const found = await request(app)
+      .get('/api/admin/users')
+      .query({ q: 'ken' })
+      .set('Authorization', `Bearer ${ada.token}`);
+    expect(found.status).toBe(200);
+    expect(found.body.users.map((user) => user.email)).toEqual([
+      'aaa-ken@example.com',
+      'ken@example.com',
+    ]);
+    const ken = found.body.users.find((user) => user.email === 'ken@example.com');
+    expect(Object.keys(ken).sort()).toEqual(['_id', 'email', 'firstName', 'lastName', 'role']);
+    expect(ken).toMatchObject({
+      firstName: 'Ken',
+      lastName: 'Allen',
+      role: 'admin',
+    });
+    expect(ken.password).toBeUndefined();
+    expect(ken.resetToken).toBeUndefined();
+    expect(ken.__v).toBeUndefined();
+
+    const upper = await request(app)
+      .get('/api/admin/users')
+      .query({ q: '  KEN' })
+      .set('Authorization', `Bearer ${ada.token}`);
+    expect(upper.body.users.map((user) => user.email)).toContain('ken@example.com');
+
+    const dotted = await request(app)
+      .get('/api/admin/users')
+      .query({ q: 'a.b' })
+      .set('Authorization', `Bearer ${ada.token}`);
+    expect(dotted.status).toBe(200);
+    expect(dotted.body.users.map((user) => user.email)).toEqual(['a.b@example.com']);
+  });
+
+  test('a user search shorter than two characters is empty', async () => {
+    const ada = await registerAndLogin();
+    await User.updateOne({ _id: ada.userId }, { $set: { role: 'admin' } });
+
+    const short = await request(app)
+      .get('/api/admin/users')
+      .query({ q: 'a' })
+      .set('Authorization', `Bearer ${ada.token}`);
+    expect(short.status).toBe(200);
+    expect(short.body).toEqual({ users: [] });
+
+    const padded = await request(app)
+      .get('/api/admin/users')
+      .query({ q: ' a ' })
+      .set('Authorization', `Bearer ${ada.token}`);
+    expect(padded.status).toBe(200);
+    expect(padded.body).toEqual({ users: [] });
+  });
+
+  test('user search rejects a missing token and a member', async () => {
+    const anon = await request(app).get('/api/admin/users?q=ken');
+    expect(anon.status).toBe(401);
+    expect(anon.body.message).toBe('No token, authorization denied');
+
+    const ada = await registerAndLogin();
+    const denied = await request(app)
+      .get('/api/admin/users?q=ken')
+      .set('Authorization', `Bearer ${ada.token}`);
+    expect(denied.status).toBe(403);
+    expect(denied.body.message).toBe('Admin access required');
+    expect(denied.body.users).toBeUndefined();
+  });
+});
