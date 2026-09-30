@@ -10,6 +10,16 @@ const User = require('../models/User');
 const Plan = require('../models/Plan');
 const PlanUser = require('../models/PlanUser');
 const SupportLog = require('../models/SupportLog');
+const { shouldSkipRequestLog } = require('../middleware/requestLog');
+
+async function waitForCount(filter, count) {
+  for (let i = 0; i < 25; i += 1) {
+    const found = await SupportLog.countDocuments(filter);
+    if (found >= count) return found;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  return SupportLog.countDocuments(filter);
+}
 
 jest.setTimeout(30000);
 
@@ -135,11 +145,13 @@ describe('support logs', () => {
     expect(byUser.body.logs.every((row) => row.actorUserId === ada.userId)).toBe(true);
     expect(byUser.body.logs.find((row) => row.event === 'OtherEvent')).toBeUndefined();
 
+    expect(await waitForCount({ event: /^POST \/api\/plans/ }, 2)).toBeGreaterThanOrEqual(2);
     const limited = await request(app)
       .get('/api/admin/logs?limit=1')
       .set('Authorization', `Bearer ${ada.token}`);
     expect(limited.body.logs).toHaveLength(1);
-    expect(limited.body.logs[0].event).toBe('PlanCreated');
+    expect(limited.body.logs[0].event).toContain('POST');
+    expect(limited.body.logs[0].event).toContain('/api/plans');
 
     const oldestFirst = await request(app)
       .get('/api/admin/logs?dir=asc&limit=1')
@@ -151,5 +163,88 @@ describe('support logs', () => {
       .get('/api/admin/logs')
       .set('Authorization', `Bearer ${ada.token}`);
     expect(demoted.status).toBe(403);
+  });
+
+  test('a plan create stores a request row and PlanCreated', async () => {
+    const ada = await registerAndLogin();
+    const created = await request(app)
+      .post('/api/plans')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ type: 'trip', name: 'Paris', destination: 'Paris', timeZone: 'UTC' });
+    expect(created.status).toBe(201);
+
+    expect(await waitForCount({ event: /^POST \/api\/plans/ }, 1)).toBeGreaterThanOrEqual(1);
+    const requestRow = await SupportLog.findOne({ event: /^POST \/api\/plans/ });
+    expect(requestRow.level).toBe('info');
+    expect(requestRow.actorUserId).toBe(ada.userId);
+    expect(requestRow.message).toBe('201');
+    expect(requestRow.extra).toEqual({
+      method: 'POST',
+      path: '/api/plans',
+      statusCode: 201,
+    });
+
+    const named = await SupportLog.findOne({ event: 'PlanCreated' });
+    expect(named).not.toBeNull();
+    expect(named.actorUserId).toBe(ada.userId);
+  });
+
+  test('listing admin logs does not store a GET /api/admin/logs row', async () => {
+    const ada = await registerAndLogin();
+    await User.updateOne({ _id: ada.userId }, { $set: { role: 'admin' } });
+
+    const listed = await request(app)
+      .get('/api/admin/logs?event=PlanCreated')
+      .set('Authorization', `Bearer ${ada.token}`);
+    expect(listed.status).toBe(200);
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(await SupportLog.countDocuments({ event: /^GET \/api\/admin\/logs/ })).toBe(0);
+  });
+
+  test('a missing token on GET /api/plans is a warn row with no actor', async () => {
+    const anon = await request(app).get('/api/plans?probe=1');
+    expect(anon.status).toBe(401);
+
+    expect(await waitForCount({ message: '401' }, 1)).toBeGreaterThanOrEqual(1);
+    const row = await SupportLog.findOne({ message: '401' });
+    expect(row.level).toBe('warn');
+    expect(row.event).toContain('GET');
+    expect(row.event).toContain('/api/plans');
+    expect(row.actorUserId).toBeUndefined();
+    expect(row.extra).toEqual({
+      method: 'GET',
+      path: '/api/plans',
+      statusCode: 401,
+    });
+  });
+
+  test('OPTIONS is not stored', async () => {
+    const response = await request(app).options('/api/plans');
+    expect(response.status).toBeGreaterThanOrEqual(200);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(await SupportLog.countDocuments()).toBe(0);
+  });
+
+  test('SUPPORT_LOG_SKIP matches the event string and an empty value adds no skips', async () => {
+    expect(shouldSkipRequestLog({ method: 'OPTIONS', originalUrl: '/api/plans' })).toBe(true);
+    expect(shouldSkipRequestLog({ method: 'GET', originalUrl: '/api/admin/logs?event=PlanCreated' })).toBe(true);
+    expect(shouldSkipRequestLog({ method: 'GET', originalUrl: '/api/plans' })).toBe(false);
+
+    process.env.SUPPORT_LOG_SKIP = 'GET /api/plans, POST /api/auth/login';
+    try {
+      expect(shouldSkipRequestLog({ method: 'GET', originalUrl: '/api/plans' })).toBe(true);
+      expect(shouldSkipRequestLog({ method: 'POST', originalUrl: '/api/auth/login' })).toBe(true);
+      expect(shouldSkipRequestLog({ method: 'DELETE', originalUrl: '/api/plans/abc' })).toBe(false);
+
+      const skipped = await request(app).get('/api/plans');
+      expect(skipped.status).toBe(401);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(await SupportLog.countDocuments({ message: '401' })).toBe(0);
+    } finally {
+      delete process.env.SUPPORT_LOG_SKIP;
+    }
+
+    expect(shouldSkipRequestLog({ method: 'GET', originalUrl: '/api/plans' })).toBe(false);
   });
 });

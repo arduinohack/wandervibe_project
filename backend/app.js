@@ -26,6 +26,7 @@ app.use(cors({
 }));
 app.use(express.json());  // Parses JSON bodies from requests (e.g., { name: 'Paris Trip' })
 app.use(morgan('dev'));  // Logs requests to console
+app.use('/api', require('./middleware/requestLog'));
 
 // Mount auth routes (e.g., POST /api/auth/login)
 app.use('/api/auth', require('./routes/auth'));
