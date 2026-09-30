@@ -34,7 +34,18 @@
     <div id="app-panel" hidden>
       <div id="logs-page">
       <section>
-        <h2>Support logs</h2>
+        <div class="logs-heading">
+          <h2>Support logs</h2>
+          <div class="user-picker">
+            <div class="user-picker-field">
+              <label>User email
+                <input class="user-picker-query" type="text" name="admin-user-filter" autocomplete="off" spellcheck="false" data-lpignore="true" data-1p-ignore data-form-type="other">
+              </label>
+              <ul class="user-picker-results" role="listbox" hidden></ul>
+            </div>
+            <p class="user-picker-chosen"></p>
+          </div>
+        </div>
         <form id="logs-form">
           <label>Event
             <input id="filter-event" name="event" type="text" autocomplete="off">
@@ -42,15 +53,6 @@
           <label>Plan id
             <input id="filter-plan" name="planId" type="text" autocomplete="off">
           </label>
-          <div class="user-picker">
-            <div class="user-picker-field">
-              <label>User email
-                <input class="user-picker-query" type="text" autocomplete="off" spellcheck="false">
-              </label>
-              <ul class="user-picker-results" role="listbox" hidden></ul>
-            </div>
-            <p class="user-picker-chosen"></p>
-          </div>
           <button type="submit">Load logs</button>
         </form>
         <p id="logs-status" role="status"></p>
@@ -77,7 +79,7 @@
           <div class="user-picker">
             <div class="user-picker-field">
               <label>User email
-                <input class="user-picker-query" type="text" autocomplete="off" spellcheck="false">
+                <input class="user-picker-query" type="text" name="admin-user-delete" autocomplete="off" spellcheck="false" data-lpignore="true" data-1p-ignore data-form-type="other">
               </label>
               <ul class="user-picker-results" role="listbox" hidden></ul>
             </div>
