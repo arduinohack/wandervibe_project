@@ -9,6 +9,10 @@
 <body>
   <header>
     <h1>WanderVibe Admin</h1>
+    <nav id="app-nav" hidden>
+      <a href="#logs">Logs</a>
+      <a href="#settings">Settings</a>
+    </nav>
     <button id="logout" type="button" hidden>Log out</button>
   </header>
   <main>
@@ -27,6 +31,7 @@
     </section>
 
     <div id="app-panel" hidden>
+      <div id="logs-page">
       <section>
         <h2>Support logs</h2>
         <form id="logs-form">
@@ -43,7 +48,7 @@
           <table>
             <thead>
               <tr>
-                <th>createdAt</th>
+                <th id="created-at-header">createdAt</th>
                 <th>event</th>
                 <th>level</th>
                 <th>actorUserId</th>
@@ -66,6 +71,18 @@
         </form>
         <p id="delete-status" role="status"></p>
         <ul id="delete-plans"></ul>
+      </section>
+      </div>
+
+      <section id="settings-page" hidden>
+        <h2>Settings</h2>
+        <form id="settings-form">
+          <label>Display time zone
+            <select id="display-time-zone" name="displayTimeZone"></select>
+          </label>
+          <button type="submit">Save</button>
+        </form>
+        <p id="settings-status" role="status"></p>
       </section>
     </div>
   </main>

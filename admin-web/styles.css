@@ -13,10 +13,61 @@ body {
 
 header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 0.75rem 1rem;
   margin-bottom: 1.5rem;
+}
+
+#app-nav {
+  display: flex;
+  gap: 0.5rem;
+  margin-right: auto;
+}
+
+#app-nav[hidden] {
+  display: none;
+}
+
+#app-nav a {
+  color: #1c1915;
+  text-decoration: none;
+  border: 1px solid #b7ad9e;
+  border-radius: 4px;
+  padding: 0.35rem 0.7rem;
+  background: #fffdf8;
+}
+
+#app-nav a[aria-current="page"] {
+  background: #3d4a34;
+  border-color: #3d4a34;
+  color: #f7f4ee;
+}
+
+@media (max-width: 640px) {
+  header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "title logout"
+      "nav nav";
+    align-items: center;
+  }
+
+  header h1 {
+    grid-area: title;
+  }
+
+  #logout {
+    grid-area: logout;
+    justify-self: end;
+  }
+
+  #app-nav {
+    grid-area: nav;
+    margin-right: 0;
+  }
 }
 
 h1, h2 {
@@ -51,7 +102,8 @@ label {
   font-size: 0.9rem;
 }
 
-input {
+input,
+select {
   font: inherit;
   min-width: 16rem;
   padding: 0.4rem 0.5rem;
@@ -105,7 +157,8 @@ th {
 
 p[role="alert"],
 #delete-status.is-error,
-#logs-status.is-error {
+#logs-status.is-error,
+#settings-status.is-error {
   color: #8a2a1a;
 }
 
