@@ -69,8 +69,23 @@
             "exec": [
               "pm.test('register A returns 201', function () {",
               "  pm.response.to.have.status(201);",
-              "  pm.expect(pm.response.json().token).to.be.a('string').and.not.empty;",
-              "});"
+              "  const body = pm.response.json();",
+              "  pm.expect(body.token).to.be.a('string').and.not.empty;",
+              "  pm.environment.set('userAId', userIdFromAuth(body));",
+              "});",
+              "function userIdFromAuth(body) {",
+              "  const user = body.user || {};",
+              "  let id = user._id || user.id || '';",
+              "  if (!id && body.token) {",
+              "    let segment = String(body.token).split('.')[1] || '';",
+              "    segment = segment.replace(/-/g, '+').replace(/_/g, '/');",
+              "    while (segment.length % 4) segment += '=';",
+              "    const payload = JSON.parse(require('atob')(segment));",
+              "    id = payload.userId || payload.id || '';",
+              "  }",
+              "  if (!id) throw new Error('auth response has no user id');",
+              "  return id;",
+              "}"
             ]
           }
         }
@@ -99,8 +114,23 @@
             "exec": [
               "pm.test('register B returns 201', function () {",
               "  pm.response.to.have.status(201);",
-              "  pm.expect(pm.response.json().token).to.be.a('string').and.not.empty;",
-              "});"
+              "  const body = pm.response.json();",
+              "  pm.expect(body.token).to.be.a('string').and.not.empty;",
+              "  pm.environment.set('userBId', userIdFromAuth(body));",
+              "});",
+              "function userIdFromAuth(body) {",
+              "  const user = body.user || {};",
+              "  let id = user._id || user.id || '';",
+              "  if (!id && body.token) {",
+              "    let segment = String(body.token).split('.')[1] || '';",
+              "    segment = segment.replace(/-/g, '+').replace(/_/g, '/');",
+              "    while (segment.length % 4) segment += '=';",
+              "    const payload = JSON.parse(require('atob')(segment));",
+              "    id = payload.userId || payload.id || '';",
+              "  }",
+              "  if (!id) throw new Error('auth response has no user id');",
+              "  return id;",
+              "}"
             ]
           }
         }
@@ -132,6 +162,9 @@
               "  const body = pm.response.json();",
               "  pm.expect(body.token).to.be.a('string').and.not.empty;",
               "  pm.environment.set('tokenA', body.token);",
+              "  const user = body.user || {};",
+              "  const id = user._id || user.id;",
+              "  if (id) pm.environment.set('userAId', id);",
               "});"
             ]
           }
@@ -264,6 +297,9 @@
               "  const body = pm.response.json();",
               "  pm.expect(body.token).to.be.a('string').and.not.empty;",
               "  pm.environment.set('tokenB', body.token);",
+              "  const user = body.user || {};",
+              "  const id = user._id || user.id;",
+              "  if (id) pm.environment.set('userBId', id);",
               "});"
             ]
           }
@@ -426,8 +462,23 @@
             "exec": [
               "pm.test('register C returns 201', function () {",
               "  pm.response.to.have.status(201);",
-              "  pm.expect(pm.response.json().token).to.be.a('string').and.not.empty;",
-              "});"
+              "  const body = pm.response.json();",
+              "  pm.expect(body.token).to.be.a('string').and.not.empty;",
+              "  pm.environment.set('userCId', userIdFromAuth(body));",
+              "});",
+              "function userIdFromAuth(body) {",
+              "  const user = body.user || {};",
+              "  let id = user._id || user.id || '';",
+              "  if (!id && body.token) {",
+              "    let segment = String(body.token).split('.')[1] || '';",
+              "    segment = segment.replace(/-/g, '+').replace(/_/g, '/');",
+              "    while (segment.length % 4) segment += '=';",
+              "    const payload = JSON.parse(require('atob')(segment));",
+              "    id = payload.userId || payload.id || '';",
+              "  }",
+              "  if (!id) throw new Error('auth response has no user id');",
+              "  return id;",
+              "}"
             ]
           }
         }
@@ -603,6 +654,119 @@
               "  const body = pm.response.json();",
               "  pm.expect(body.planId).to.eql(pm.environment.get('planId'));",
               "  pm.expect(body.name).to.eql('Collaborator dinner');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "19 Admin login",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "auth": { "type": "noauth" },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": "{{baseUrl}}/api/auth/login"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('admin login saves adminToken', function () {",
+              "  pm.response.to.have.status(200);",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.token).to.be.a('string').and.not.empty;",
+              "  pm.environment.set('adminToken', body.token);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "20 Delete user C",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            { "key": "token", "value": "{{adminToken}}", "type": "string" }
+          ]
+        },
+        "url": "{{baseUrl}}/api/admin/users/{{userCId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('delete C is removed or already gone', function () {",
+              "  pm.expect([200, 204, 404]).to.include(pm.response.code);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "21 Delete user B",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            { "key": "token", "value": "{{adminToken}}", "type": "string" }
+          ]
+        },
+        "url": "{{baseUrl}}/api/admin/users/{{userBId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('delete B is removed or already gone', function () {",
+              "  pm.expect([200, 204, 404]).to.include(pm.response.code);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "22 Delete user A",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            { "key": "token", "value": "{{adminToken}}", "type": "string" }
+          ]
+        },
+        "url": "{{baseUrl}}/api/admin/users/{{userAId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('delete A is removed or already gone', function () {",
+              "  pm.expect([200, 204, 404]).to.include(pm.response.code);",
               "});"
             ]
           }
