@@ -71,6 +71,7 @@
               "  pm.response.to.have.status(201);",
               "  const body = pm.response.json();",
               "  pm.expect(body.token).to.be.a('string').and.not.empty;",
+              "  pm.environment.set('tokenA', body.token);",
               "  pm.environment.set('userAId', userIdFromAuth(body));",
               "});",
               "function userIdFromAuth(body) {",
@@ -116,6 +117,7 @@
               "  pm.response.to.have.status(201);",
               "  const body = pm.response.json();",
               "  pm.expect(body.token).to.be.a('string').and.not.empty;",
+              "  pm.environment.set('tokenB', body.token);",
               "  pm.environment.set('userBId', userIdFromAuth(body));",
               "});",
               "function userIdFromAuth(body) {",
@@ -162,10 +164,21 @@
               "  const body = pm.response.json();",
               "  pm.expect(body.token).to.be.a('string').and.not.empty;",
               "  pm.environment.set('tokenA', body.token);",
+              "  pm.environment.set('userAId', userIdFromAuth(body));",
+              "});",
+              "function userIdFromAuth(body) {",
               "  const user = body.user || {};",
-              "  const id = user._id || user.id;",
-              "  if (id) pm.environment.set('userAId', id);",
-              "});"
+              "  let id = user._id || user.id || '';",
+              "  if (!id && body.token) {",
+              "    let segment = String(body.token).split('.')[1] || '';",
+              "    segment = segment.replace(/-/g, '+').replace(/_/g, '/');",
+              "    while (segment.length % 4) segment += '=';",
+              "    const payload = JSON.parse(require('atob')(segment));",
+              "    id = payload.userId || payload.id || '';",
+              "  }",
+              "  if (!id) throw new Error('auth response has no user id');",
+              "  return id;",
+              "}"
             ]
           }
         }
@@ -297,10 +310,21 @@
               "  const body = pm.response.json();",
               "  pm.expect(body.token).to.be.a('string').and.not.empty;",
               "  pm.environment.set('tokenB', body.token);",
+              "  pm.environment.set('userBId', userIdFromAuth(body));",
+              "});",
+              "function userIdFromAuth(body) {",
               "  const user = body.user || {};",
-              "  const id = user._id || user.id;",
-              "  if (id) pm.environment.set('userBId', id);",
-              "});"
+              "  let id = user._id || user.id || '';",
+              "  if (!id && body.token) {",
+              "    let segment = String(body.token).split('.')[1] || '';",
+              "    segment = segment.replace(/-/g, '+').replace(/_/g, '/');",
+              "    while (segment.length % 4) segment += '=';",
+              "    const payload = JSON.parse(require('atob')(segment));",
+              "    id = payload.userId || payload.id || '';",
+              "  }",
+              "  if (!id) throw new Error('auth response has no user id');",
+              "  return id;",
+              "}"
             ]
           }
         }
@@ -464,6 +488,53 @@
               "  pm.response.to.have.status(201);",
               "  const body = pm.response.json();",
               "  pm.expect(body.token).to.be.a('string').and.not.empty;",
+              "  pm.environment.set('tokenC', body.token);",
+              "  pm.environment.set('userCId', userIdFromAuth(body));",
+              "});",
+              "function userIdFromAuth(body) {",
+              "  const user = body.user || {};",
+              "  let id = user._id || user.id || '';",
+              "  if (!id && body.token) {",
+              "    let segment = String(body.token).split('.')[1] || '';",
+              "    segment = segment.replace(/-/g, '+').replace(/_/g, '/');",
+              "    while (segment.length % 4) segment += '=';",
+              "    const payload = JSON.parse(require('atob')(segment));",
+              "    id = payload.userId || payload.id || '';",
+              "  }",
+              "  if (!id) throw new Error('auth response has no user id');",
+              "  return id;",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Login C",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "auth": { "type": "noauth" },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{emailC}}\",\n  \"password\": \"{{password}}\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": "{{baseUrl}}/api/auth/login"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('login C saves tokenC', function () {",
+              "  pm.response.to.have.status(200);",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.token).to.be.a('string').and.not.empty;",
+              "  pm.environment.set('tokenC', body.token);",
               "  pm.environment.set('userCId', userIdFromAuth(body));",
               "});",
               "function userIdFromAuth(body) {",
