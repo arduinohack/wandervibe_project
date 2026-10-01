@@ -42,6 +42,10 @@ Map<String, dynamic> _itineraryEventJson(Map source) {
   return map;
 }
 
+String _eventInstant(DateTime utc) {
+  return utc.toUtc().toIso8601String();
+}
+
 int _byStartTime(Event a, Event b) {
   final aStart = a.startTime;
   final bStart = b.startTime;
@@ -373,6 +377,53 @@ class PlanProvider extends ChangeNotifier {
       return 201;
     } catch (e) {
       logger.e('Error creating plan: $e');
+      return null;
+    }
+  }
+
+  /// POST /api/events with the Newman activity body: name, type, planId,
+  /// startTime, and endTime. End is three hours after the collected start.
+  /// On 201 the returned activity is inserted in start-time order.
+  Future<int?> createActivity({
+    required String planId,
+    required String name,
+    required String type,
+    required DateTime startTime,
+    required String? token,
+  }) async {
+    try {
+      if (token == null || token.isEmpty) return 401;
+      final start = startTime.toUtc();
+      final end = start.add(const Duration(hours: 3));
+      final response = await http.post(
+        Uri.parse((await backendBaseUrl) + apiEvents),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode({
+          'name': name,
+          'type': type,
+          'planId': planId,
+          'startTime': _eventInstant(start),
+          'endTime': _eventInstant(end),
+        }),
+      );
+      if (response.statusCode == 401 || response.statusCode == 403) {
+        return response.statusCode;
+      }
+      if (response.statusCode != 201) return response.statusCode;
+
+      final dynamic data = json.decode(response.body);
+      if (data is! Map) return 201;
+      final created = Event.fromJson(_itineraryEventJson(data));
+      final next = [..._itinerary, created]..sort(_byStartTime);
+      _itinerary = next;
+      _events = List<Event>.from(next);
+      notifyListeners();
+      return 201;
+    } catch (e) {
+      logger.e('Error creating activity: $e');
       return null;
     }
   }
