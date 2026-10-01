@@ -46,6 +46,8 @@ class _SignupScreenState extends State<SignupScreen> {
     if (_formKey.currentState!.validate()) {
       setState(() => _isLoading = true);
       final userProvider = Provider.of<UserProvider>(context, listen: false);
+      final navigator = Navigator.of(context);
+      final messenger = ScaffoldMessenger.of(context);
       try {
         await userProvider.signup(
           // Call new signup method (add to UserProvider below)
@@ -63,18 +65,14 @@ class _SignupScreenState extends State<SignupScreen> {
           },
           {'email': _emailNotifications, 'sms': _smsNotifications},
         );
-        // Success: Navigate to LoginScreen (user must login after signup)
-        Navigator.pushReplacement(
-          context,
+        navigator.pushReplacement(
           MaterialPageRoute(builder: (context) => const LoginScreen()),
         );
-        ScaffoldMessenger.of(context).showSnackBar(
+        messenger.showSnackBar(
           const SnackBar(content: Text('Signup successful—please log in!')),
         );
       } catch (e) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Signup error: $e')));
+        messenger.showSnackBar(SnackBar(content: Text('Signup error: $e')));
       } finally {
         setState(() => _isLoading = false);
       }

@@ -327,13 +327,3 @@ class Event {
     );
   }
 }
-
-// Helper for costType parsing
-CostType _costTypeFromString(String typeStr) {
-  switch (typeStr.toLowerCase()) {
-    case 'actual':
-      return CostType.actual;
-    default:
-      return CostType.estimated;
-  }
-}

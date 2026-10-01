@@ -80,14 +80,28 @@ class PlanProvider extends ChangeNotifier {
     }
   }
 
-  // Fetch all plans (real API with auth token passed in)
-  Future<void> fetchPlans(String? token) async {
+  String? _plansError;
+
+  String? get plansError => _plansError;
+
+  void clearPlans() {
+    _plans = [];
+    _plansError = null;
+    _isLoading = false;
+    notifyListeners();
+  }
+
+  // GET /api/plans. 200 with { plans: [] } is an empty list, not an error.
+  // Returns the HTTP status, or null when the call did not finish.
+  Future<int?> fetchPlans(String? token) async {
     _isLoading = true;
+    _plansError = null;
     notifyListeners();
 
     try {
-      if (token == null) {
-        throw Exception('No token—log in first');
+      if (token == null || token.isEmpty) {
+        _plansError = 'Session expired';
+        return 401;
       }
 
       final response = await http.get(
@@ -95,37 +109,35 @@ class PlanProvider extends ChangeNotifier {
         headers: {'Authorization': 'Bearer $token'},
       );
 
-      logger.i('Fetch plans response body: ${response.body}');
-
-      if (response.statusCode == 200) {
-        final dynamic data = json.decode(response.body);
-        List<dynamic> plansData;
-        if (data is List<dynamic>) {
-          plansData = data; // Direct list
-        } else if (data is Map<String, dynamic>) {
-          plansData =
-              data['plans'] ??
-              [
-                data['plan'] ?? {},
-              ]; // Extract 'plans' array or wrap single 'plan' in list
-        } else {
-          throw Exception('Unexpected response format: ${data.runtimeType}');
-        }
-        _plans = plansData
-            .map((json) => Plan.fromJson(json as Map<String, dynamic>))
-            .toList();
-        logger.i('Parsed ${_plans.length} plans from backend'); // Existing
-        // Fixed:
-        for (final plan in _plans) {
-          logger.i('Plan ID: ${plan.id}, Owner ID: ${plan.ownerId}');
-        } // Debug optional
-      } else {
-        throw Exception('Failed to load plans: ${response.statusCode}');
+      if (response.statusCode == 401) {
+        _plansError = 'Session expired';
+        return 401;
       }
+
+      if (response.statusCode != 200) {
+        _plansError = 'Could not load plans (${response.statusCode})';
+        return response.statusCode;
+      }
+
+      final dynamic data = json.decode(response.body);
+      if (data is! Map || data['plans'] is! List) {
+        _plansError = 'Could not load plans';
+        return response.statusCode;
+      }
+
+      final parsed = <Plan>[];
+      for (final item in data['plans'] as List) {
+        if (item is! Map) continue;
+        parsed.add(Plan.fromJson(Map<String, dynamic>.from(item)));
+      }
+      _plans = parsed;
+      _plansError = null;
+      logger.i('Parsed ${_plans.length} plans from backend');
+      return 200;
     } catch (e) {
-      logger.i('Error fetching plans: $e');
-      // Fallback to mock if offline
-      _plans = [];
+      logger.e('Error fetching plans: $e');
+      _plansError = 'Could not load plans';
+      return null;
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -170,10 +182,12 @@ class PlanProvider extends ChangeNotifier {
     }
   }
 
-  // Create plan (real API POST /api/plans with token passed as param)
-  Future<void> createPlan(Plan newPlan, String? token) async {
+  // POST /api/plans. Returns the HTTP status, or null when the call did not finish.
+  Future<int?> createPlan(Plan newPlan, String? token) async {
     try {
-      if (token == null) throw Exception('No token—log in first');
+      if (token == null || token.isEmpty) {
+        return 401;
+      }
 
       final response = await http.post(
         Uri.parse(await backendBaseUrl + apiPlans),
@@ -184,22 +198,28 @@ class PlanProvider extends ChangeNotifier {
         body: json.encode(newPlan.toJson()),
       );
 
-      if (response.statusCode == 201) {
-        final data = json.decode(response.body);
-        final createdPlan = Plan.fromJson(
-          data['plan'],
-        ); // Backend returns the created plan
-        _plans.add(createdPlan);
-        notifyListeners();
-        logger.i('Created plan: ${createdPlan.name} from backend');
-      } else {
-        throw Exception('Failed to create plan: ${response.statusCode}');
+      if (response.statusCode == 401) {
+        return 401;
       }
+
+      if (response.statusCode != 201) {
+        return response.statusCode;
+      }
+
+      final data = json.decode(response.body);
+      final planJson = data is Map ? data['plan'] : null;
+      if (planJson is! Map) {
+        return response.statusCode;
+      }
+      final createdPlan = Plan.fromJson(Map<String, dynamic>.from(planJson));
+      _plans = [..._plans, createdPlan];
+      _plansError = null;
+      notifyListeners();
+      logger.i('Created plan: ${createdPlan.name} from backend');
+      return 201;
     } catch (e) {
       logger.e('Error creating plan: $e');
-      // Fallback: Add mock
-      _plans.add(newPlan);
-      notifyListeners();
+      return null;
     }
   }
 

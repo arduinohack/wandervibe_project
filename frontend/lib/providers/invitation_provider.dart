@@ -6,6 +6,7 @@ import 'dart:convert'; // For JSON
 import '../config/constants.dart'; // Add this line for getBackendUrl
 // Add this line for UserProvider (token)
 import '../models/invitation.dart'; // Your Invitation model
+import '../utils/logger.dart';
 
 class InvitationProvider extends ChangeNotifier {
   List<Invitation> _invitations = []; // Private list of invitations
@@ -35,12 +36,12 @@ class InvitationProvider extends ChangeNotifier {
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
         _invitations = data.map((json) => Invitation.fromJson(json)).toList();
-        print('Fetched ${_invitations.length} invitations from backend');
+        logger.i('Fetched ${_invitations.length} invitations from backend');
       } else {
         throw Exception('Failed to load invitations: ${response.statusCode}');
       }
     } catch (e) {
-      print('Error fetching invitations: $e');
+      logger.e('Error fetching invitations: $e');
       // Fallback to mock
       _invitations = [
         Invitation(
@@ -68,8 +69,7 @@ class InvitationProvider extends ChangeNotifier {
     }
   }
 
-  // Create invitation (real API POST /api/invites with token)
-  // Respond to invitation (real API POST /api/invites/:id/respond with token passed as param)
+  // Respond to invitation (POST /api/invites/invitations/:id/respond).
   Future<void> respondToInvitation(
     String invitationId,
     InvitationStatus newStatus,
@@ -92,19 +92,29 @@ class InvitationProvider extends ChangeNotifier {
         }),
       );
 
-      if (response.statusCode == 201) {
+      if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        final newInvitation = Invitation.fromJson(
-          data['invitation'],
-        ); // Backend returns the created invitation
-        _invitations.add(newInvitation);
-        notifyListeners();
-        print('Created invitation: ${newInvitation.id} from backend');
+        final index = _invitations.indexWhere((inv) => inv.id == invitationId);
+        if (index != -1) {
+          final returned = data is Map ? data['invitation'] : null;
+          _invitations[index] = returned is Map
+              ? Invitation.fromJson(Map<String, dynamic>.from(returned))
+              : Invitation(
+                  id: _invitations[index].id,
+                  planId: _invitations[index].planId,
+                  userId: _invitations[index].userId,
+                  invitedBy: _invitations[index].invitedBy,
+                  role: _invitations[index].role,
+                  status: newStatus,
+                  createdAt: _invitations[index].createdAt,
+                );
+          notifyListeners();
+        }
       } else {
-        throw Exception('Failed to create invitation: ${response.statusCode}');
+        throw Exception('Failed to respond to invitation: ${response.statusCode}');
       }
     } catch (e) {
-      print('Error responding to invitation: $e');
+      logger.e('Error responding to invitation: $e');
       // Fallback: Update local mock
       final index = _invitations.indexWhere((inv) => inv.id == invitationId);
       if (index != -1) {

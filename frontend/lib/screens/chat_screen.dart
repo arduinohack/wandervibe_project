@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io; // For Socket.IO
 import 'dart:convert'; // For JSON
+import '../config/constants.dart';
+import '../utils/logger.dart';
 
 class ChatScreen extends StatefulWidget {
   final String tripId; // For trip-specific chat
@@ -12,7 +14,7 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
-  late io.Socket socket; // Socket connection
+  io.Socket? socket;
   List<Map<String, dynamic>> _messages = []; // List of messages (mock/stream)
   final TextEditingController _messageController =
       TextEditingController(); // For input
@@ -24,56 +26,71 @@ class _ChatScreenState extends State<ChatScreen> {
     _connectSocket(); // Connect on open
   }
 
-  void _connectSocket() {
-    // Connect to backend (replace with production URL)
-    socket = io.io(
-      'http://localhost:3000',
+  Future<void> _connectSocket() async {
+    final baseUrl = await backendBaseUrl;
+    if (!mounted) return;
+
+    final connected = io.io(
+      baseUrl,
       io.OptionBuilder().setTransports([
         'websocket',
       ]) // Use WebSocket for real-time
       .build(),
     );
+    if (!mounted) {
+      connected.disconnect();
+      return;
+    }
+    socket = connected;
 
-    socket.onConnect((_) {
+    connected.onConnect((_) {
+      if (!mounted) return;
       setState(() => _isConnected = true);
-      print('Connected to chat for trip ${widget.tripId}');
-      socket.emit('joinTrip', widget.tripId); // Join trip room
+      logger.i('Connected to chat for trip ${widget.tripId}');
+      connected.emit('joinTrip', widget.tripId); // Join trip room
     });
 
-    socket.onDisconnect((_) => setState(() => _isConnected = false));
+    connected.onDisconnect((_) {
+      if (!mounted) return;
+      setState(() => _isConnected = false);
+    });
 
     // Listen for new messages
-    socket.on('newMessage', (data) {
+    connected.on('newMessage', (data) {
+      if (!mounted) return;
       final message = json.decode(data); // From backend JSON
       setState(() {
         _messages.add(message); // Add to list (live update)
       });
-      print('New message: ${message['text']} from ${message['userId']}');
+      logger.i('New message: ${message['text']} from ${message['userId']}');
     });
 
     // Mock initial messages (replace with fetch from backend)
-    _messages = [
-      {
-        'id': 'msg1',
-        'userId': 'user123',
-        'text': 'Welcome to the trip chat!',
-        'timestamp': DateTime.now().toIso8601String(),
-      },
-      {
-        'id': 'msg2',
-        'userId': 'user456',
-        'text': 'Excited for Paris!',
-        'timestamp': DateTime.now()
-            .subtract(const Duration(minutes: 5))
-            .toIso8601String(),
-      },
-    ];
+    setState(() {
+      _messages = [
+        {
+          'id': 'msg1',
+          'userId': 'user123',
+          'text': 'Welcome to the trip chat!',
+          'timestamp': DateTime.now().toIso8601String(),
+        },
+        {
+          'id': 'msg2',
+          'userId': 'user456',
+          'text': 'Excited for Paris!',
+          'timestamp': DateTime.now()
+              .subtract(const Duration(minutes: 5))
+              .toIso8601String(),
+        },
+      ];
+    });
   }
 
   @override
   void dispose() {
     _messageController.dispose();
-    socket.disconnect(); // Clean up connection
+    socket?.disconnect();
+    socket = null;
     super.dispose();
   }
 
@@ -92,7 +109,7 @@ class _ChatScreenState extends State<ChatScreen> {
       _messages.add(message); // Add to list (shows blue bubble right away)
     });
 
-    socket.emit('sendMessage', json.encode(message)); // Send to backend
+    socket?.emit('sendMessage', json.encode(message)); // Send to backend
     _messageController.clear(); // Clear input
   }
 

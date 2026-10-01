@@ -29,20 +29,22 @@ class _LoginScreenState extends State<LoginScreen> {
     if (_formKey.currentState!.validate()) {
       setState(() => _isLoading = true);
       final userProvider = Provider.of<UserProvider>(context, listen: false);
+      final navigator = Navigator.of(context);
       try {
         await userProvider.login(
           _emailController.text,
           _passwordController.text,
         ); // Calls provider
+        if (!mounted) return;
         if (userProvider.token != null) {
-          Navigator.pushReplacement(
-            context,
+          navigator.pushReplacement(
             MaterialPageRoute(builder: (context) => const HomeScreen()),
           );
         } else {
           _showError('Login failed—try again');
         }
       } catch (e) {
+        if (!mounted) return;
         _showError(
           e.toString(),
         ); // Fixed: Shows backend message (e.g., "Invalid email or password")

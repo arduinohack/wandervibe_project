@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart'; // Added for launchUrl
 
 import '../models/event.dart';
 import '../models/event_type.dart';
@@ -52,8 +51,6 @@ class _EventScreenState extends State<EventScreen> {
   final _dateTimeFormat = DateFormat('yyyy-MM-dd HH:mm');
 
   bool _isSaving = false; // Loading spinner
-  final Map<String, dynamic> _extras = {}; // For custom fields
-  final String _customKey = ''; // Temp for key input
   final String _linkName = '';
   final String _linkUrl = '';
 
@@ -372,20 +369,6 @@ class _EventScreenState extends State<EventScreen> {
     );
   }
 
-  // Add sub-event with details (to be completed)
-  void _addSubEventWithDetails(String name, String subType) {
-    setState(() {
-      _subEvents.add(
-        SubEvent(
-          name: name,
-          location: '',
-          startTime: DateTime.now(), // Default now—user can edit
-          subType: subType,
-        ),
-      );
-    });
-  }
-
   // Remove sub-event
   void _removeSubEvent(int index) {
     setState(() => _subEvents.removeAt(index));
@@ -393,7 +376,7 @@ class _EventScreenState extends State<EventScreen> {
 
   // Edit sub-event (placeholder)
   void _editSubEvent(int index) {
-    print('Edit sub-event at index $index'); // To be implemented
+    logger.i('Edit sub-event at index $index');
   }
 
   // Add URL link

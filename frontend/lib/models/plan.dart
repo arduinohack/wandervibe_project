@@ -1,12 +1,59 @@
 import '../models/user.dart'; // Add this line for User class in participants
 
+/// UTC calendar date from a plan field. Null stays "not set".
+String formatPlanDate(DateTime? value) {
+  if (value == null) return 'not set';
+  final utc = value.toUtc();
+  final year = utc.year.toString().padLeft(4, '0');
+  final month = utc.month.toString().padLeft(2, '0');
+  final day = utc.day.toString().padLeft(2, '0');
+  return '$year-$month-$day';
+}
+
+String _stringValue(dynamic value, {String fallback = ''}) {
+  if (value == null) return fallback;
+  if (value is Map) {
+    final id = value['_id'] ?? value['id'];
+    if (id != null) return id.toString();
+  }
+  final text = value.toString();
+  return text.isEmpty ? fallback : text;
+}
+
+DateTime? _dateValue(dynamic value) {
+  if (value == null) return null;
+  return DateTime.tryParse(value.toString());
+}
+
+List<String> _stringList(dynamic value) {
+  if (value is! List) return [];
+  return value.map((item) => item.toString()).toList();
+}
+
+List<PlanUser> _participants(dynamic value) {
+  if (value is! List) return [];
+  final people = <PlanUser>[];
+  for (final item in value) {
+    if (item is! Map) continue;
+    final map = Map<String, dynamic>.from(item);
+    final userId = map['userId'];
+    if (userId is Map) {
+      map['userId'] = _stringValue(userId);
+    } else if (userId != null) {
+      map['userId'] = userId.toString();
+    }
+    people.add(PlanUser.fromJson(map));
+  }
+  return people;
+}
+
 class Plan {
   final String id;
   final String type;
   final String name;
   final String destination;
-  final DateTime startDate;
-  final DateTime endDate;
+  final DateTime? startDate;
+  final DateTime? endDate;
   final bool autoCalculateStartDate;
   final bool autoCalculateEndDate;
   final String location;
@@ -53,24 +100,23 @@ class Plan {
     */
 
     return Plan(
-      id: json['id'] ?? json['_id'] ?? '',
-      type: json['type'] ?? '',
-      name: json['name'] ?? '',
-      destination: json['destination'] ?? '',
-      startDate: DateTime.parse(json['startDate']),
-      endDate: DateTime.parse(json['endDate']),
+      id: _stringValue(json['id'] ?? json['_id']),
+      type: _stringValue(json['type']),
+      name: _stringValue(json['name']),
+      destination: _stringValue(json['destination']),
+      startDate: _dateValue(json['startDate']),
+      endDate: _dateValue(json['endDate']),
       autoCalculateStartDate: json['autoCalculateStartDate'] ?? false,
       autoCalculateEndDate: json['autoCalculateEndDate'] ?? false,
-      location: json['location'] ?? '',
-      budget: (json['budget'] ?? 0).toDouble(),
-      planningState: json['planningState'] ?? 'initial',
-      timeZone: json['timeZone'] ?? 'UTC',
-      participants: (json['participants'] ?? [])
-          .map<PlanUser>((p) => PlanUser.fromJson(p as Map<String, dynamic>))
-          .toList(),
-      eventIds: List<String>.from(json['eventIds'] ?? []),
-      ownerId: json['ownerId'] ?? '',
-      createdAt: DateTime.parse(json['createdAt']),
+      location: _stringValue(json['location']),
+      budget: json['budget'] is num ? (json['budget'] as num).toDouble() : 0,
+      planningState: _stringValue(json['planningState'], fallback: 'initial'),
+      timeZone: _stringValue(json['timeZone'], fallback: 'UTC'),
+      participants: _participants(json['participants']),
+      eventIds: _stringList(json['eventIds'] ?? json['activityIds']),
+      ownerId: _stringValue(json['ownerId']),
+      createdAt:
+          _dateValue(json['createdAt']) ?? DateTime.fromMillisecondsSinceEpoch(0),
     );
   }
   /*
@@ -111,8 +157,8 @@ class Plan {
       'type': type,
       'name': name,
       'destination': destination,
-      'startDate': startDate.toIso8601String(),
-      'endDate': endDate.toIso8601String(),
+      'startDate': startDate?.toIso8601String(),
+      'endDate': endDate?.toIso8601String(),
       'autoCalculateStartDate': autoCalculateStartDate,
       'autoCalculateEndDate': autoCalculateEndDate,
       'location': location,

@@ -104,7 +104,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                           Text('Destination: ${widget.plan.destination}'),
                           Text('Budget: \$${widget.plan.budget}'),
                           Text(
-                            'Dates: ${DateFormat('yyyy-MM-dd').format(widget.plan.startDate.toLocal())} - ${DateFormat('yyyy-MM-dd').format(widget.plan.endDate.toLocal())}',
+                            'Dates: ${formatPlanDate(widget.plan.startDate)} - ${formatPlanDate(widget.plan.endDate)}',
                           ),
                           Text('State: ${widget.plan.planningState}'),
                         ],
@@ -174,7 +174,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                                         CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        '${DateFormat('EEE, MMM d • HH:mm').format(leg.startTime ?? DateTime.now())}',
+                                        DateFormat('EEE, MMM d • HH:mm').format(leg.startTime ?? DateTime.now()),
                                       ),
                                       if (leg.subType == 'departure' ||
                                           leg.subType == 'pickup')
@@ -234,15 +234,16 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                                     trailing: IconButton(
                                       icon: const Icon(Icons.open_in_new),
                                       onPressed: () async {
+                                        final messenger = ScaffoldMessenger.of(
+                                          context,
+                                        );
                                         final Uri url = Uri.parse(
                                           urlLink.linkUrl,
                                         );
                                         if (await canLaunchUrl(url)) {
                                           await launchUrl(url);
                                         } else {
-                                          ScaffoldMessenger.of(
-                                            context,
-                                          ).showSnackBar(
+                                          messenger.showSnackBar(
                                             SnackBar(
                                               content: Text(
                                                 'Could not open ${urlLink.linkUrl}',
@@ -293,27 +294,29 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () async {
-              Navigator.pop(context); // Close dialog
+              final dialogContext = context;
+              final messenger = ScaffoldMessenger.of(dialogContext);
               final planProvider = Provider.of<PlanProvider>(
-                context,
+                dialogContext,
                 listen: false,
               );
               final userProvider = Provider.of<UserProvider>(
-                context,
+                dialogContext,
                 listen: false,
               );
+              Navigator.pop(dialogContext);
               try {
                 await planProvider.deleteEvent(
                   event.id ?? '',
                   userProvider.token,
                 );
-                ScaffoldMessenger.of(context).showSnackBar(
+                messenger.showSnackBar(
                   SnackBar(content: Text('${event.name} deleted!')),
                 );
               } catch (e) {
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(SnackBar(content: Text('Delete failed: $e')));
+                messenger.showSnackBar(
+                  SnackBar(content: Text('Delete failed: $e')),
+                );
               }
             },
             child: const Text('Delete'),

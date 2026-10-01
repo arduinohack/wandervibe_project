@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/user_provider.dart'; // For preferences
-// For NotificationPreferences
+import '../utils/logger.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -12,19 +12,11 @@ class NotificationsScreen extends StatefulWidget {
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
   List<Map<String, dynamic>> _notifications = []; // Mock list of notifications
-  bool _emailNotifications = true; // Local state for switches
-  bool _smsNotifications = false;
 
   @override
   void initState() {
     super.initState();
-    _loadNotifications(); // Load mock data
-    // Get prefs from provider (stub for now)
-    final userProvider = Provider.of<UserProvider>(context, listen: false);
-    _emailNotifications =
-        userProvider.currentUser?.notificationPreferences.email ?? true;
-    _smsNotifications =
-        userProvider.currentUser?.notificationPreferences.sms ?? false;
+    _loadNotifications();
   }
 
   void _loadNotifications() {
@@ -57,31 +49,6 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       },
     ];
     setState(() {}); // Refresh UI
-  }
-
-  void _toggleEmail(bool value) {
-    setState(() => _emailNotifications = value);
-    // Update provider (stub; later save to backend)
-    final userProvider = Provider.of<UserProvider>(context, listen: false);
-    final updatedUser = userProvider.currentUser!.copyWith(
-      // Assume copyWith extension or manual update
-      notificationPreferences: userProvider.currentUser!.notificationPreferences
-          .copyWith(email: value),
-    );
-    userProvider.setCurrentUser(updatedUser);
-      print('Email notifications: $value');
-  }
-
-  void _toggleSms(bool value) {
-    setState(() => _smsNotifications = value);
-    // Update provider (stub)
-    final userProvider = Provider.of<UserProvider>(context, listen: false);
-    final updatedUser = userProvider.currentUser!.copyWith(
-      notificationPreferences: userProvider.currentUser!.notificationPreferences
-          .copyWith(sms: value),
-    );
-    userProvider.setCurrentUser(updatedUser);
-      print('SMS notifications: $value');
   }
 
   @override
@@ -179,9 +146,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                 .substring(0, 5), // Time only
                           ),
                           onTap: () {
-                            print(
-                              'Tapped notification ${notif['id']}',
-                            ); // Stub for detail view
+                            logger.i('Tapped notification ${notif['id']}');
                           },
                         ),
                       );

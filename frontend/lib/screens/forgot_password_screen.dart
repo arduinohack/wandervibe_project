@@ -24,18 +24,18 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     if (_formKey.currentState!.validate()) {
       setState(() => _isSending = true);
       final userProvider = Provider.of<UserProvider>(context, listen: false);
+      final navigator = Navigator.of(context);
+      final messenger = ScaffoldMessenger.of(context);
       try {
         await userProvider.forgotPassword(
           _emailController.text,
         ); // Call provider (stub for now)
-        Navigator.pop(context); // Back to LoginScreen
-        ScaffoldMessenger.of(context).showSnackBar(
+        navigator.pop();
+        messenger.showSnackBar(
           const SnackBar(content: Text('Reset email sent! Check your inbox.')),
         );
       } catch (e) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error: $e')));
+        messenger.showSnackBar(SnackBar(content: Text('Error: $e')));
       } finally {
         setState(() => _isSending = false);
       }

@@ -100,8 +100,13 @@ class UserProvider extends ChangeNotifier {
 
       if (response.statusCode == 201) {
         final data = json.decode(response.body);
-        logger.i('Signup successful: ${data['message']}');
-        // Navigate to login (handled in screen)
+        final token = data['token'];
+        if (token is String && token.isNotEmpty) {
+          _jwtToken = token;
+          await _storage.write(key: 'jwt_token', value: token);
+          notifyListeners();
+        }
+        logger.i('Signup successful: ${data['msg'] ?? data['message']}');
       } else {
         throw Exception(
           'Signup failed: ${response.statusCode} - ${response.body}',

@@ -173,7 +173,7 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
                       trailing: IconButton(
                         icon: const Icon(Icons.edit),
                         onPressed: () {
-                          print('Edit plan ${plan.id}');
+                          logger.i('Edit plan ${plan.id}');
                         },
                       ),
                       onTap: () {
@@ -252,16 +252,15 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
                           context,
                           listen: false,
                         );
+                        final messenger = ScaffoldMessenger.of(context);
                         await invitationProvider.respondToInvitation(
                           invite.id,
                           InvitationStatus.accepted,
                           userProvider.token,
                         );
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Invite accepted!')),
-                          );
-                        }
+                        messenger.showSnackBar(
+                          const SnackBar(content: Text('Invite accepted!')),
+                        );
                       },
                     ),
                     IconButton(
@@ -271,16 +270,15 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
                           context,
                           listen: false,
                         );
+                        final messenger = ScaffoldMessenger.of(context);
                         await invitationProvider.respondToInvitation(
                           invite.id,
                           InvitationStatus.rejected,
                           userProvider.token,
                         );
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Invite rejected!')),
-                          );
-                        }
+                        messenger.showSnackBar(
+                          const SnackBar(content: Text('Invite rejected!')),
+                        );
                       },
                     ),
                   ],
@@ -354,7 +352,8 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
                   createdAt: DateTime.now(),
                 );
                 await planProvider.createPlan(newPlan, userProvider.token);
-                if (mounted) Navigator.pop(context);
+                if (!context.mounted) return;
+                Navigator.pop(context);
               }
             },
             child: const Text('Plan New'),

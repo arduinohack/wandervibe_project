@@ -94,12 +94,13 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     return PopScope(
       // Added: Intercept back gesture
       canPop: false, // Prevent pop until we handle it
-      onPopInvoked: (didPop) async {
+      onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return; // Already popped (e.g., from dialog button)
         if (!_hasChanges) {
           Navigator.pop(context); // No changes: Allow back
           return;
         }
+        final navigator = Navigator.of(context);
         // Changes made: Show warning dialog
         final shouldSave = await showDialog<bool>(
           context: context,
@@ -115,18 +116,17 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
               ),
               TextButton(
                 onPressed: () async {
-                  await _saveProfile(); // Save then pop
-                  Navigator.of(context).pop(true);
+                  final dialogNavigator = Navigator.of(context);
+                  await _saveProfile();
+                  dialogNavigator.pop(true);
                 },
                 child: const Text('Save and Return'),
               ),
             ],
           ),
         );
-        if (shouldSave == true) {
-          // Save done in dialog
-        } else if (shouldSave == false) {
-          Navigator.pop(context); // Discard and back
+        if (shouldSave == false) {
+          navigator.pop();
         }
       },
       child: Scaffold(
@@ -165,9 +165,9 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                   validator: (value) =>
                       value?.isEmpty ?? true ? 'First name required' : null,
                   onChanged: (value) {
-                    print(
+                    logger.i(
                       'FirstName changed: "$value" (different from original: ${value != _currentUser.firstName})',
-                    ); // Debug: See change
+                    );
                     if (value != _currentUser.firstName) {
                       setState(() => _hasChanges = true); // Detect change
                     }
