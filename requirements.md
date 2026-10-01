@@ -18,6 +18,22 @@ WanderVibe is a collaborative trip and event planning app. The live API and mode
 - An itinerary is the list of activities sorted by `startTime` with day numbers. It is not its own collection.
 - Industry wording "the event" means a Plan of type event, not an Activity.
 
+### Roles (product vs stored)
+
+- Formal roles are Owner, Collaborator, and Guest.
+- The stored enum remains `VibeCoordinator`, `VibePlanner`, and `Wanderer` until a later migration.
+- Owner is `VibeCoordinator` (`Plan.ownerId`). Collaborator is `VibePlanner`. Guest is `Wanderer`.
+- UI labels depend on `Plan.type`:
+
+| Formal role | Stored value | Trip label | Event label |
+| --- | --- | --- | --- |
+| Owner | `VibeCoordinator` | Organizer | Host |
+| Collaborator | `VibePlanner` | Co-Planner | Planner |
+| Guest | `Wanderer` | Attendee | Guest |
+
+- For an event, the stored `Plan.type` value is still `plan` until Q10.
+- Permissions in `## Roles` stay as they are. Only the display names change.
+
 ## Roles
 
 `VibeCoordinator` is the single owner, stored as `Plan.ownerId`. `VibePlanner` and `Wanderer` are values of `PlanUser.role`. Roles are per plan.
@@ -257,12 +273,19 @@ These files are not the collections the mounted plan, event, and invite routes u
 - [ ] Q9. `Invitation` does not set `ref` on `planId`, `userId`, or `invitedBy`.
 - [ ] Q10. Migrate the `Plan.type` enum value `plan` to `event`, and optionally rename Event to Activity in code.
 - [ ] Q11. Add `parentActivityId` and `room` on the Event schema and API; grouping is a client concern.
+- [ ] Q12. Migrate the stored role enum to Owner, Collaborator, and Guest; Flutter screens use the UI table by plan type.
 
 ## Tests
 
-From `backend`, `npx jest` runs the in-memory suite. It does not use Atlas.
+From `backend`, `npx jest` runs the in-memory suite. It does not use Atlas. Jest does not load `backend/.env`.
 
-`npm run test:postman` runs the Newman collection against `http://localhost:3000`. The server must already be running. That command does not require Redis.
+`npm run test:postman` runs `backend/scripts/run-postman.js`. That script loads `backend/.env` and runs the Newman collection against `http://localhost:3000`. The server must already be running. That command does not require Redis.
+
+The standing Atlas admin is never created or deleted by the suite. Its email and password are `ADMIN_ACCOUNT` and `ADMIN_PASSWORD` in `backend/.env`. `ADMIN_ACCOUNT` is `ken@eratespecialists.com`. Test scripts read those names from the environment the same way: `process.env.ADMIN_ACCOUNT` and `process.env.ADMIN_PASSWORD`. The Newman runner passes them for that run only as collection variables `adminEmail` and `adminPassword`. It does not write either value into `backend/postman/WanderVibe.local.postman_environment.json`. The committed environment leaves `adminPassword` empty.
+
+If `ADMIN_ACCOUNT` is missing or empty, `npm run test:postman` exits before any request. If `ADMIN_PASSWORD` is missing or empty, the runner prompts for it and still does not save what was typed.
+
+`backend/.env` is gitignored. `backend/.env.example` lists the placeholders `ADMIN_ACCOUNT=admin@example.com` and `ADMIN_PASSWORD=your-admin-password`. The real admin password is not committed.
 
 ## Known gaps
 
