@@ -1030,6 +1030,74 @@ describe('activity permissions', () => {
   });
 });
 
+describe('activity route alias', () => {
+  const dinner = (planId, name) => ({
+    name,
+    type: 'dining',
+    planId,
+    startTime: '2026-06-01T15:00:00.000Z',
+    endTime: '2026-06-01T18:00:00.000Z',
+  });
+
+  test('POST /api/activities and POST /api/events both create in the events collection', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+      password: 'password1',
+    });
+    const grace = await registerAndLogin({
+      firstName: 'Grace',
+      lastName: 'Hopper',
+      email: 'grace@example.com',
+      password: 'password2',
+    });
+    const planRes = await request(app)
+      .post('/api/plans')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ type: 'trip', name: 'Paris', destination: 'Paris', timeZone: 'UTC' });
+    const planId = planRes.body.plan._id;
+
+    const oldPath = await request(app)
+      .post('/api/events')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send(dinner(planId, 'Old path dinner'));
+    const newPath = await request(app)
+      .post('/api/activities')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send(dinner(planId, 'New path dinner'));
+
+    expect(oldPath.status).toBe(201);
+    expect(newPath.status).toBe(201);
+    expect(oldPath.body.planId).toBe(planId);
+    expect(newPath.body.planId).toBe(planId);
+    expect(Event.collection.collectionName).toBe('events');
+
+    const stored = await Event.find({ planId }).select('name');
+    expect(stored.map((row) => row.name).sort()).toEqual(['New path dinner', 'Old path dinner']);
+
+    const inviteRes = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'grace@example.com', role: 'Guest' });
+    expect(inviteRes.status).toBe(201);
+    const acceptRes = await request(app)
+      .post(`/api/invites/invitations/${inviteRes.body.invitation._id}/respond`)
+      .set('Authorization', `Bearer ${grace.token}`)
+      .send({ status: 'accepted' });
+    expect(acceptRes.status).toBe(200);
+
+    const before = await Event.countDocuments({ planId });
+    const denied = await request(app)
+      .post('/api/activities')
+      .set('Authorization', `Bearer ${grace.token}`)
+      .send(dinner(planId, 'Guest dinner'));
+    expect(denied.status).toBe(403);
+    expect(denied.body.message).toBe('Only Owner or Collaborator can change activities');
+    expect(await Event.countDocuments({ planId })).toBe(before);
+  });
+});
+
 describe('activity history', () => {
   const flight = (planId) => ({
     name: 'AA 100',

@@ -54,8 +54,9 @@ const plansRouter = require('./routes/plans');
 const { planInviteRouter, invitesRouter } = require('./routes/invites');
 app.use('/api/plans', authMiddleware, plansRouter, planInviteRouter);
 
-// Mount events under /api/events (uses events.js handler)
+// Activity API. /api/events stays mounted on the same handlers.
 const eventRoutes = require('./routes/events');
+app.use('/api/activities', eventRoutes);
 app.use('/api/events', eventRoutes);
 
 // Mount invites routes WITH authMiddleware (protects all /api/invites/*)
