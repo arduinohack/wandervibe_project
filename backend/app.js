@@ -6,23 +6,41 @@ const cors = require('cors');
 
 const app = express();
 
-// Browser calls from the static admin page. Requests with no Origin (native app, curl) stay allowed.
-const browserOrigins = new Set([
+// Admin page origins stay allowed in every environment.
+// Development (and an unset NODE_ENV) also allows Flutter web on any localhost port.
+// Requests with no Origin (native app, curl) stay allowed. Never emit *.
+const adminOrigins = new Set([
   'http://localhost:5500',
   'http://127.0.0.1:5500',
   'http://localhost:8080',
 ]);
 
+const devLocalOrigin = /^http:\/\/(?:localhost|127\.0\.0\.1):\d+$/;
+
+function developmentCors() {
+  const env = process.env.NODE_ENV;
+  if (env == null) return true;
+  const value = String(env).trim();
+  return value === '' || value === 'development';
+}
+
+function allowsBrowserOrigin(origin) {
+  if (!origin) return true;
+  if (adminOrigins.has(origin)) return true;
+  return developmentCors() && devLocalOrigin.test(origin);
+}
+
 app.use(cors({
   origin(origin, callback) {
-    if (!origin || browserOrigins.has(origin)) {
-      callback(null, true);
+    if (!allowsBrowserOrigin(origin)) {
+      callback(null, false);
       return;
     }
-    callback(null, false);
+    callback(null, origin || true);
   },
   methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Authorization', 'Content-Type'],
+  optionsSuccessStatus: 204,
 }));
 app.use(express.json());  // Parses JSON bodies from requests (e.g., { name: 'Paris Trip' })
 app.use(morgan('dev'));  // Logs requests to console
