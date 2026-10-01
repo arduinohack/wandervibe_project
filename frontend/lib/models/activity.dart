@@ -1,6 +1,6 @@
 // Added for IconData in icon getter
 // import 'package:timezone/timezone.dart' as tz; // For time zone handling (add to pubspec.yaml if needed)
-import './event_type.dart';
+import './activity_type.dart';
 
 enum CostType { estimated, actual }
 
@@ -115,7 +115,7 @@ class Activity {
   final String planId;
   final String name;
   final String? location;
-  final EventType type;
+  final ActivityType type;
   final String typeLabel;
   final double? cost;
   final CostType? costType;
@@ -139,7 +139,7 @@ class Activity {
     required this.planId,
     required this.name,
     this.location,
-    this.type = EventType.activity,
+    this.type = ActivityType.activity,
     this.typeLabel = '',
     this.cost,
     this.costType,
@@ -286,26 +286,26 @@ class Activity {
   }
 
   // Helper methods outside the class
-  static EventType _typeFromString(String typeStr) {
+  static ActivityType _typeFromString(String typeStr) {
     switch (typeStr.toLowerCase()) {
       case 'flight':
-        return EventType.flight;
+        return ActivityType.flight;
       case 'hotel':
-        return EventType.hotel;
+        return ActivityType.hotel;
       case 'train':
-        return EventType.train;
+        return ActivityType.train;
       case 'carrental':
-        return EventType.carRental;
+        return ActivityType.carRental;
       case 'carservice':
-        return EventType.carService;
+        return ActivityType.carService;
       case 'drive':
-        return EventType.drive;
+        return ActivityType.drive;
       case 'bus':
-        return EventType.bus;
+        return ActivityType.bus;
       case 'ferry':
-        return EventType.ferry;
+        return ActivityType.ferry;
       default:
-        return EventType.activity;
+        return ActivityType.activity;
     }
   }
 

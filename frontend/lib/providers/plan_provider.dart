@@ -8,7 +8,7 @@ import '../config/constants.dart'; // Add this line for backendBaseUrl
 import 'package:flutter/material.dart'; // Added: Required for Icon
 import '../models/plan.dart'; // Your Plan model
 import '../models/activity.dart';
-import '../models/event_type.dart'; // Your Event model
+import '../models/activity_type.dart';
 import '../models/user.dart'; // Your User model
 import '../utils/logger.dart';
 
@@ -700,23 +700,23 @@ class PlanProvider extends ChangeNotifier {
 
   // NEW: Method to get icon based on event type
   // Method to get icon data based on event type
-  IconData getIcon(EventType type) {
+  IconData getIcon(ActivityType type) {
     switch (type) {
-      case EventType.flight:
+      case ActivityType.flight:
         return Icons.flight;
-      case EventType.hotel:
+      case ActivityType.hotel:
         return Icons.hotel;
-      case EventType.train:
+      case ActivityType.train:
         return Icons.train;
-      case EventType.carRental:
-      case EventType.carService:
-      case EventType.drive:
+      case ActivityType.carRental:
+      case ActivityType.carService:
+      case ActivityType.drive:
         return Icons.directions_car;
-      case EventType.taxi:
+      case ActivityType.taxi:
         return Icons.local_taxi;
-      case EventType.bus:
+      case ActivityType.bus:
         return Icons.directions_bus;
-      case EventType.ferry:
+      case ActivityType.ferry:
         return Icons.directions_boat;
       default:
         return Icons.event;

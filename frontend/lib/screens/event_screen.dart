@@ -3,7 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../models/activity.dart';
-import '../models/event_type.dart';
+import '../models/activity_type.dart';
 import '../providers/plan_provider.dart';
 import '../providers/user_provider.dart';
 import '../utils/logger.dart';
@@ -37,7 +37,7 @@ class _EventScreenState extends State<EventScreen> {
   late TextEditingController _bookingReferenceController; // Generic booking ref
 
   // State variables
-  EventType? _type = EventType.activity; // Dropdown selection
+  ActivityType? _type = ActivityType.activity; // Dropdown selection
   CostType? _costType = CostType.estimated; // Default for costType dropdown
   DateTime? _startTime; // DateTime picker
   DateTime? _endTime; // Added: Default to now for end time
@@ -96,22 +96,22 @@ class _EventScreenState extends State<EventScreen> {
       _urlLinks = List<UrlLink>.from(e.urlLinks);
     } else {
       // Add mode: Set defaults and auto-add sub-events
-      _type = EventType.activity;
+      _type = ActivityType.activity;
       _urlLinks = [];
       _subEvents = []; // Will be populated below if transit type
       if ([
-        EventType.flight,
-        EventType.train,
-        EventType.carRental,
-        EventType.carService,
+        ActivityType.flight,
+        ActivityType.train,
+        ActivityType.carRental,
+        ActivityType.carService,
       ].contains(_type)) {
         final now = DateTime.now();
         final subTypes =
             {
-              EventType.flight: ['departure', 'arrival'],
-              EventType.train: ['departure', 'arrival'],
-              EventType.carRental: ['pickup', 'dropoff'],
-              EventType.carService: ['pickup', 'dropoff'],
+              ActivityType.flight: ['departure', 'arrival'],
+              ActivityType.train: ['departure', 'arrival'],
+              ActivityType.carRental: ['pickup', 'dropoff'],
+              ActivityType.carService: ['pickup', 'dropoff'],
             }[_type] ??
             [];
         _subEvents = subTypes
@@ -205,7 +205,7 @@ class _EventScreenState extends State<EventScreen> {
       location: _locationController.text.isEmpty
           ? null
           : _locationController.text,
-      type: _type ?? EventType.activity,
+      type: _type ?? ActivityType.activity,
       customType: _customTypeController.text.isEmpty
           ? null
           : _customTypeController.text,
@@ -264,10 +264,10 @@ class _EventScreenState extends State<EventScreen> {
 
     final supportedSubTypes =
         {
-          EventType.flight: ['departure', 'arrival'],
-          EventType.train: ['departure', 'arrival'],
-          EventType.carRental: ['pickup', 'dropoff'],
-          EventType.carService: ['pickup', 'dropoff'],
+          ActivityType.flight: ['departure', 'arrival'],
+          ActivityType.train: ['departure', 'arrival'],
+          ActivityType.carRental: ['pickup', 'dropoff'],
+          ActivityType.carService: ['pickup', 'dropoff'],
         }[_type] ??
         ['generic'];
 
@@ -427,10 +427,10 @@ class _EventScreenState extends State<EventScreen> {
                 decoration: const InputDecoration(labelText: 'Location'),
               ),
               const SizedBox(height: 16),
-              DropdownButtonFormField<EventType>(
+              DropdownButtonFormField<ActivityType>(
                 initialValue: _type,
                 decoration: const InputDecoration(labelText: 'Type'),
-                items: EventType.values
+                items: ActivityType.values
                     .map(
                       (type) => DropdownMenuItem(
                         value: type,
@@ -617,7 +617,7 @@ class _EventScreenState extends State<EventScreen> {
                   ),
                 ),
               ],
-              if (_type == EventType.flight) ...[
+              if (_type == ActivityType.flight) ...[
                 const Text(
                   'Sub-Events',
                   style: TextStyle(fontWeight: FontWeight.bold),
