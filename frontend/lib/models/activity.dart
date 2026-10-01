@@ -110,7 +110,7 @@ class SubEvent {
   }
 }
 
-class Event {
+class Activity {
   final String? id;
   final String planId;
   final String name;
@@ -134,7 +134,7 @@ class Event {
   final Map<String, dynamic> extras;
   final DateTime? createdAt;
 
-  Event({
+  Activity({
     this.id,
     required this.planId,
     required this.name,
@@ -216,8 +216,8 @@ class Event {
     return null; // Fallback
   }
 
-  factory Event.fromJson(Map<String, dynamic> json) {
-    return Event(
+  factory Activity.fromJson(Map<String, dynamic> json) {
+    return Activity(
       id: json['_id'] ?? json['id'],
       planId: json['planId'] ?? '',
       name: json['name'] ?? 'Unnamed Event',

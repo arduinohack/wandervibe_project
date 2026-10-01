@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../models/event.dart';
+import '../models/activity.dart';
 import '../models/plan.dart';
 import '../models/plan_role_label.dart';
 import '../providers/plan_provider.dart';
@@ -135,7 +135,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     }
   }
 
-  Future<void> _editActivity(Event event) async {
+  Future<void> _editActivity(Activity event) async {
     final activityId = event.id;
     if (activityId == null || activityId.isEmpty) return;
     final draft = await showDialog<_ActivityEdit>(
@@ -171,7 +171,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     }
   }
 
-  Future<void> _deleteActivity(Event event) async {
+  Future<void> _deleteActivity(Activity event) async {
     final activityId = event.id;
     if (activityId == null || activityId.isEmpty) return;
     final confirmed = await showDialog<bool>(
@@ -477,7 +477,7 @@ class _ActivityEdit {
 }
 
 class _EditActivityDialog extends StatefulWidget {
-  final Event event;
+  final Activity event;
 
   const _EditActivityDialog({required this.event});
 

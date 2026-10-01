@@ -7,7 +7,7 @@ import '../config/constants.dart'; // Add this line for backendBaseUrl
 // Add this line for UserProvider (token)
 import 'package:flutter/material.dart'; // Added: Required for Icon
 import '../models/plan.dart'; // Your Plan model
-import '../models/event.dart'; // Your Event model
+import '../models/activity.dart';
 import '../models/event_type.dart'; // Your Event model
 import '../models/user.dart'; // Your User model
 import '../utils/logger.dart';
@@ -46,7 +46,7 @@ String _eventInstant(DateTime utc) {
   return utc.toUtc().toIso8601String();
 }
 
-int _byStartTime(Event a, Event b) {
+int _byStartTime(Activity a, Activity b) {
   final aStart = a.startTime;
   final bStart = b.startTime;
   if (aStart == null && bStart == null) return 0;
@@ -83,11 +83,11 @@ class PlanProvider extends ChangeNotifier {
   List<Plan> _plans = []; // Private list of plans
   Plan? _currentPlan; // Current selected plan
   Plan? get currentPlan => _currentPlan;
-  List<Event> _events = []; // Private list of events for current plan
+  List<Activity> _events = []; // Private list of events for current plan
   bool _isLoading = false; // Loading state for UI spinners
 
   List<Plan> get plans => _plans; // Public getter
-  List<Event> get events => _events;
+  List<Activity> get events => _events;
   List<PlanUser> _planUsers =
       []; // Private list of users/roles for current plan
   List<PlanUser> get planUsers => _planUsers;
@@ -160,10 +160,10 @@ class PlanProvider extends ChangeNotifier {
         return response.statusCode;
       }
 
-      final parsed = <Event>[];
+      final parsed = <Activity>[];
       for (final item in data['events'] as List) {
         if (item is! Map) continue;
-        parsed.add(Event.fromJson(_itineraryEventJson(item)));
+        parsed.add(Activity.fromJson(_itineraryEventJson(item)));
       }
       parsed.sort(_byStartTime);
       _itinerary = parsed;
@@ -183,11 +183,11 @@ class PlanProvider extends ChangeNotifier {
   }
 
   String? _plansError;
-  List<Event> _itinerary = [];
+  List<Activity> _itinerary = [];
   String? _itineraryError;
 
   String? get plansError => _plansError;
-  List<Event> get itineraryEvents => _itinerary;
+  List<Activity> get itineraryEvents => _itinerary;
   String? get itineraryError => _itineraryError;
 
   void clearPlans() {
@@ -416,10 +416,10 @@ class PlanProvider extends ChangeNotifier {
 
       final dynamic data = json.decode(response.body);
       if (data is! Map) return 201;
-      final created = Event.fromJson(_itineraryEventJson(data));
+      final created = Activity.fromJson(_itineraryEventJson(data));
       final next = [..._itinerary, created]..sort(_byStartTime);
       _itinerary = next;
-      _events = List<Event>.from(next);
+      _events = List<Activity>.from(next);
       notifyListeners();
       return 201;
     } catch (e) {
@@ -460,13 +460,13 @@ class PlanProvider extends ChangeNotifier {
 
       final dynamic data = json.decode(response.body);
       if (data is! Map) return 200;
-      final updated = Event.fromJson(_itineraryEventJson(data));
+      final updated = Activity.fromJson(_itineraryEventJson(data));
       final next = [
         for (final event in _itinerary)
           if (event.id == activityId) updated else event,
       ]..sort(_byStartTime);
       _itinerary = next;
-      _events = List<Event>.from(next);
+      _events = List<Activity>.from(next);
       notifyListeners();
       return 200;
     } catch (e) {
@@ -494,7 +494,7 @@ class PlanProvider extends ChangeNotifier {
         for (final event in _itinerary)
           if (event.id != activityId) event,
       ];
-      _events = List<Event>.from(_itinerary);
+      _events = List<Activity>.from(_itinerary);
       notifyListeners();
       return 200;
     } catch (e) {
@@ -504,7 +504,7 @@ class PlanProvider extends ChangeNotifier {
   }
 
   // Add event to plan (real API POST /api/activities with token passed as param)
-  Future<void> addEvent(Event newEvent, String? token) async {
+  Future<void> addEvent(Activity newEvent, String? token) async {
     try {
       if (token == null) throw Exception('No token—log in first');
 
@@ -521,7 +521,7 @@ class PlanProvider extends ChangeNotifier {
 
       if (response.statusCode == 201) {
         final data = json.decode(response.body);
-        final createdEvent = Event.fromJson(
+        final createdEvent = Activity.fromJson(
           data['event'],
         ); // Backend returns the created event
         _events.add(createdEvent);
@@ -544,7 +544,7 @@ class PlanProvider extends ChangeNotifier {
   }
 
   // Update event (real API PUT /api/activities/:id with token passed as param)
-  Future<void> updateEvent(Event updatedEvent, String? token) async {
+  Future<void> updateEvent(Activity updatedEvent, String? token) async {
     if (updatedEvent.id == null) {
       throw Exception(
         'Cannot update: Event ID is null. Use addEvent for new events.',
@@ -629,7 +629,7 @@ class PlanProvider extends ChangeNotifier {
   }
 
   // Full comparator for sorting (Cases 1-4: Time prevails, eventNum fallback)
-  int _compareEvents(Event a, Event b) {
+  int _compareEvents(Activity a, Activity b) {
     // Primary: effectiveStartTime (Cases 1-3)
     final aStart =
         a.effectiveStartTime ?? DateTime(2100); // Nulls last (far future)
@@ -648,7 +648,7 @@ class PlanProvider extends ChangeNotifier {
   }
 
   Map<String, int> _computeDayNumbers(String planId) {
-    final planEvents = List<Event>.from(
+    final planEvents = List<Activity>.from(
       _events.where((e) => e.planId == planId),
     );
     if (planEvents.isEmpty) return {};
@@ -681,8 +681,8 @@ class PlanProvider extends ChangeNotifier {
   }
 
   // Getter for sorted events with all logic (Cases 1-6)
-  List<Event> get sortedEvents {
-    final planEvents = List<Event>.from(
+  List<Activity> get sortedEvents {
+    final planEvents = List<Activity>.from(
       _events.where((e) => e.planId == (_currentPlanId ?? '')),
     ); // Fixed: ?? '' for filter
     _computeDayNumbers(_currentPlanId ?? ''); // Fixed: ?? '' for parameter

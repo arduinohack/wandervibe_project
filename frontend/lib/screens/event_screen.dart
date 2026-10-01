@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
-import '../models/event.dart';
+import '../models/activity.dart';
 import '../models/event_type.dart';
 import '../providers/plan_provider.dart';
 import '../providers/user_provider.dart';
@@ -11,7 +11,7 @@ import '../utils/logger.dart';
 // EventScreen widget for adding or editing events
 class EventScreen extends StatefulWidget {
   final String planId; // Passed from PlanDetailScreen + button
-  final Event? event; // Optional for edit mode
+  final Activity? event; // Optional for edit mode
 
   const EventScreen({super.key, required this.planId, this.event});
 
@@ -198,7 +198,7 @@ class _EventScreenState extends State<EventScreen> {
     final planProvider = Provider.of<PlanProvider>(context, listen: false);
     final userProvider = Provider.of<UserProvider>(context, listen: false);
 
-    final newEvent = Event(
+    final newEvent = Activity(
       id: widget.event?.id,
       planId: widget.planId,
       name: _nameController.text,
