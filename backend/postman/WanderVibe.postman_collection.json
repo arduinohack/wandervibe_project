@@ -610,7 +610,7 @@
           "raw": "{\n  \"name\": \"Later dinner\",\n  \"type\": \"dining\",\n  \"planId\": \"{{planId}}\",\n  \"startTime\": \"2026-06-02T15:00:00.000Z\",\n  \"endTime\": \"2026-06-02T18:00:00.000Z\"\n}",
           "options": { "raw": { "language": "json" } }
         },
-        "url": "{{baseUrl}}/api/events"
+        "url": "{{baseUrl}}/api/activities"
       },
       "event": [
         {
@@ -712,7 +712,7 @@
           "raw": "{\n  \"name\": \"Collaborator dinner\",\n  \"type\": \"dining\",\n  \"planId\": \"{{planId}}\",\n  \"startTime\": \"2026-06-03T15:00:00.000Z\",\n  \"endTime\": \"2026-06-03T18:00:00.000Z\"\n}",
           "options": { "raw": { "language": "json" } }
         },
-        "url": "{{baseUrl}}/api/events"
+        "url": "{{baseUrl}}/api/activities"
       },
       "event": [
         {
