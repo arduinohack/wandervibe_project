@@ -11,9 +11,9 @@ import '../utils/logger.dart';
 // EventScreen widget for adding or editing events
 class EventScreen extends StatefulWidget {
   final String planId; // Passed from PlanDetailScreen + button
-  final Activity? event; // Optional for edit mode
+  final Activity? activity; // Optional for edit mode
 
-  const EventScreen({super.key, required this.planId, this.event});
+  const EventScreen({super.key, required this.planId, this.activity});
 
   @override
   State<EventScreen> createState() => _EventScreenState();
@@ -70,9 +70,9 @@ class _EventScreenState extends State<EventScreen> {
     _serviceProviderController = TextEditingController();
     _bookingReferenceController = TextEditingController();
 
-    if (widget.event != null) {
+    if (widget.activity != null) {
       // Pre-fill for edit mode
-      final e = widget.event!;
+      final e = widget.activity!;
       _nameController.text = e.name;
       _type = e.type;
       _locationController.text = e.location ?? '';
@@ -198,8 +198,8 @@ class _EventScreenState extends State<EventScreen> {
     final planProvider = Provider.of<PlanProvider>(context, listen: false);
     final userProvider = Provider.of<UserProvider>(context, listen: false);
 
-    final newEvent = Activity(
-      id: widget.event?.id,
+    final newActivity = Activity(
+      id: widget.activity?.id,
       planId: widget.planId,
       name: _nameController.text,
       location: _locationController.text.isEmpty
@@ -226,18 +226,18 @@ class _EventScreenState extends State<EventScreen> {
     );
 
     try {
-      logger.i('Saving event: ${newEvent.toJson()}'); // Log data sent
-      if (widget.event == null) {
-        await planProvider.addEvent(newEvent, userProvider.token);
+      logger.i('Saving event: ${newActivity.toJson()}'); // Log data sent
+      if (widget.activity == null) {
+        await planProvider.addEvent(newActivity, userProvider.token);
       } else {
-        await planProvider.updateEvent(newEvent, userProvider.token);
+        await planProvider.updateEvent(newActivity, userProvider.token);
       }
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              widget.event == null ? 'Event added!' : 'Event updated!',
+              widget.activity == null ? 'Event added!' : 'Event updated!',
             ),
           ),
         );
@@ -406,7 +406,7 @@ class _EventScreenState extends State<EventScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.event == null ? 'Add Event' : 'Edit Event'),
+        title: Text(widget.activity == null ? 'Add Event' : 'Edit Event'),
         backgroundColor: Colors.blue,
       ),
       body: SingleChildScrollView(
@@ -664,7 +664,7 @@ class _EventScreenState extends State<EventScreen> {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : Text(
-                          widget.event == null ? 'Add Event' : 'Update Event',
+                          widget.activity == null ? 'Add Event' : 'Update Event',
                         ),
                 ),
               ),

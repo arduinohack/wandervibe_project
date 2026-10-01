@@ -83,11 +83,11 @@ class PlanProvider extends ChangeNotifier {
   List<Plan> _plans = []; // Private list of plans
   Plan? _currentPlan; // Current selected plan
   Plan? get currentPlan => _currentPlan;
-  List<Activity> _events = []; // Private list of events for current plan
+  List<Activity> _activities = []; // Private list of activities for the current plan
   bool _isLoading = false; // Loading state for UI spinners
 
   List<Plan> get plans => _plans; // Public getter
-  List<Activity> get events => _events;
+  List<Activity> get activities => _activities;
   List<PlanUser> _planUsers =
       []; // Private list of users/roles for current plan
   List<PlanUser> get planUsers => _planUsers;
@@ -167,7 +167,7 @@ class PlanProvider extends ChangeNotifier {
       }
       parsed.sort(_byStartTime);
       _itinerary = parsed;
-      _events = parsed;
+      _activities = parsed;
       _itineraryError = null;
       logger.i('Fetched ${_itinerary.length} events for plan $planId');
       return 200;
@@ -187,7 +187,7 @@ class PlanProvider extends ChangeNotifier {
   String? _itineraryError;
 
   String? get plansError => _plansError;
-  List<Activity> get itineraryEvents => _itinerary;
+  List<Activity> get itineraryActivities => _itinerary;
   String? get itineraryError => _itineraryError;
 
   void clearPlans() {
@@ -419,7 +419,7 @@ class PlanProvider extends ChangeNotifier {
       final created = Activity.fromJson(_itineraryEventJson(data));
       final next = [..._itinerary, created]..sort(_byStartTime);
       _itinerary = next;
-      _events = List<Activity>.from(next);
+      _activities = List<Activity>.from(next);
       notifyListeners();
       return 201;
     } catch (e) {
@@ -462,11 +462,11 @@ class PlanProvider extends ChangeNotifier {
       if (data is! Map) return 200;
       final updated = Activity.fromJson(_itineraryEventJson(data));
       final next = [
-        for (final event in _itinerary)
-          if (event.id == activityId) updated else event,
+        for (final activity in _itinerary)
+          if (activity.id == activityId) updated else activity,
       ]..sort(_byStartTime);
       _itinerary = next;
-      _events = List<Activity>.from(next);
+      _activities = List<Activity>.from(next);
       notifyListeners();
       return 200;
     } catch (e) {
@@ -491,10 +491,10 @@ class PlanProvider extends ChangeNotifier {
       }
       if (response.statusCode != 200) return response.statusCode;
       _itinerary = [
-        for (final event in _itinerary)
-          if (event.id != activityId) event,
+        for (final activity in _itinerary)
+          if (activity.id != activityId) activity,
       ];
-      _events = List<Activity>.from(_itinerary);
+      _activities = List<Activity>.from(_itinerary);
       notifyListeners();
       return 200;
     } catch (e) {
@@ -504,7 +504,7 @@ class PlanProvider extends ChangeNotifier {
   }
 
   // Add event to plan (real API POST /api/activities with token passed as param)
-  Future<void> addEvent(Activity newEvent, String? token) async {
+  Future<void> addEvent(Activity newActivity, String? token) async {
     try {
       if (token == null) throw Exception('No token—log in first');
 
@@ -516,18 +516,18 @@ class PlanProvider extends ChangeNotifier {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
         },
-        body: json.encode(newEvent.toJson()),
+        body: json.encode(newActivity.toJson()),
       );
 
       if (response.statusCode == 201) {
         final data = json.decode(response.body);
-        final createdEvent = Activity.fromJson(
+        final createdActivity = Activity.fromJson(
           data['event'],
         ); // Backend returns the created event
-        _events.add(createdEvent);
-        _computeDayNumbers(newEvent.planId); // Recalculate days
+        _activities.add(createdActivity);
+        _computeDayNumbers(newActivity.planId); // Recalculate days
         notifyListeners();
-        logger.i('Added event: ${createdEvent.name} from backend');
+        logger.i('Added event: ${createdActivity.name} from backend');
       } else {
         final errorData = json.decode(response.body);
         throw Exception(
@@ -537,15 +537,15 @@ class PlanProvider extends ChangeNotifier {
     } catch (e) {
       logger.e('Error adding event: $e');
       // Fallback: Add mock
-      _events.add(newEvent);
-      _computeDayNumbers(newEvent.planId);
+      _activities.add(newActivity);
+      _computeDayNumbers(newActivity.planId);
       notifyListeners();
     }
   }
 
   // Update event (real API PUT /api/activities/:id with token passed as param)
-  Future<void> updateEvent(Activity updatedEvent, String? token) async {
-    if (updatedEvent.id == null) {
+  Future<void> updateEvent(Activity updatedActivity, String? token) async {
+    if (updatedActivity.id == null) {
       throw Exception(
         'Cannot update: Event ID is null. Use addEvent for new events.',
       ); // Early return with message
@@ -558,8 +558,8 @@ class PlanProvider extends ChangeNotifier {
       if (token == null) throw Exception('No token—log in first');
 
       final baseUrl = await backendBaseUrl; // Await first (get the string)
-      final url = Uri.parse('$baseUrl$apiActivities/${updatedEvent.id}');
-      final body = json.encode(updatedEvent.toJson());
+      final url = Uri.parse('$baseUrl$apiActivities/${updatedActivity.id}');
+      final body = json.encode(updatedActivity.toJson());
       logger.i('Updating event: $body'); // Log data sent
       final response = await http.put(
         url,
@@ -574,21 +574,21 @@ class PlanProvider extends ChangeNotifier {
         'Update response: ${response.statusCode} ${response.body}',
       ); // Log response
       if (response.statusCode == 200) {
-        final index = _events.indexWhere((e) => e.id == updatedEvent.id);
+        final index = _activities.indexWhere((e) => e.id == updatedActivity.id);
         if (index != -1) {
-          _events[index] = updatedEvent;
+          _activities[index] = updatedActivity;
         }
-        _computeDayNumbers(updatedEvent.planId); // Recalculate days
+        _computeDayNumbers(updatedActivity.planId); // Recalculate days
         notifyListeners();
-        logger.i('Updated event: ${updatedEvent.name} from backend');
+        logger.i('Updated event: ${updatedActivity.name} from backend');
       } else {
         throw Exception('Failed to update event: ${response.statusCode}');
       }
     } catch (e) {
       logger.e('Error updating event: $e');
       // Fallback: Add mock
-      // _events.add(updatedEvent);
-      _computeDayNumbers(updatedEvent.planId);
+      // _activities.add(updatedActivity);
+      _computeDayNumbers(updatedActivity.planId);
       notifyListeners();
     }
   }
@@ -612,8 +612,8 @@ class PlanProvider extends ChangeNotifier {
       );
 
       if (response.statusCode == 200) {
-        _events.removeWhere(
-          (event) => event.id == deleteEventId,
+        _activities.removeWhere(
+          (activity) => activity.id == deleteEventId,
         ); // Remove from local list
         logger.i('Deleted event $deleteEventId');
       } else {
@@ -629,7 +629,7 @@ class PlanProvider extends ChangeNotifier {
   }
 
   // Full comparator for sorting (Cases 1-4: Time prevails, eventNum fallback)
-  int _compareEvents(Activity a, Activity b) {
+  int _compareActivities(Activity a, Activity b) {
     // Primary: effectiveStartTime (Cases 1-3)
     final aStart =
         a.effectiveStartTime ?? DateTime(2100); // Nulls last (far future)
@@ -648,30 +648,30 @@ class PlanProvider extends ChangeNotifier {
   }
 
   Map<String, int> _computeDayNumbers(String planId) {
-    final planEvents = List<Activity>.from(
-      _events.where((e) => e.planId == planId),
+    final planActivities = List<Activity>.from(
+      _activities.where((e) => e.planId == planId),
     );
-    if (planEvents.isEmpty) return {};
+    if (planActivities.isEmpty) return {};
 
-    planEvents.sort(_compareEvents);
+    planActivities.sort(_compareActivities);
 
     final dayNumbers = <String, int>{}; // Map to store eventId -> dayNumber
     int currentDay = 1;
-    DateTime? priorEnd = planEvents.first.effectiveStartTime ?? DateTime.now();
+    DateTime? priorEnd = planActivities.first.effectiveStartTime ?? DateTime.now();
 
-    for (var event in planEvents) {
-      final eventId = event.id ?? ''; // Use event ID as key
+    for (var activity in planActivities) {
+      final eventId = activity.id ?? ''; // Use event ID as key
       dayNumbers[eventId] = currentDay;
 
-      final nextStart = event.effectiveStartTime ?? priorEnd;
+      final nextStart = activity.effectiveStartTime ?? priorEnd;
       final priorEndNonNull = priorEnd ?? DateTime.now();
       if ((nextStart?.isAfter(priorEndNonNull) ?? false) &&
           (nextStart?.day ?? 0) > (priorEndNonNull.day)) {
         currentDay++;
       }
       priorEnd =
-          event.effectiveEndTime ??
-          nextStart!.add(event.duration ?? Duration.zero);
+          activity.effectiveEndTime ??
+          nextStart!.add(activity.duration ?? Duration.zero);
     }
     return dayNumbers; // Return the computed map
   }
@@ -680,13 +680,13 @@ class PlanProvider extends ChangeNotifier {
     return _computeDayNumbers(planId);
   }
 
-  // Getter for sorted events with all logic (Cases 1-6)
-  List<Activity> get sortedEvents {
-    final planEvents = List<Activity>.from(
-      _events.where((e) => e.planId == (_currentPlanId ?? '')),
+  // Getter for sorted activities with all logic (Cases 1-6)
+  List<Activity> get sortedActivities {
+    final planActivities = List<Activity>.from(
+      _activities.where((e) => e.planId == (_currentPlanId ?? '')),
     ); // Fixed: ?? '' for filter
     _computeDayNumbers(_currentPlanId ?? ''); // Fixed: ?? '' for parameter
-    return planEvents..sort(_compareEvents);
+    return planActivities..sort(_compareActivities);
   }
 
   // Setter for current plan ID

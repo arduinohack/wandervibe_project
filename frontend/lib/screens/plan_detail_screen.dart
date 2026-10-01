@@ -135,12 +135,12 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     }
   }
 
-  Future<void> _editActivity(Activity event) async {
-    final activityId = event.id;
+  Future<void> _editActivity(Activity activity) async {
+    final activityId = activity.id;
     if (activityId == null || activityId.isEmpty) return;
     final draft = await showDialog<_ActivityEdit>(
       context: context,
-      builder: (context) => _EditActivityDialog(event: event),
+      builder: (context) => _EditActivityDialog(activity: activity),
     );
     if (draft == null || !mounted) return;
     final userProvider = Provider.of<UserProvider>(context, listen: false);
@@ -171,14 +171,14 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     }
   }
 
-  Future<void> _deleteActivity(Activity event) async {
-    final activityId = event.id;
+  Future<void> _deleteActivity(Activity activity) async {
+    final activityId = activity.id;
     if (activityId == null || activityId.isEmpty) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Delete activity'),
-        content: Text('Delete ${event.name}?'),
+        content: Text('Delete ${activity.name}?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -263,7 +263,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
           final roleText = storedRole == null
               ? null
               : planRoleLabel(widget.plan.type, storedRole);
-          final events = planProvider.itineraryEvents;
+          final activities = planProvider.itineraryActivities;
           final canChange = canAddActivity(storedRole);
 
           return ListView(
@@ -311,7 +311,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                 ],
               ),
               const SizedBox(height: 8),
-              if (events.isEmpty)
+              if (activities.isEmpty)
                 const Center(
                   child: Text(
                     'No activities yet',
@@ -320,11 +320,11 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                   ),
                 )
               else
-                ...events.map((event) {
-                  final type = event.typeLabel.isEmpty
-                      ? event.type.name
-                      : event.typeLabel;
-                  final activityId = event.id;
+                ...activities.map((activity) {
+                  final type = activity.typeLabel.isEmpty
+                      ? activity.type.name
+                      : activity.typeLabel;
+                  final activityId = activity.id;
                   return Card(
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
@@ -332,7 +332,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            event.name,
+                            activity.name,
                             style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w500,
@@ -340,17 +340,17 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            'Type: $type\nStart: ${formatActivityStart(event.startTime)}',
+                            'Type: $type\nStart: ${formatActivityStart(activity.startTime)}',
                           ),
                           if (canChange && activityId != null && activityId.isNotEmpty)
                             Row(
                               children: [
                                 TextButton(
-                                  onPressed: () => _editActivity(event),
+                                  onPressed: () => _editActivity(activity),
                                   child: const Text('Edit'),
                                 ),
                                 TextButton(
-                                  onPressed: () => _deleteActivity(event),
+                                  onPressed: () => _deleteActivity(activity),
                                   child: const Text('Delete'),
                                 ),
                               ],
@@ -477,9 +477,9 @@ class _ActivityEdit {
 }
 
 class _EditActivityDialog extends StatefulWidget {
-  final Activity event;
+  final Activity activity;
 
-  const _EditActivityDialog({required this.event});
+  const _EditActivityDialog({required this.activity});
 
   @override
   State<_EditActivityDialog> createState() => _EditActivityDialogState();
@@ -495,15 +495,17 @@ class _EditActivityDialogState extends State<_EditActivityDialog> {
   @override
   void initState() {
     super.initState();
-    final event = widget.event;
-    _nameController = TextEditingController(text: event.name);
+    final activity = widget.activity;
+    _nameController = TextEditingController(text: activity.name);
     _startController = TextEditingController(
-      text: formatActivityInput(event.startTime),
+      text: formatActivityInput(activity.startTime),
     );
     _endController = TextEditingController(
-      text: formatActivityInput(event.endTime),
+      text: formatActivityInput(activity.endTime),
     );
-    final storedType = event.typeLabel.isEmpty ? event.type.name : event.typeLabel;
+    final storedType = activity.typeLabel.isEmpty
+        ? activity.type.name
+        : activity.typeLabel;
     _type = activityTypes.contains(storedType) ? storedType : activityTypes.first;
   }
 
