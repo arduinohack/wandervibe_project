@@ -6,6 +6,7 @@ import '../models/plan.dart';
 import '../providers/plan_provider.dart';
 import '../providers/user_provider.dart'; // For role and logout
 import 'coordinator_dashboard_screen.dart'; // For coordinators
+import 'invitations_screen.dart';
 import 'user_profile_screen.dart'; // For profile
 import 'settings_screen.dart';
 import '../models/user.dart'; // For UserRole enum
@@ -59,6 +60,18 @@ class _HomeScreenState extends State<HomeScreen> {
         title: const Text('WanderVibe'), // App title
         backgroundColor: Colors.blue, // Matches theme
         actions: [
+          IconButton(
+            icon: const Icon(Icons.mail),
+            tooltip: 'Invitations',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const InvitationsScreen(),
+                ),
+              );
+            },
+          ),
           if (Provider.of<UserProvider>(context).currentUserRole ==
               UserRole.vibeCoordinator)
             IconButton(

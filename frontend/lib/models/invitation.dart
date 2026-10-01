@@ -5,6 +5,25 @@ enum InvitationRole {
 
 enum InvitationStatus { pending, accepted, rejected }
 
+String _text(dynamic value) {
+  if (value == null) return '';
+  return value.toString();
+}
+
+String _idText(dynamic value) {
+  if (value is Map) return _text(value['_id'] ?? value['id']);
+  return _text(value);
+}
+
+String _inviterLabel(dynamic inviter) {
+  if (inviter is! Map) return '';
+  final first = _text(inviter['firstName']).trim();
+  final last = _text(inviter['lastName']).trim();
+  final name = [first, last].where((part) => part.isNotEmpty).join(' ');
+  if (name.isNotEmpty) return name;
+  return _text(inviter['email']).trim();
+}
+
 class Invitation {
   final String id;
   final String planId;
@@ -13,6 +32,9 @@ class Invitation {
   final InvitationRole role;
   final InvitationStatus status;
   final DateTime createdAt;
+  final String planName;
+  final String roleLabel;
+  final String inviterLabel;
 
   Invitation({
     required this.id,
@@ -22,26 +44,48 @@ class Invitation {
     required this.role,
     required this.status,
     required this.createdAt,
+    this.planName = '',
+    this.roleLabel = '',
+    this.inviterLabel = '',
   });
+
+  Invitation withStatus(InvitationStatus status) {
+    return Invitation(
+      id: id,
+      planId: planId,
+      userId: userId,
+      invitedBy: invitedBy,
+      role: role,
+      status: status,
+      createdAt: createdAt,
+      planName: planName,
+      roleLabel: roleLabel,
+      inviterLabel: inviterLabel,
+    );
+  }
 
   // Factory to create from JSON (for API responses)
   factory Invitation.fromJson(Map<String, dynamic> json) {
+    final roleLabel = _text(json['role']);
     return Invitation(
-      id: json['_id'] ?? '',
-      planId: json['planId'] ?? '',
-      userId: json['userId'] ?? '',
-      invitedBy: json['invitedBy'] ?? '',
+      id: _text(json['_id']),
+      planId: _text(json['planId']),
+      userId: _idText(json['userId']),
+      invitedBy: _idText(json['invitedBy']),
       role: InvitationRole.values.firstWhere(
-        (r) => r.toString().split('.').last == json['role'],
+        (r) => r.toString().split('.').last == roleLabel,
         orElse: () => InvitationRole.wanderer, // Default if invalid
       ),
       status: InvitationStatus.values.firstWhere(
-        (s) => s.toString().split('.').last == json['status'],
+        (s) => s.toString().split('.').last == _text(json['status']),
         orElse: () => InvitationStatus.pending, // Default if invalid
       ),
-      createdAt: DateTime.parse(
-        json['createdAt'] ?? DateTime.now().toIso8601String(),
-      ),
+      createdAt:
+          DateTime.tryParse(_text(json['createdAt'])) ??
+          DateTime.fromMillisecondsSinceEpoch(0),
+      planName: _text(json['planName']),
+      roleLabel: roleLabel,
+      inviterLabel: _inviterLabel(json['inviter']),
     );
   }
 

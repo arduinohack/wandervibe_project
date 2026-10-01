@@ -11,72 +11,81 @@ import '../utils/logger.dart';
 class InvitationProvider extends ChangeNotifier {
   List<Invitation> _invitations = []; // Private list of invitations
   bool _isLoading = false; // Loading state for UI spinners
+  String? _invitationsError;
 
   List<Invitation> get invitations => _invitations; // Public getter
   bool get isLoading => _isLoading;
+  String? get invitationsError => _invitationsError;
 
-  // Fetch invitations (real API GET /api/invites with token passed as param)
-  Future<void> fetchInvitations(String? token) async {
+  void clearInvitations() {
+    _invitations = [];
+    _invitationsError = null;
+    _isLoading = false;
+    notifyListeners();
+  }
+
+  // GET /api/invites. The body is a raw array. [] is empty, not an error.
+  Future<int?> fetchInvitations(String? token) async {
     _isLoading = true;
+    _invitationsError = null;
     notifyListeners();
 
     try {
-      if (token == null) {
-        throw Exception('No token—log in first');
+      if (token == null || token.isEmpty) {
+        _invitationsError = 'Session expired';
+        return 401;
       }
 
       final response = await http.get(
         Uri.parse((await backendBaseUrl) + apiInvites),
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token', // Use passed token
+          'Authorization': 'Bearer $token',
         },
       );
 
-      if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        _invitations = data.map((json) => Invitation.fromJson(json)).toList();
-        logger.i('Fetched ${_invitations.length} invitations from backend');
-      } else {
-        throw Exception('Failed to load invitations: ${response.statusCode}');
+      if (response.statusCode == 401) {
+        _invitationsError = 'Session expired';
+        return 401;
       }
+      if (response.statusCode != 200) {
+        _invitationsError = 'Could not load invitations (${response.statusCode})';
+        return response.statusCode;
+      }
+
+      final dynamic data = json.decode(response.body);
+      if (data is! List) {
+        _invitationsError = 'Could not load invitations';
+        return response.statusCode;
+      }
+
+      final parsed = <Invitation>[];
+      for (final item in data) {
+        if (item is! Map) continue;
+        parsed.add(Invitation.fromJson(Map<String, dynamic>.from(item)));
+      }
+      _invitations = parsed;
+      _invitationsError = null;
+      logger.i('Fetched ${_invitations.length} invitations from backend');
+      return 200;
     } catch (e) {
       logger.e('Error fetching invitations: $e');
-      // Fallback to mock
-      _invitations = [
-        Invitation(
-          id: 'inv1',
-          planId: 'trip1',
-          userId: 'user456',
-          invitedBy: 'user123',
-          role: InvitationRole.vibePlanner,
-          status: InvitationStatus.pending,
-          createdAt: DateTime.now().subtract(const Duration(days: 1)),
-        ),
-        Invitation(
-          id: 'inv2',
-          planId: 'trip2',
-          userId: 'user456',
-          invitedBy: 'user789',
-          role: InvitationRole.wanderer,
-          status: InvitationStatus.accepted,
-          createdAt: DateTime.now().subtract(const Duration(hours: 2)),
-        ),
-      ];
+      _invitationsError = 'Could not load invitations';
+      return null;
     } finally {
       _isLoading = false;
       notifyListeners();
     }
   }
 
-  // Respond to invitation (POST /api/invites/invitations/:id/respond).
-  Future<void> respondToInvitation(
+  // POST /api/invites/invitations/:id/respond with { status }.
+  Future<int?> respondToInvitation(
     String invitationId,
     InvitationStatus newStatus,
     String? token,
   ) async {
     try {
-      if (token == null) throw Exception('No token—log in first');
+      if (token == null || token.isEmpty) return 401;
 
       final response = await http.post(
         Uri.parse(
@@ -92,44 +101,39 @@ class InvitationProvider extends ChangeNotifier {
         }),
       );
 
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final index = _invitations.indexWhere((inv) => inv.id == invitationId);
-        if (index != -1) {
-          final returned = data is Map ? data['invitation'] : null;
-          _invitations[index] = returned is Map
-              ? Invitation.fromJson(Map<String, dynamic>.from(returned))
-              : Invitation(
-                  id: _invitations[index].id,
-                  planId: _invitations[index].planId,
-                  userId: _invitations[index].userId,
-                  invitedBy: _invitations[index].invitedBy,
-                  role: _invitations[index].role,
-                  status: newStatus,
-                  createdAt: _invitations[index].createdAt,
-                );
-          notifyListeners();
-        }
-      } else {
-        throw Exception('Failed to respond to invitation: ${response.statusCode}');
-      }
-    } catch (e) {
-      logger.e('Error responding to invitation: $e');
-      // Fallback: Update local mock
+      if (response.statusCode == 401) return 401;
+      if (response.statusCode != 200) return response.statusCode;
+
       final index = _invitations.indexWhere((inv) => inv.id == invitationId);
       if (index != -1) {
-        _invitations[index] = Invitation(
-          id: _invitations[index].id,
-          planId: _invitations[index]
-              .planId, // Fixed: Use existing invitation's tripId
-          userId: _invitations[index].userId,
-          invitedBy: _invitations[index].invitedBy,
-          role: _invitations[index].role,
-          status: newStatus,
-          createdAt: _invitations[index].createdAt,
-        );
+        final current = _invitations[index];
+        final data = json.decode(response.body);
+        final returned = data is Map ? data['invitation'] : null;
+        Invitation next = current.withStatus(newStatus);
+        if (returned is Map) {
+          final parsed = Invitation.fromJson(Map<String, dynamic>.from(returned));
+          next = Invitation(
+            id: parsed.id.isEmpty ? current.id : parsed.id,
+            planId: parsed.planId.isEmpty ? current.planId : parsed.planId,
+            userId: parsed.userId.isEmpty ? current.userId : parsed.userId,
+            invitedBy: parsed.invitedBy.isEmpty ? current.invitedBy : parsed.invitedBy,
+            role: parsed.role,
+            status: parsed.status,
+            createdAt: parsed.createdAt,
+            planName: parsed.planName.isEmpty ? current.planName : parsed.planName,
+            roleLabel: parsed.roleLabel.isEmpty ? current.roleLabel : parsed.roleLabel,
+            inviterLabel: parsed.inviterLabel.isEmpty
+                ? current.inviterLabel
+                : parsed.inviterLabel,
+          );
+        }
+        _invitations[index] = next;
         notifyListeners();
       }
+      return 200;
+    } catch (e) {
+      logger.e('Error responding to invitation: $e');
+      return null;
     }
   }
 }

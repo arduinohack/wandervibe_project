@@ -238,9 +238,11 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
             return Card(
               child: ListTile(
                 leading: const Icon(Icons.mail),
-                title: Text('Invite for ${invite.role}'),
+                title: Text(
+                  invite.planName.isEmpty ? 'Unnamed plan' : invite.planName,
+                ),
                 subtitle: Text(
-                  'Plan: ${invite.planId} | Invited by: ${invite.invitedBy}',
+                  'Role: ${invite.roleLabel.isEmpty ? 'Unknown' : invite.roleLabel}\nStatus: ${invite.status.name}\nFrom: ${invite.inviterLabel.isEmpty ? 'Unknown' : invite.inviterLabel}',
                 ),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -253,14 +255,17 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
                           listen: false,
                         );
                         final messenger = ScaffoldMessenger.of(context);
-                        await invitationProvider.respondToInvitation(
-                          invite.id,
-                          InvitationStatus.accepted,
-                          userProvider.token,
-                        );
-                        messenger.showSnackBar(
-                          const SnackBar(content: Text('Invite accepted!')),
-                        );
+                        final status = await invitationProvider
+                            .respondToInvitation(
+                              invite.id,
+                              InvitationStatus.accepted,
+                              userProvider.token,
+                            );
+                        if (status == 200) {
+                          messenger.showSnackBar(
+                            const SnackBar(content: Text('Invite accepted!')),
+                          );
+                        }
                       },
                     ),
                     IconButton(
@@ -271,14 +276,17 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
                           listen: false,
                         );
                         final messenger = ScaffoldMessenger.of(context);
-                        await invitationProvider.respondToInvitation(
-                          invite.id,
-                          InvitationStatus.rejected,
-                          userProvider.token,
-                        );
-                        messenger.showSnackBar(
-                          const SnackBar(content: Text('Invite rejected!')),
-                        );
+                        final status = await invitationProvider
+                            .respondToInvitation(
+                              invite.id,
+                              InvitationStatus.rejected,
+                              userProvider.token,
+                            );
+                        if (status == 200) {
+                          messenger.showSnackBar(
+                            const SnackBar(content: Text('Invite rejected!')),
+                          );
+                        }
                       },
                     ),
                   ],
