@@ -116,6 +116,7 @@ class Event {
   final String name;
   final String? location;
   final EventType type;
+  final String typeLabel;
   final double? cost;
   final CostType? costType;
   final DateTime? startTime; // Changed: Nullable
@@ -139,6 +140,7 @@ class Event {
     required this.name,
     this.location,
     this.type = EventType.activity,
+    this.typeLabel = '',
     this.cost,
     this.costType,
     this.startTime, // Changed: Optional, nullable
@@ -221,6 +223,7 @@ class Event {
       name: json['name'] ?? 'Unnamed Event',
       location: json['location'],
       type: _typeFromString(json['type'] ?? 'activity'),
+      typeLabel: json['type'] == null ? '' : json['type'].toString(),
       cost: (json['cost'] as num?)?.toDouble(),
       costType: _costTypeFromString(json['costType'] ?? 'estimated'),
       startTime: json['startTime'] != null

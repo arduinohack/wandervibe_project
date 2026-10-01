@@ -1,19 +1,22 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart'; // For launchUrl
-import '../models/event.dart';
-import '../models/event_type.dart';
 import '../models/plan.dart';
 import '../models/plan_role_label.dart';
 import '../providers/plan_provider.dart';
 import '../providers/user_provider.dart';
-import '../screens/event_screen.dart';
-import '../utils/logger.dart';
-import '../utils/utils.dart';
+import 'login_screen.dart';
+
+/// UTC clock time for an activity start. Null stays "not set".
+String formatActivityStart(DateTime? value) {
+  if (value == null) return 'not set';
+  final utc = value.toUtc();
+  String two(int number) => number.toString().padLeft(2, '0');
+  final year = utc.year.toString().padLeft(4, '0');
+  return '$year-${two(utc.month)}-${two(utc.day)} ${two(utc.hour)}:${two(utc.minute)} UTC';
+}
 
 class PlanDetailScreen extends StatefulWidget {
-  final Plan plan; // Full plan object passed from dashboard
+  final Plan plan;
 
   const PlanDetailScreen({super.key, required this.plan});
 
@@ -22,16 +25,37 @@ class PlanDetailScreen extends StatefulWidget {
 }
 
 class _PlanDetailScreenState extends State<PlanDetailScreen> {
-  late Future<void> _fetchFuture;
+  bool _loaded = false;
+  int? _status;
 
   @override
   void initState() {
     super.initState();
-    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  Future<void> _load() async {
     final userProvider = Provider.of<UserProvider>(context, listen: false);
-    _fetchFuture = planProvider
-        .fetchPlan(widget.plan.id, userProvider.token)
-        .catchError((e) => logger.e('Fetch error: $e'));
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final navigator = Navigator.of(context);
+    final status = await planProvider.fetchPlan(
+      widget.plan.id,
+      userProvider.token,
+    );
+    if (!mounted) return;
+    setState(() {
+      _loaded = true;
+      _status = status;
+    });
+    if (status == 401) {
+      planProvider.clearPlans();
+      await userProvider.logout();
+      if (!mounted) return;
+      navigator.pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => const LoginScreen()),
+        (route) => false,
+      );
+    }
   }
 
   @override
@@ -40,297 +64,108 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
       appBar: AppBar(
         title: Text(
           widget.plan.name,
-          overflow: TextOverflow.ellipsis, // Shorten long titles with ...
-          maxLines: 1, // Single line to prevent wrap
+          overflow: TextOverflow.ellipsis,
+          maxLines: 1,
         ),
         backgroundColor: Colors.blue,
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 8.0), // Space for visibility
-            child: IconButton(
-              icon: const Icon(
-                Icons.add,
-                size: 28,
-                color: Colors.white,
-              ), // Larger, white for contrast
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => EventScreen(planId: widget.plan.id),
-                  ),
-                );
-              },
-              tooltip: 'Add Event',
-            ),
-          ),
-        ],
       ),
       body: Consumer<PlanProvider>(
         builder: (context, planProvider, child) {
-          return FutureBuilder<void>(
-            future: _fetchFuture,
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              } else if (snapshot.hasError) {
-                logger.e('Failed to fetch events: ${snapshot.error}');
-                return Center(child: Text('Error: ${snapshot.error}'));
-              }
+          if (!_loaded || planProvider.isLoading) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (_status == 403) {
+            return const Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  'Not allowed to view this itinerary',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 20),
+                ),
+              ),
+            );
+          }
+          if (_status != 200) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  planProvider.itineraryError ?? 'Could not load activities',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            );
+          }
 
-              final dayNumbers = planProvider.getDayNumbersForPlan(
-                widget.plan.id,
-              );
-              final events = planProvider.sortedEvents
-                  .where((event) => event.planId == widget.plan.id)
-                  .toList();
-              final storedRole = planProvider.viewerStoredRole(
-                widget.plan.id,
-                Provider.of<UserProvider>(context, listen: false).currentUserId,
-              );
-              final roleText = storedRole == null
-                  ? null
-                  : planRoleLabel(widget.plan.type, storedRole);
+          final storedRole = planProvider.viewerStoredRole(
+            widget.plan.id,
+            Provider.of<UserProvider>(context, listen: false).currentUserId,
+          );
+          final roleText = storedRole == null
+              ? null
+              : planRoleLabel(widget.plan.type, storedRole);
+          final events = planProvider.itineraryEvents;
 
-              return ListView(
-                padding: const EdgeInsets.all(16.0),
-                children: [
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            widget.plan.name,
-                            style: const TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text('Destination: ${widget.plan.destination}'),
-                          if (roleText != null) Text('Role: $roleText'),
-                          Text('Budget: \$${widget.plan.budget}'),
-                          Text(
-                            'Dates: ${formatPlanDate(widget.plan.startDate)} - ${formatPlanDate(widget.plan.endDate)}',
-                          ),
-                          Text('State: ${widget.plan.planningState}'),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Events',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                  ),
-                  if (events.isEmpty)
-                    const Center(child: Text('No events yet—add one!'))
-                  else
-                    ...events.map(
-                      (event) => Card(
-                        child: Column(
-                          children: [
-                            if (event.type == EventType.flight ||
-                                event.type == EventType.train ||
-                                event.type == EventType.carRental ||
-                                event.type == EventType.carService) ...[
-                              // Reservation header
-                              ListTile(
-                                leading: Icon(planProvider.getIcon(event.type)),
-                                title: Text(event.name),
-                                subtitle: Text(
-                                  '${event.serviceProvider ?? 'Unknown Service Provider'} • ${event.bookingReference ?? 'No Booking Ref'}',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    IconButton(
-                                      icon: const Icon(
-                                        Icons.edit,
-                                        color: Colors.blue,
-                                      ),
-                                      onPressed: () =>
-                                          _editEvent(context, event),
-                                      tooltip: 'Edit Event',
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              // Individual legs
-                              ...event.subEvents.map(
-                                (leg) => ListTile(
-                                  leading: Icon(
-                                    leg.subType == 'departure' ||
-                                            leg.subType == 'pickup'
-                                        ? Icons.flight_takeoff
-                                        : Icons.flight_land,
-                                    color:
-                                        leg.subType == 'departure' ||
-                                            leg.subType == 'pickup'
-                                        ? Colors.green
-                                        : Colors.orange,
-                                  ),
-                                  title: Text(
-                                    '${capitalize(leg.subType)}: ${leg.name}',
-                                  ),
-                                  subtitle: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        DateFormat('EEE, MMM d • HH:mm').format(leg.startTime ?? DateTime.now()),
-                                      ),
-                                      if (leg.subType == 'departure' ||
-                                          leg.subType == 'pickup')
-                                        Text(
-                                          'Service # ${leg.serviceNumber ?? '—'} • Class ${leg.serviceClass ?? 'N/A'}',
-                                        ),
-                                      if (leg.subType == 'arrival' ||
-                                          leg.subType == 'dropoff')
-                                        Text(
-                                          'Location: ${leg.location ?? '—'}',
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ] else ...[
-                              ListTile(
-                                leading: Icon(planProvider.getIcon(event.type)),
-                                title: Text(event.name),
-                                subtitle: Text(
-                                  'Day ${dayNumbers[event.id ?? ''] ?? 1} • ${event.location ?? 'No location'} • ${event.details ?? ''}',
-                                ),
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    IconButton(
-                                      icon: const Icon(
-                                        Icons.edit,
-                                        color: Colors.blue,
-                                      ),
-                                      onPressed: () =>
-                                          _editEvent(context, event),
-                                      tooltip: 'Edit Event',
-                                    ),
-                                    IconButton(
-                                      icon: const Icon(
-                                        Icons.delete,
-                                        color: Colors.red,
-                                      ),
-                                      onPressed: () =>
-                                          _deleteEvent(context, event),
-                                      tooltip: 'Delete Event',
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              if (event.urlLinks.isNotEmpty)
-                                ...event.urlLinks.map(
-                                  (urlLink) => ListTile(
-                                    leading: const Icon(Icons.link),
-                                    title: Text(
-                                      urlLink.linkName.isEmpty
-                                          ? urlLink.linkUrl
-                                          : urlLink.linkName,
-                                    ),
-                                    subtitle: Text(urlLink.linkUrl),
-                                    trailing: IconButton(
-                                      icon: const Icon(Icons.open_in_new),
-                                      onPressed: () async {
-                                        final messenger = ScaffoldMessenger.of(
-                                          context,
-                                        );
-                                        final Uri url = Uri.parse(
-                                          urlLink.linkUrl,
-                                        );
-                                        if (await canLaunchUrl(url)) {
-                                          await launchUrl(url);
-                                        } else {
-                                          messenger.showSnackBar(
-                                            SnackBar(
-                                              content: Text(
-                                                'Could not open ${urlLink.linkUrl}',
-                                              ),
-                                            ),
-                                          );
-                                        }
-                                      },
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ],
+          return ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.plan.name,
+                        style: const TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
+                      const SizedBox(height: 8),
+                      Text('Destination: ${widget.plan.destination}'),
+                      if (roleText != null) Text('Role: $roleText'),
+                      Text('Budget: \$${widget.plan.budget}'),
+                      Text(
+                        'Dates: ${formatPlanDate(widget.plan.startDate)} - ${formatPlanDate(widget.plan.endDate)}',
+                      ),
+                      Text('State: ${widget.plan.planningState}'),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Itinerary',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              if (events.isEmpty)
+                const Center(
+                  child: Text(
+                    'No activities yet',
+                    style: TextStyle(fontSize: 20),
+                    textAlign: TextAlign.center,
+                  ),
+                )
+              else
+                ...events.map((event) {
+                  final type = event.typeLabel.isEmpty
+                      ? event.type.name
+                      : event.typeLabel;
+                  return Card(
+                    child: ListTile(
+                      title: Text(event.name),
+                      subtitle: Text(
+                        'Type: $type\nStart: ${formatActivityStart(event.startTime)}',
+                      ),
                     ),
-                ],
-              );
-            },
+                  );
+                }),
+            ],
           );
         },
-      ),
-    );
-  }
-
-  // Edit event method
-  void _editEvent(BuildContext context, Event event) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => EventScreen(planId: widget.plan.id, event: event),
-      ),
-    );
-  }
-
-  // Delete event method with confirmation
-  void _deleteEvent(BuildContext context, Event event) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Event?'),
-        content: Text("Delete '${event.name}'? This can't be undone."),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () async {
-              final dialogContext = context;
-              final messenger = ScaffoldMessenger.of(dialogContext);
-              final planProvider = Provider.of<PlanProvider>(
-                dialogContext,
-                listen: false,
-              );
-              final userProvider = Provider.of<UserProvider>(
-                dialogContext,
-                listen: false,
-              );
-              Navigator.pop(dialogContext);
-              try {
-                await planProvider.deleteEvent(
-                  event.id ?? '',
-                  userProvider.token,
-                );
-                messenger.showSnackBar(
-                  SnackBar(content: Text('${event.name} deleted!')),
-                );
-              } catch (e) {
-                messenger.showSnackBar(
-                  SnackBar(content: Text('Delete failed: $e')),
-                );
-              }
-            },
-            child: const Text('Delete'),
-          ),
-        ],
       ),
     );
   }

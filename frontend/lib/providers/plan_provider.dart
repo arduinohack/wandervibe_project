@@ -12,6 +12,45 @@ import '../models/event_type.dart'; // Your Event model
 import '../models/user.dart'; // Your User model
 import '../utils/logger.dart';
 
+Map<String, dynamic> _itineraryEventJson(Map source) {
+  final map = Map<String, dynamic>.from(source);
+  final duration = map['duration'];
+  if (duration is num) {
+    map['duration'] = duration.round();
+  } else {
+    map['duration'] = null;
+  }
+  final subEvents = map['subEvents'];
+  map['subEvents'] = subEvents is List
+      ? subEvents
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList()
+      : <Map<String, dynamic>>[];
+  final links = map['urlLinks'];
+  map['urlLinks'] = links is List
+      ? links
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList()
+      : <Map<String, dynamic>>[];
+  final missing = map['missingFields'];
+  map['missingFields'] = missing is List
+      ? missing.map((item) => item.toString()).toList()
+      : <String>[];
+  if (map['extras'] is! Map) map['extras'] = <String, dynamic>{};
+  return map;
+}
+
+int _byStartTime(Event a, Event b) {
+  final aStart = a.startTime;
+  final bStart = b.startTime;
+  if (aStart == null && bStart == null) return 0;
+  if (aStart == null) return 1;
+  if (bStart == null) return -1;
+  return aStart.compareTo(bStart);
+}
+
 String? _roleFromUsersBody(String body, String userId) {
   final dynamic data = json.decode(body);
   final List<dynamic> users;
@@ -76,52 +115,63 @@ class PlanProvider extends ChangeNotifier {
     return null;
   }
 
-  // Fetch itinerary for a plan (real API with token passed as param)
-  Future<void> fetchPlan(String planId, String? token) async {
+  // GET /api/plans/:planId/itinerary. 200 with events: [] is empty, not an error.
+  Future<int?> fetchPlan(String planId, String? token) async {
     _currentPlanId = planId;
     _isLoading = true;
+    _itinerary = [];
+    _itineraryError = null;
     notifyListeners();
 
     try {
-      if (token == null) throw Exception('No token—log in first');
+      if (token == null || token.isEmpty) {
+        _itineraryError = 'Session expired';
+        return 401;
+      }
 
-      logger.i('Fetching plan ID: $planId with token'); // Added: Debug start
       final response = await http.get(
         Uri.parse(
           (await backendBaseUrl) +
               apiPlansItinerary.replaceAll('{planId}', planId),
         ),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
+        headers: {'Authorization': 'Bearer $token'},
       );
 
-      logger.i('Response status: ${response.statusCode}'); // Added: Status
-      if (response.statusCode == 200) {
-        logger.i(
-          'Response body: ${response.body}',
-        ); // Added: Raw JSON for parsing check
-        final data = json.decode(
-          response.body,
-        ); // Added: Declare data as local variable
-        final List<dynamic> eventsData =
-            data['events'] ??
-            []; // Extract 'events' array (or empty if missing)
-        _events = eventsData
-            .map((json) => Event.fromJson(json))
-            .toList(); // Map to List<Event>
-        logger.i(
-          'Fetched ${_events.length} events for plan $planId from backend',
-        );
-        // Optional: Handle 'grouped' if used (e.g.,
-        //_groupedEvents = data['grouped'] ?? {});
-        // _computeDayNumbers(planId); // Calculate day numbers
+      if (response.statusCode == 401) {
+        _itineraryError = 'Session expired';
+        return 401;
       }
+      if (response.statusCode == 403) {
+        _itineraryError = 'Not allowed to view this itinerary';
+        return 403;
+      }
+      if (response.statusCode != 200) {
+        _itineraryError = 'Could not load activities (${response.statusCode})';
+        return response.statusCode;
+      }
+
+      final dynamic data = json.decode(response.body);
+      if (data is! Map || data['events'] is! List) {
+        _itineraryError = 'Could not load activities';
+        return response.statusCode;
+      }
+
+      final parsed = <Event>[];
+      for (final item in data['events'] as List) {
+        if (item is! Map) continue;
+        parsed.add(Event.fromJson(_itineraryEventJson(item)));
+      }
+      parsed.sort(_byStartTime);
+      _itinerary = parsed;
+      _events = parsed;
+      _itineraryError = null;
+      logger.i('Fetched ${_itinerary.length} events for plan $planId');
+      return 200;
     } catch (e) {
-      logger.i('Error fetching itinerary: $e');
-      _events = [];
-      notifyListeners();
+      logger.e('Error fetching itinerary: $e');
+      _itinerary = [];
+      _itineraryError = 'Could not load activities';
+      return null;
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -129,13 +179,19 @@ class PlanProvider extends ChangeNotifier {
   }
 
   String? _plansError;
+  List<Event> _itinerary = [];
+  String? _itineraryError;
 
   String? get plansError => _plansError;
+  List<Event> get itineraryEvents => _itinerary;
+  String? get itineraryError => _itineraryError;
 
   void clearPlans() {
     _plans = [];
     _viewerRoles.clear();
     _plansError = null;
+    _itinerary = [];
+    _itineraryError = null;
     _isLoading = false;
     notifyListeners();
   }

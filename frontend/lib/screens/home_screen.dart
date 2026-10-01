@@ -8,6 +8,7 @@ import '../providers/plan_provider.dart';
 import '../providers/user_provider.dart'; // For role and logout
 import 'coordinator_dashboard_screen.dart'; // For coordinators
 import 'invitations_screen.dart';
+import 'plan_detail_screen.dart';
 import 'user_profile_screen.dart'; // For profile
 import 'settings_screen.dart';
 import '../models/user.dart'; // For UserRole enum
@@ -180,6 +181,14 @@ class _HomeScreenState extends State<HomeScreen> {
                       'Dates: ${formatPlanDate(plan.startDate)} – ${formatPlanDate(plan.endDate)}',
                     ].join('\n'),
                   ),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => PlanDetailScreen(plan: plan),
+                      ),
+                    );
+                  },
                 ),
               );
             },
