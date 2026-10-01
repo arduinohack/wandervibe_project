@@ -428,6 +428,81 @@ class PlanProvider extends ChangeNotifier {
     }
   }
 
+  /// PUT /api/activities/:id with name, type, startTime, and endTime.
+  /// On 200 the returned activity replaces that row in start-time order.
+  Future<int?> updateActivity({
+    required String activityId,
+    required String name,
+    required String type,
+    required DateTime startTime,
+    required DateTime endTime,
+    required String? token,
+  }) async {
+    try {
+      if (token == null || token.isEmpty) return 401;
+      final response = await http.put(
+        Uri.parse('${await backendBaseUrl}$apiActivities/$activityId'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode({
+          'name': name,
+          'type': type,
+          'startTime': _eventInstant(startTime),
+          'endTime': _eventInstant(endTime),
+        }),
+      );
+      if (response.statusCode == 401 || response.statusCode == 403) {
+        return response.statusCode;
+      }
+      if (response.statusCode != 200) return response.statusCode;
+
+      final dynamic data = json.decode(response.body);
+      if (data is! Map) return 200;
+      final updated = Event.fromJson(_itineraryEventJson(data));
+      final next = [
+        for (final event in _itinerary)
+          if (event.id == activityId) updated else event,
+      ]..sort(_byStartTime);
+      _itinerary = next;
+      _events = List<Event>.from(next);
+      notifyListeners();
+      return 200;
+    } catch (e) {
+      logger.e('Error updating activity: $e');
+      return null;
+    }
+  }
+
+  /// DELETE /api/activities/:id. On 200 that row leaves the itinerary.
+  Future<int?> deleteActivity({
+    required String activityId,
+    required String? token,
+  }) async {
+    try {
+      if (token == null || token.isEmpty) return 401;
+      final response = await http.delete(
+        Uri.parse('${await backendBaseUrl}$apiActivities/$activityId'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (response.statusCode == 401 || response.statusCode == 403) {
+        return response.statusCode;
+      }
+      if (response.statusCode != 200) return response.statusCode;
+      _itinerary = [
+        for (final event in _itinerary)
+          if (event.id != activityId) event,
+      ];
+      _events = List<Event>.from(_itinerary);
+      notifyListeners();
+      return 200;
+    } catch (e) {
+      logger.e('Error deleting activity: $e');
+      return null;
+    }
+  }
+
   // Add event to plan (real API POST /api/activities with token passed as param)
   Future<void> addEvent(Event newEvent, String? token) async {
     try {

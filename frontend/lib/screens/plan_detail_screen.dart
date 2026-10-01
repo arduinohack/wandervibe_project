@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../models/event.dart';
 import '../models/plan.dart';
 import '../models/plan_role_label.dart';
 import '../providers/plan_provider.dart';
@@ -37,10 +38,17 @@ bool canAddActivity(String? storedRole) {
 /// UTC clock time for an activity start. Null stays "not set".
 String formatActivityStart(DateTime? value) {
   if (value == null) return 'not set';
+  final clock = formatActivityInput(value);
+  return clock.isEmpty ? 'not set' : '$clock UTC';
+}
+
+/// UTC `YYYY-MM-DD HH:mm` for an edit field. Null stays empty.
+String formatActivityInput(DateTime? value) {
+  if (value == null) return '';
   final utc = value.toUtc();
   String two(int number) => number.toString().padLeft(2, '0');
   final year = utc.year.toString().padLeft(4, '0');
-  return '$year-${two(utc.month)}-${two(utc.day)} ${two(utc.hour)}:${two(utc.minute)} UTC';
+  return '$year-${two(utc.month)}-${two(utc.day)} ${two(utc.hour)}:${two(utc.minute)}';
 }
 
 class PlanDetailScreen extends StatefulWidget {
@@ -127,6 +135,87 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     }
   }
 
+  Future<void> _editActivity(Event event) async {
+    final activityId = event.id;
+    if (activityId == null || activityId.isEmpty) return;
+    final draft = await showDialog<_ActivityEdit>(
+      context: context,
+      builder: (context) => _EditActivityDialog(event: event),
+    );
+    if (draft == null || !mounted) return;
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final status = await planProvider.updateActivity(
+      activityId: activityId,
+      name: draft.name,
+      type: draft.type,
+      startTime: draft.start,
+      endTime: draft.end,
+      token: userProvider.token,
+    );
+    if (!mounted) return;
+    if (status == 401) {
+      await _endSession(userProvider, planProvider, navigator);
+      return;
+    }
+    if (status == 403) {
+      messenger.showSnackBar(const SnackBar(content: Text('Not allowed')));
+      return;
+    }
+    if (status != 200) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Could not update activity')),
+      );
+    }
+  }
+
+  Future<void> _deleteActivity(Event event) async {
+    final activityId = event.id;
+    if (activityId == null || activityId.isEmpty) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete activity'),
+        content: Text('Delete ${event.name}?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final status = await planProvider.deleteActivity(
+      activityId: activityId,
+      token: userProvider.token,
+    );
+    if (!mounted) return;
+    if (status == 401) {
+      await _endSession(userProvider, planProvider, navigator);
+      return;
+    }
+    if (status == 403) {
+      messenger.showSnackBar(const SnackBar(content: Text('Not allowed')));
+      return;
+    }
+    if (status != 200) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Could not delete activity')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -175,7 +264,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
               ? null
               : planRoleLabel(widget.plan.type, storedRole);
           final events = planProvider.itineraryEvents;
-          final showAdd = canAddActivity(storedRole);
+          final canChange = canAddActivity(storedRole);
 
           return ListView(
             padding: const EdgeInsets.all(16),
@@ -214,7 +303,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                       style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                     ),
                   ),
-                  if (showAdd)
+                  if (canChange)
                     TextButton(
                       onPressed: _addActivity,
                       child: const Text('Add activity'),
@@ -235,11 +324,38 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                   final type = event.typeLabel.isEmpty
                       ? event.type.name
                       : event.typeLabel;
+                  final activityId = event.id;
                   return Card(
-                    child: ListTile(
-                      title: Text(event.name),
-                      subtitle: Text(
-                        'Type: $type\nStart: ${formatActivityStart(event.startTime)}',
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            event.name,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Type: $type\nStart: ${formatActivityStart(event.startTime)}',
+                          ),
+                          if (canChange && activityId != null && activityId.isNotEmpty)
+                            Row(
+                              children: [
+                                TextButton(
+                                  onPressed: () => _editActivity(event),
+                                  child: const Text('Edit'),
+                                ),
+                                TextButton(
+                                  onPressed: () => _deleteActivity(event),
+                                  child: const Text('Delete'),
+                                ),
+                              ],
+                            ),
+                        ],
                       ),
                     ),
                   );
@@ -341,6 +457,136 @@ class _AddActivityDialogState extends State<_AddActivityDialog> {
           child: const Text('Cancel'),
         ),
         TextButton(onPressed: _submit, child: const Text('Add')),
+      ],
+    );
+  }
+}
+
+class _ActivityEdit {
+  final String name;
+  final String type;
+  final DateTime start;
+  final DateTime end;
+
+  const _ActivityEdit({
+    required this.name,
+    required this.type,
+    required this.start,
+    required this.end,
+  });
+}
+
+class _EditActivityDialog extends StatefulWidget {
+  final Event event;
+
+  const _EditActivityDialog({required this.event});
+
+  @override
+  State<_EditActivityDialog> createState() => _EditActivityDialogState();
+}
+
+class _EditActivityDialogState extends State<_EditActivityDialog> {
+  late final TextEditingController _nameController;
+  late final TextEditingController _startController;
+  late final TextEditingController _endController;
+  late String _type;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    final event = widget.event;
+    _nameController = TextEditingController(text: event.name);
+    _startController = TextEditingController(
+      text: formatActivityInput(event.startTime),
+    );
+    _endController = TextEditingController(
+      text: formatActivityInput(event.endTime),
+    );
+    final storedType = event.typeLabel.isEmpty ? event.type.name : event.typeLabel;
+    _type = activityTypes.contains(storedType) ? storedType : activityTypes.first;
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _startController.dispose();
+    _endController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final name = _nameController.text.trim();
+    final start = parseActivityStart(_startController.text);
+    final end = parseActivityStart(_endController.text);
+    if (name.isEmpty || start == null || end == null) {
+      setState(
+        () => _error = 'Enter a name, start time, and end time as YYYY-MM-DD HH:mm',
+      );
+      return;
+    }
+    if (end.isBefore(start)) {
+      setState(() => _error = 'End time must not be before the start time');
+      return;
+    }
+    Navigator.pop(
+      context,
+      _ActivityEdit(name: name, type: _type, start: start, end: end),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Edit activity'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _nameController,
+            decoration: const InputDecoration(labelText: 'Name'),
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            initialValue: _type,
+            decoration: const InputDecoration(labelText: 'Type'),
+            items: [
+              for (final type in activityTypes)
+                DropdownMenuItem(value: type, child: Text(type)),
+            ],
+            onChanged: (value) {
+              if (value == null) return;
+              setState(() => _type = value);
+            },
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _startController,
+            decoration: const InputDecoration(
+              labelText: 'Start time',
+              hintText: 'YYYY-MM-DD HH:mm',
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _endController,
+            decoration: const InputDecoration(
+              labelText: 'End time',
+              hintText: 'YYYY-MM-DD HH:mm',
+            ),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 12),
+            Text(_error!, style: const TextStyle(color: Colors.red)),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        TextButton(onPressed: _submit, child: const Text('Save')),
       ],
     );
   }
