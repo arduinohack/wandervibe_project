@@ -381,8 +381,8 @@ class PlanProvider extends ChangeNotifier {
     }
   }
 
-  /// POST /api/events with the Newman activity body: name, type, planId,
-  /// startTime, and endTime. End is three hours after the collected start.
+  /// POST /api/activities with name, type, planId, startTime, and endTime.
+  /// End is three hours after the collected start.
   /// On 201 the returned activity is inserted in start-time order.
   Future<int?> createActivity({
     required String planId,
@@ -396,7 +396,7 @@ class PlanProvider extends ChangeNotifier {
       final start = startTime.toUtc();
       final end = start.add(const Duration(hours: 3));
       final response = await http.post(
-        Uri.parse((await backendBaseUrl) + apiEvents),
+        Uri.parse((await backendBaseUrl) + apiActivities),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
@@ -428,13 +428,13 @@ class PlanProvider extends ChangeNotifier {
     }
   }
 
-  // Add event to plan (real API POST /api/events with token passed as param)
+  // Add event to plan (real API POST /api/activities with token passed as param)
   Future<void> addEvent(Event newEvent, String? token) async {
     try {
       if (token == null) throw Exception('No token—log in first');
 
       final baseUrl = await backendBaseUrl; // Await first (get the string)
-      final url = Uri.parse(baseUrl + apiEvents);
+      final url = Uri.parse(baseUrl + apiActivities);
       final response = await http.post(
         url,
         headers: {
@@ -468,7 +468,7 @@ class PlanProvider extends ChangeNotifier {
     }
   }
 
-  // Add event to plan (real API POST /api/events with token passed as param)
+  // Update event (real API PUT /api/activities/:id with token passed as param)
   Future<void> updateEvent(Event updatedEvent, String? token) async {
     if (updatedEvent.id == null) {
       throw Exception(
@@ -483,7 +483,7 @@ class PlanProvider extends ChangeNotifier {
       if (token == null) throw Exception('No token—log in first');
 
       final baseUrl = await backendBaseUrl; // Await first (get the string)
-      final url = Uri.parse('$baseUrl$apiEvents/${updatedEvent.id}');
+      final url = Uri.parse('$baseUrl$apiActivities/${updatedEvent.id}');
       final body = json.encode(updatedEvent.toJson());
       logger.i('Updating event: $body'); // Log data sent
       final response = await http.put(
@@ -530,7 +530,7 @@ class PlanProvider extends ChangeNotifier {
       if (token == null) throw Exception('No token—log in first');
 
       final baseUrl = await backendBaseUrl; // Await first (get the string)
-      final url = Uri.parse('$baseUrl$apiEvents/$deleteEventId');
+      final url = Uri.parse('$baseUrl$apiActivities/$deleteEventId');
       final response = await http.delete(
         url,
         headers: {'Authorization': 'Bearer $token'},
