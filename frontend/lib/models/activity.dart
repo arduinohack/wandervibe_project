@@ -22,8 +22,8 @@ class UrlLink {
   }
 }
 
-// Sub-event class for composite events (e.g., departure/arrival in flight)
-class SubEvent {
+// Sub-activity class for composite activities (e.g., departure/arrival in flight)
+class SubActivity {
   final String name;
   final String? location;
   final DateTime? startTime; // Changed: Explicitly nullable
@@ -35,7 +35,7 @@ class SubEvent {
   final String? serviceNumber;
   final String? serviceClass;
 
-  SubEvent({
+  SubActivity({
     required this.name,
     this.location,
     this.startTime, // Changed: Optional, nullable (no 'required')
@@ -48,8 +48,8 @@ class SubEvent {
     this.serviceClass,
   });
 
-  factory SubEvent.fromJson(Map<String, dynamic> json) {
-    return SubEvent(
+  factory SubActivity.fromJson(Map<String, dynamic> json) {
+    return SubActivity(
       name: json['name'] ?? '',
       location: json['location'],
       startTime: json['startTime'] != null
@@ -83,7 +83,7 @@ class SubEvent {
     return map;
   }
 
-  SubEvent copyWith({
+  SubActivity copyWith({
     String? name,
     String? location,
     DateTime? startTime,
@@ -95,7 +95,7 @@ class SubEvent {
     String? baggageClaim,
     Map<String, dynamic>? extras,
   }) {
-    return SubEvent(
+    return SubActivity(
       name: name ?? this.name,
       location: location ?? this.location,
       startTime: startTime ?? this.startTime,
@@ -122,10 +122,10 @@ class Activity {
   final DateTime? startTime; // Changed: Nullable
   final Duration? duration;
   final DateTime? endTime;
-  final int? eventNum;
+  final int? activityNum;
   final String? status;
   final List<String>? missingFields;
-  final List<SubEvent> subEvents;
+  final List<SubActivity> subActivities;
   final List<UrlLink> urlLinks;
   final String? details;
   final String? customType;
@@ -146,10 +146,10 @@ class Activity {
     this.startTime, // Changed: Optional, nullable
     this.duration,
     this.endTime,
-    this.eventNum,
+    this.activityNum,
     this.status,
     this.missingFields,
-    this.subEvents = const [],
+    this.subActivities = const [],
     this.urlLinks = const [],
     this.details,
     this.customType,
@@ -173,9 +173,9 @@ class Activity {
         duration! > Duration.zero &&
         startTime == null) {
       return endTime!.subtract(duration!); // Case 3: End - duration
-    } else if (subEvents.isNotEmpty) {
-      // Fallback: Use earliest sub-event startTime, filter out nulls
-      final validStartTimes = subEvents
+    } else if (subActivities.isNotEmpty) {
+      // Fallback: Use earliest sub-activity startTime, filter out nulls
+      final validStartTimes = subActivities
           .map((se) => se.startTime)
           .where((dt) => dt != null)
           .cast<DateTime>();
@@ -202,9 +202,9 @@ class Activity {
         duration! > Duration.zero &&
         startTime == null) {
       return endTime; // Case 3
-    } else if (subEvents.isNotEmpty) {
-      // Fallback: Use latest sub-event startTime, filter out nulls
-      final validStartTimes = subEvents
+    } else if (subActivities.isNotEmpty) {
+      // Fallback: Use latest sub-activity startTime, filter out nulls
+      final validStartTimes = subActivities
           .map((se) => se.startTime)
           .where((dt) => dt != null)
           .cast<DateTime>();
@@ -220,7 +220,7 @@ class Activity {
     return Activity(
       id: json['_id'] ?? json['id'],
       planId: json['planId'] ?? '',
-      name: json['name'] ?? 'Unnamed Event',
+      name: json['name'] ?? 'Unnamed Activity',
       location: json['location'],
       type: _typeFromString(json['type'] ?? 'activity'),
       typeLabel: json['type'] == null ? '' : json['type'].toString(),
@@ -233,11 +233,11 @@ class Activity {
           ? Duration(minutes: json['duration'] as int)
           : null,
       endTime: json['endTime'] != null ? DateTime.parse(json['endTime']) : null,
-      eventNum: json['eventNum'],
+      activityNum: json['eventNum'],
       status: json['status'] ?? 'draft',
       missingFields: List<String>.from(json['missingFields'] ?? []),
-      subEvents: (json['subEvents'] as List<dynamic>? ?? [])
-          .map((e) => SubEvent.fromJson(e as Map<String, dynamic>))
+      subActivities: (json['subEvents'] as List<dynamic>? ?? [])
+          .map((e) => SubActivity.fromJson(e as Map<String, dynamic>))
           .toList(),
       urlLinks: (json['urlLinks'] as List<dynamic>? ?? [])
           .map((e) => UrlLink.fromJson(e as Map<String, dynamic>))
@@ -271,10 +271,10 @@ class Activity {
       'startTime': startTime?.toIso8601String(),
       'duration': effectiveDuration?.inMinutes ?? 0, // Use adjusted duration
       'endTime': endTime?.toIso8601String(),
-      'eventNum': eventNum ?? 0,
+      'eventNum': activityNum ?? 0,
       'status': status ?? 'draft',
       'missingFields': missingFields ?? [],
-      'subEvents': subEvents.map((e) => e.toJson()).toList(),
+      'subEvents': subActivities.map((e) => e.toJson()).toList(),
       'urlLinks': urlLinks.map((e) => e.toJson()).toList(),
       'details': details ?? '',
       'customType': customType ?? '',

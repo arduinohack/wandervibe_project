@@ -28,7 +28,7 @@ const String apiPlans = '/api/plans';
 const String apiPlansItinerary = '/api/plans/{planId}/itinerary';
 const String apiPlanUsers = '/api/plans/{planId}/users';
 const String apiActivities = '/api/activities';
-const String apiEvents = '/api/events';
+const String apiActivitiesAlias = '/api/events';
 const String apiInvites = '/api/invites';
 const String apiInvitesRespond =
     '/api/invites/invitations/{invitationId}/respond';

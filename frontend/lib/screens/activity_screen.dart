@@ -8,19 +8,19 @@ import '../providers/plan_provider.dart';
 import '../providers/user_provider.dart';
 import '../utils/logger.dart';
 
-// EventScreen widget for adding or editing events
-class EventScreen extends StatefulWidget {
+// ActivityScreen widget for adding or editing activities
+class ActivityScreen extends StatefulWidget {
   final String planId; // Passed from PlanDetailScreen + button
   final Activity? activity; // Optional for edit mode
 
-  const EventScreen({super.key, required this.planId, this.activity});
+  const ActivityScreen({super.key, required this.planId, this.activity});
 
   @override
-  State<EventScreen> createState() => _EventScreenState();
+  State<ActivityScreen> createState() => _ActivityScreenState();
 }
 
-// State class for EventScreen
-class _EventScreenState extends State<EventScreen> {
+// State class for ActivityScreen
+class _ActivityScreenState extends State<ActivityScreen> {
   final _formKey = GlobalKey<FormState>(); // For validation
 
   // Controllers for text fields
@@ -43,8 +43,8 @@ class _EventScreenState extends State<EventScreen> {
   DateTime? _endTime; // Added: Default to now for end time
   int _durationMinutes = 60; // Default 1 hour
 
-  // Sub-events & links
-  List<SubEvent> _subEvents = [];
+  // Sub-activities & links
+  List<SubActivity> _subActivities = [];
   List<UrlLink> _urlLinks = [];
 
   // Formatting
@@ -92,13 +92,13 @@ class _EventScreenState extends State<EventScreen> {
       _durationMinutes = e.duration?.inMinutes ?? 0;
       _durationController.text = _durationMinutes.toString();
       _costType = e.costType ?? CostType.estimated;
-      _subEvents = List<SubEvent>.from(e.subEvents);
+      _subActivities = List<SubActivity>.from(e.subActivities);
       _urlLinks = List<UrlLink>.from(e.urlLinks);
     } else {
-      // Add mode: Set defaults and auto-add sub-events
+      // Add mode: Set defaults and auto-add sub-activities
       _type = ActivityType.activity;
       _urlLinks = [];
-      _subEvents = []; // Will be populated below if transit type
+      _subActivities = []; // Will be populated below if transit type
       if ([
         ActivityType.flight,
         ActivityType.train,
@@ -114,9 +114,9 @@ class _EventScreenState extends State<EventScreen> {
               ActivityType.carService: ['pickup', 'dropoff'],
             }[_type] ??
             [];
-        _subEvents = subTypes
+        _subActivities = subTypes
             .map(
-              (subType) => SubEvent(
+              (subType) => SubActivity(
                 name: capitalize(subType),
                 subType: subType,
                 startTime: now,
@@ -190,8 +190,8 @@ class _EventScreenState extends State<EventScreen> {
     return DateTime(date.year, date.month, date.day, time.hour, time.minute);
   }
 
-  // Save event (add or update)
-  Future<void> _saveEvent() async {
+  // Save activity (add or update)
+  Future<void> _saveActivity() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isSaving = true);
 
@@ -221,23 +221,23 @@ class _EventScreenState extends State<EventScreen> {
       bookingReference: _bookingReferenceController.text.isEmpty
           ? null
           : _bookingReferenceController.text,
-      subEvents: _subEvents,
+      subActivities: _subActivities,
       urlLinks: _urlLinks,
     );
 
     try {
-      logger.i('Saving event: ${newActivity.toJson()}'); // Log data sent
+      logger.i('Saving activity: ${newActivity.toJson()}'); // Log data sent
       if (widget.activity == null) {
-        await planProvider.addEvent(newActivity, userProvider.token);
+        await planProvider.addActivity(newActivity, userProvider.token);
       } else {
-        await planProvider.updateEvent(newActivity, userProvider.token);
+        await planProvider.updateActivityDocument(newActivity, userProvider.token);
       }
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              widget.activity == null ? 'Event added!' : 'Event updated!',
+              widget.activity == null ? 'Activity added!' : 'Activity updated!',
             ),
           ),
         );
@@ -253,8 +253,8 @@ class _EventScreenState extends State<EventScreen> {
     }
   }
 
-  // Add sub-event (simplified for now)
-  void _addSubEvent() {
+  // Add sub-activity (simplified for now)
+  void _addSubActivity() {
     String? name = '';
     String? subType = '';
     String? location = '';
@@ -274,7 +274,7 @@ class _EventScreenState extends State<EventScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Add Sub-Event'),
+        title: const Text('Add Sub-Activity'),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -346,8 +346,8 @@ class _EventScreenState extends State<EventScreen> {
               if ((name?.isNotEmpty ?? false) &&
                   (subType?.isNotEmpty ?? false)) {
                 setState(() {
-                  _subEvents.add(
-                    SubEvent(
+                  _subActivities.add(
+                    SubActivity(
                       name: name ?? 'Unnamed',
                       subType: subType ?? 'generic',
                       location: location?.isEmpty == true
@@ -369,14 +369,14 @@ class _EventScreenState extends State<EventScreen> {
     );
   }
 
-  // Remove sub-event
-  void _removeSubEvent(int index) {
-    setState(() => _subEvents.removeAt(index));
+  // Remove sub-activity
+  void _removeSubActivity(int index) {
+    setState(() => _subActivities.removeAt(index));
   }
 
-  // Edit sub-event (placeholder)
-  void _editSubEvent(int index) {
-    logger.i('Edit sub-event at index $index');
+  // Edit sub-activity (placeholder)
+  void _editSubActivity(int index) {
+    logger.i('Edit sub-activity at index $index');
   }
 
   // Add URL link
@@ -406,7 +406,7 @@ class _EventScreenState extends State<EventScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.activity == null ? 'Add Event' : 'Edit Event'),
+        title: Text(widget.activity == null ? 'Add Activity' : 'Edit Activity'),
         backgroundColor: Colors.blue,
       ),
       body: SingleChildScrollView(
@@ -619,17 +619,17 @@ class _EventScreenState extends State<EventScreen> {
               ],
               if (_type == ActivityType.flight) ...[
                 const Text(
-                  'Sub-Events',
+                  'Sub-Activities',
                   style: TextStyle(fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 8),
                 ElevatedButton(
-                  onPressed: _addSubEvent,
-                  child: const Text('Add Sub-Event'),
+                  onPressed: _addSubActivity,
+                  child: const Text('Add Sub-Activity'),
                 ),
                 const SizedBox(height: 8),
-                if (_subEvents.isNotEmpty) ...[
-                  ..._subEvents.asMap().entries.map(
+                if (_subActivities.isNotEmpty) ...[
+                  ..._subActivities.asMap().entries.map(
                     (entry) => ListTile(
                       title: Text(entry.value.name),
                       subtitle: Text(
@@ -640,11 +640,11 @@ class _EventScreenState extends State<EventScreen> {
                         children: [
                           IconButton(
                             icon: const Icon(Icons.edit),
-                            onPressed: () => _editSubEvent(entry.key),
+                            onPressed: () => _editSubActivity(entry.key),
                           ),
                           IconButton(
                             icon: const Icon(Icons.delete),
-                            onPressed: () => _removeSubEvent(entry.key),
+                            onPressed: () => _removeSubActivity(entry.key),
                           ),
                         ],
                       ),
@@ -656,7 +656,7 @@ class _EventScreenState extends State<EventScreen> {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: _isSaving ? null : _saveEvent,
+                  onPressed: _isSaving ? null : _saveActivity,
                   child: _isSaving
                       ? const SizedBox(
                           width: 20,
@@ -664,7 +664,9 @@ class _EventScreenState extends State<EventScreen> {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : Text(
-                          widget.activity == null ? 'Add Event' : 'Update Event',
+                          widget.activity == null
+                              ? 'Add Activity'
+                              : 'Update Activity',
                         ),
                 ),
               ),

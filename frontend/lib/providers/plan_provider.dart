@@ -12,7 +12,7 @@ import '../models/activity_type.dart';
 import '../models/user.dart'; // Your User model
 import '../utils/logger.dart';
 
-Map<String, dynamic> _itineraryEventJson(Map source) {
+Map<String, dynamic> _itineraryActivityJson(Map source) {
   final map = Map<String, dynamic>.from(source);
   final duration = map['duration'];
   if (duration is num) {
@@ -20,9 +20,9 @@ Map<String, dynamic> _itineraryEventJson(Map source) {
   } else {
     map['duration'] = null;
   }
-  final subEvents = map['subEvents'];
-  map['subEvents'] = subEvents is List
-      ? subEvents
+  final subActivities = map['subEvents'];
+  map['subEvents'] = subActivities is List
+      ? subActivities
             .whereType<Map>()
             .map((item) => Map<String, dynamic>.from(item))
             .toList()
@@ -42,7 +42,7 @@ Map<String, dynamic> _itineraryEventJson(Map source) {
   return map;
 }
 
-String _eventInstant(DateTime utc) {
+String _activityInstant(DateTime utc) {
   return utc.toUtc().toIso8601String();
 }
 
@@ -119,7 +119,7 @@ class PlanProvider extends ChangeNotifier {
     return null;
   }
 
-  // GET /api/plans/:planId/itinerary. 200 with events: [] is empty, not an error.
+  // GET /api/plans/:planId/itinerary. 200 with an empty list is not an error.
   Future<int?> fetchPlan(String planId, String? token) async {
     _currentPlanId = planId;
     _isLoading = true;
@@ -163,13 +163,13 @@ class PlanProvider extends ChangeNotifier {
       final parsed = <Activity>[];
       for (final item in data['events'] as List) {
         if (item is! Map) continue;
-        parsed.add(Activity.fromJson(_itineraryEventJson(item)));
+        parsed.add(Activity.fromJson(_itineraryActivityJson(item)));
       }
       parsed.sort(_byStartTime);
       _itinerary = parsed;
       _activities = parsed;
       _itineraryError = null;
-      logger.i('Fetched ${_itinerary.length} events for plan $planId');
+      logger.i('Fetched ${_itinerary.length} activities for plan $planId');
       return 200;
     } catch (e) {
       logger.e('Error fetching itinerary: $e');
@@ -405,8 +405,8 @@ class PlanProvider extends ChangeNotifier {
           'name': name,
           'type': type,
           'planId': planId,
-          'startTime': _eventInstant(start),
-          'endTime': _eventInstant(end),
+          'startTime': _activityInstant(start),
+          'endTime': _activityInstant(end),
         }),
       );
       if (response.statusCode == 401 || response.statusCode == 403) {
@@ -416,7 +416,7 @@ class PlanProvider extends ChangeNotifier {
 
       final dynamic data = json.decode(response.body);
       if (data is! Map) return 201;
-      final created = Activity.fromJson(_itineraryEventJson(data));
+      final created = Activity.fromJson(_itineraryActivityJson(data));
       final next = [..._itinerary, created]..sort(_byStartTime);
       _itinerary = next;
       _activities = List<Activity>.from(next);
@@ -449,8 +449,8 @@ class PlanProvider extends ChangeNotifier {
         body: json.encode({
           'name': name,
           'type': type,
-          'startTime': _eventInstant(startTime),
-          'endTime': _eventInstant(endTime),
+          'startTime': _activityInstant(startTime),
+          'endTime': _activityInstant(endTime),
         }),
       );
       if (response.statusCode == 401 || response.statusCode == 403) {
@@ -460,7 +460,7 @@ class PlanProvider extends ChangeNotifier {
 
       final dynamic data = json.decode(response.body);
       if (data is! Map) return 200;
-      final updated = Activity.fromJson(_itineraryEventJson(data));
+      final updated = Activity.fromJson(_itineraryActivityJson(data));
       final next = [
         for (final activity in _itinerary)
           if (activity.id == activityId) updated else activity,
@@ -503,8 +503,8 @@ class PlanProvider extends ChangeNotifier {
     }
   }
 
-  // Add event to plan (real API POST /api/activities with token passed as param)
-  Future<void> addEvent(Activity newActivity, String? token) async {
+  // Add activity to plan (real API POST /api/activities with token passed as param)
+  Future<void> addActivity(Activity newActivity, String? token) async {
     try {
       if (token == null) throw Exception('No token—log in first');
 
@@ -523,19 +523,20 @@ class PlanProvider extends ChangeNotifier {
         final data = json.decode(response.body);
         final createdActivity = Activity.fromJson(
           data['event'],
-        ); // Backend returns the created event
+        ); // Backend returns the created activity
         _activities.add(createdActivity);
         _computeDayNumbers(newActivity.planId); // Recalculate days
         notifyListeners();
-        logger.i('Added event: ${createdActivity.name} from backend');
+        logger.i('Added activity: ${createdActivity.name} from backend');
       } else {
         final errorData = json.decode(response.body);
         throw Exception(
-          errorData['message'] ?? 'Failed to add event: ${response.statusCode}',
+          errorData['message'] ??
+              'Failed to add activity: ${response.statusCode}',
         );
       }
     } catch (e) {
-      logger.e('Error adding event: $e');
+      logger.e('Error adding activity: $e');
       // Fallback: Add mock
       _activities.add(newActivity);
       _computeDayNumbers(newActivity.planId);
@@ -543,11 +544,11 @@ class PlanProvider extends ChangeNotifier {
     }
   }
 
-  // Update event (real API PUT /api/activities/:id with token passed as param)
-  Future<void> updateEvent(Activity updatedActivity, String? token) async {
+  // Update activity (real API PUT /api/activities/:id with token passed as param)
+  Future<void> updateActivityDocument(Activity updatedActivity, String? token) async {
     if (updatedActivity.id == null) {
       throw Exception(
-        'Cannot update: Event ID is null. Use addEvent for new events.',
+        'Cannot update: Activity ID is null. Use addActivity for new activities.',
       ); // Early return with message
     }
 
@@ -560,7 +561,7 @@ class PlanProvider extends ChangeNotifier {
       final baseUrl = await backendBaseUrl; // Await first (get the string)
       final url = Uri.parse('$baseUrl$apiActivities/${updatedActivity.id}');
       final body = json.encode(updatedActivity.toJson());
-      logger.i('Updating event: $body'); // Log data sent
+      logger.i('Updating activity: $body'); // Log data sent
       final response = await http.put(
         url,
         headers: {
@@ -580,12 +581,12 @@ class PlanProvider extends ChangeNotifier {
         }
         _computeDayNumbers(updatedActivity.planId); // Recalculate days
         notifyListeners();
-        logger.i('Updated event: ${updatedActivity.name} from backend');
+        logger.i('Updated activity: ${updatedActivity.name} from backend');
       } else {
-        throw Exception('Failed to update event: ${response.statusCode}');
+        throw Exception('Failed to update activity: ${response.statusCode}');
       }
     } catch (e) {
-      logger.e('Error updating event: $e');
+      logger.e('Error updating activity: $e');
       // Fallback: Add mock
       // _activities.add(updatedActivity);
       _computeDayNumbers(updatedActivity.planId);
@@ -593,9 +594,9 @@ class PlanProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> deleteEvent(String deleteEventId, String? token) async {
-    if (deleteEventId.isEmpty) {
-      throw Exception('Invalid event ID'); // Early check for empty ID
+  Future<void> deleteActivityDocument(String activityId, String? token) async {
+    if (activityId.isEmpty) {
+      throw Exception('Invalid activity ID'); // Early check for empty ID
     }
 
     _isLoading = true;
@@ -605,7 +606,7 @@ class PlanProvider extends ChangeNotifier {
       if (token == null) throw Exception('No token—log in first');
 
       final baseUrl = await backendBaseUrl; // Await first (get the string)
-      final url = Uri.parse('$baseUrl$apiActivities/$deleteEventId');
+      final url = Uri.parse('$baseUrl$apiActivities/$activityId');
       final response = await http.delete(
         url,
         headers: {'Authorization': 'Bearer $token'},
@@ -613,14 +614,14 @@ class PlanProvider extends ChangeNotifier {
 
       if (response.statusCode == 200) {
         _activities.removeWhere(
-          (activity) => activity.id == deleteEventId,
+          (activity) => activity.id == activityId,
         ); // Remove from local list
-        logger.i('Deleted event $deleteEventId');
+        logger.i('Deleted activity $activityId');
       } else {
-        throw Exception('Delete event failed: ${response.statusCode}');
+        throw Exception('Delete activity failed: ${response.statusCode}');
       }
     } catch (e) {
-      logger.e('Delete event error: $e');
+      logger.e('Delete activity error: $e');
       rethrow; // Bubble up for UI handling (e.g., SnackBar)
     } finally {
       _isLoading = false;
@@ -628,7 +629,7 @@ class PlanProvider extends ChangeNotifier {
     }
   }
 
-  // Full comparator for sorting (Cases 1-4: Time prevails, eventNum fallback)
+  // Full comparator for sorting (Cases 1-4: Time prevails, activityNum fallback)
   int _compareActivities(Activity a, Activity b) {
     // Primary: effectiveStartTime (Cases 1-3)
     final aStart =
@@ -643,8 +644,8 @@ class PlanProvider extends ChangeNotifier {
     final compareEnd = aEnd.compareTo(bEnd);
     if (compareEnd != 0) return compareEnd;
 
-    // Tertiary: eventNum fallback (Case 4)
-    return (a.eventNum ?? 0).compareTo(b.eventNum ?? 0);
+    // Tertiary: activityNum fallback (Case 4)
+    return (a.activityNum ?? 0).compareTo(b.activityNum ?? 0);
   }
 
   Map<String, int> _computeDayNumbers(String planId) {
@@ -655,13 +656,13 @@ class PlanProvider extends ChangeNotifier {
 
     planActivities.sort(_compareActivities);
 
-    final dayNumbers = <String, int>{}; // Map to store eventId -> dayNumber
+    final dayNumbers = <String, int>{}; // Map to store activityId -> dayNumber
     int currentDay = 1;
     DateTime? priorEnd = planActivities.first.effectiveStartTime ?? DateTime.now();
 
     for (var activity in planActivities) {
-      final eventId = activity.id ?? ''; // Use event ID as key
-      dayNumbers[eventId] = currentDay;
+      final activityId = activity.id ?? '';
+      dayNumbers[activityId] = currentDay;
 
       final nextStart = activity.effectiveStartTime ?? priorEnd;
       final priorEndNonNull = priorEnd ?? DateTime.now();
@@ -698,8 +699,7 @@ class PlanProvider extends ChangeNotifier {
   // Getter for current plan ID
   String? get currentPlanId => _currentPlanId;
 
-  // NEW: Method to get icon based on event type
-  // Method to get icon data based on event type
+  // Method to get icon data based on activity type
   IconData getIcon(ActivityType type) {
     switch (type) {
       case ActivityType.flight:

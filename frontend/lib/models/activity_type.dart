@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart'; // For IconData in extension
 
-// Enum for event types (categories for flights, hotels, etc.)
+// Enum for activity types (categories for flights, hotels, etc.)
 enum ActivityType {
   flight,
   train,
@@ -33,153 +33,153 @@ extension ActivityTypeExtension on ActivityType {
     ({
       IconData icon,
       bool spPresence,
-      String eventLabel,
+      String activityLabel,
       String serviceProviderLabel,
       String bookingReferenceLabel,
     })
   >
-  _eventTypeData = {
+  _activityTypeData = {
     ActivityType.flight: (
       icon: Icons.flight,
       spPresence: true,
-      eventLabel: 'Flight',
+      activityLabel: 'Flight',
       serviceProviderLabel: 'Airline',
       bookingReferenceLabel: 'PNR (reservation)',
     ),
     ActivityType.train: (
       icon: Icons.train,
       spPresence: true,
-      eventLabel: 'Train',
+      activityLabel: 'Train',
       serviceProviderLabel: 'Rail Operator',
       bookingReferenceLabel: 'PNR (reservation)',
     ),
     ActivityType.carRental: (
       icon: Icons.car_rental,
       spPresence: true,
-      eventLabel: 'Car Rental',
+      activityLabel: 'Car Rental',
       serviceProviderLabel: 'Car Rental Agency',
       bookingReferenceLabel: 'Reservation Number',
     ),
     ActivityType.carService: (
       icon: Icons.directions_car,
       spPresence: true,
-      eventLabel: 'Car Service',
+      activityLabel: 'Car Service',
       serviceProviderLabel: 'Car Service Provider',
       bookingReferenceLabel: 'Booking ID',
     ),
     ActivityType.drive: (
       icon: Icons.directions_car,
       spPresence: false,
-      eventLabel: 'Drive (Self)',
+      activityLabel: 'Drive (Self)',
       serviceProviderLabel: '',
       bookingReferenceLabel: '',
     ),
     ActivityType.taxi: (
       icon: Icons.local_taxi,
       spPresence: false,
-      eventLabel: 'Taxi',
+      activityLabel: 'Taxi',
       serviceProviderLabel: '',
       bookingReferenceLabel: '',
     ),
     ActivityType.bus: (
       icon: Icons.directions_bus,
       spPresence: true,
-      eventLabel: 'Bus',
+      activityLabel: 'Bus',
       serviceProviderLabel: 'Bus Operator',
       bookingReferenceLabel: 'Ticket Number',
     ),
     ActivityType.walk: (
       icon: Icons.directions_walk,
       spPresence: false,
-      eventLabel: 'Walk',
+      activityLabel: 'Walk',
       serviceProviderLabel: '',
       bookingReferenceLabel: '',
     ),
     ActivityType.ferry: (
       icon: Icons.directions_ferry,
       spPresence: true,
-      eventLabel: 'Ferry',
+      activityLabel: 'Ferry',
       serviceProviderLabel: 'Ferry Operator',
       bookingReferenceLabel: 'Booking Number',
     ),
     ActivityType.dining: (
       icon: Icons.dining,
       spPresence: false,
-      eventLabel: 'Dining',
+      activityLabel: 'Dining',
       serviceProviderLabel: '',
       bookingReferenceLabel: '',
     ),
     ActivityType.hotel: (
       icon: Icons.hotel,
       spPresence: true,
-      eventLabel: 'Hotel',
+      activityLabel: 'Hotel',
       serviceProviderLabel: 'Confirmation Number',
       bookingReferenceLabel: '',
     ),
     ActivityType.tour: (
       icon: Icons.tour,
       spPresence: true,
-      eventLabel: 'Tour',
+      activityLabel: 'Tour',
       serviceProviderLabel: 'Tour Operator',
       bookingReferenceLabel: '',
     ),
     ActivityType.activity: (
       icon: Icons.local_activity,
       spPresence: false,
-      eventLabel: 'Activity',
+      activityLabel: 'Activity',
       serviceProviderLabel: '',
       bookingReferenceLabel: '',
     ),
     ActivityType.meal: (
       icon: Icons.restaurant,
       spPresence: false,
-      eventLabel: 'Meal',
+      activityLabel: 'Meal',
       serviceProviderLabel: '',
       bookingReferenceLabel: '',
     ),
     ActivityType.transport: (
       icon: Icons.emoji_transportation,
       spPresence: true,
-      eventLabel: 'Transportation',
+      activityLabel: 'Transportation',
       serviceProviderLabel: 'Transportation Provider',
       bookingReferenceLabel: 'PNR',
     ),
     ActivityType.attraction: (
       icon: Icons.attractions,
       spPresence: false,
-      eventLabel: 'Attraction',
+      activityLabel: 'Attraction',
       serviceProviderLabel: '',
       bookingReferenceLabel: '',
     ),
     ActivityType.cruise: (
       icon: Icons.directions_boat,
       spPresence: true,
-      eventLabel: 'Cruise',
+      activityLabel: 'Cruise',
       serviceProviderLabel: 'Cruise Line',
       bookingReferenceLabel: 'Booking Number',
     ),
     ActivityType.custom: (
       icon: Icons.category,
       spPresence: false,
-      eventLabel: 'Custom',
+      activityLabel: 'Custom',
       serviceProviderLabel: '',
       bookingReferenceLabel: '',
     ),
   };
 
-  /// Getter for event service provider presence
-  bool get spPresence => _eventTypeData[this]!.spPresence;
+  /// Getter for activity service provider presence
+  bool get spPresence => _activityTypeData[this]!.spPresence;
 
-  /// Getter for eventLabel
-  String get eventLabel => _eventTypeData[this]!.eventLabel;
+  /// Getter for activityLabel
+  String get activityLabel => _activityTypeData[this]!.activityLabel;
 
   /// Getter for IconData
-  IconData get icon => _eventTypeData[this]!.icon;
+  IconData get icon => _activityTypeData[this]!.icon;
 
   // Getter for serviceProviderLabel
-  String get serviceProviderLabel => _eventTypeData[this]!.serviceProviderLabel;
+  String get serviceProviderLabel => _activityTypeData[this]!.serviceProviderLabel;
 
   // Getter for bookingReferenceLabel
   String get bookingReferenceLabel =>
-      _eventTypeData[this]!.bookingReferenceLabel;
+      _activityTypeData[this]!.bookingReferenceLabel;
 }

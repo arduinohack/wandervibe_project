@@ -56,7 +56,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             // Duration slider
             Row(
               children: [
-                const Text('Default Event Duration (minutes):'),
+                const Text('Default Activity Duration (minutes):'),
                 Expanded(
                   child: Slider(
                     value: _defaultDuration.toDouble(),

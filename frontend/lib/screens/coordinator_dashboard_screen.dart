@@ -9,7 +9,7 @@ import '../models/plan_role_label.dart';
 import '../models/user.dart'; // For UserRole
 import '../utils/logger.dart';
 import 'plan_detail_screen.dart'; // For plan details
-// import 'event_screen.dart'; // For adding events
+// import 'activity_screen.dart'; // For adding activities
 
 class CoordinatorDashboardScreen extends StatefulWidget {
   const CoordinatorDashboardScreen({super.key});
@@ -71,7 +71,7 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
                   : 'All Trips', // Dynamic text now works
             ),
             Tab(icon: Icon(Icons.mail), text: 'Invites'),
-            Tab(icon: Icon(Icons.event), text: 'Events'),
+            Tab(icon: Icon(Icons.event), text: 'Activities'),
           ],
         ),
         actions: [
@@ -92,7 +92,7 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
         children: [
           _buildMyPlansTab(context),
           _buildPendingInvitesTab(context),
-          _buildEventsTab(context), // Stub for now
+          _buildActivitiesTab(context), // Stub for now
         ],
       ),
     );
@@ -300,9 +300,9 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
     );
   }
 
-  Widget _buildEventsTab(BuildContext context) {
+  Widget _buildActivitiesTab(BuildContext context) {
     return const Center(
-      child: Text('Events tab—coming soon!'), // Stub for now
+      child: Text('Activities tab—coming soon!'), // Stub for now
     );
   }
 

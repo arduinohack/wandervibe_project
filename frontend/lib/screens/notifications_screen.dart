@@ -33,12 +33,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       },
       {
         'id': 'notif2',
-        'title': 'Event Added',
+        'title': 'Activity Added',
         'message': 'New flight added to itinerary',
         'timestamp': DateTime.now()
             .subtract(const Duration(minutes: 30))
             .toLocal(),
-        'type': 'event',
+        'type': 'activity',
       },
       {
         'id': 'notif3',
@@ -167,7 +167,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     switch (type) {
       case 'invite':
         return Icons.person_add;
-      case 'event':
+      case 'activity':
         return Icons.event;
       case 'role':
         return Icons.admin_panel_settings;

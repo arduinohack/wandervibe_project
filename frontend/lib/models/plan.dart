@@ -62,7 +62,7 @@ class Plan {
   final String timeZone;
   final List<PlanUser> participants;
   final String ownerId;
-  final List<String> eventIds; // Links to Events
+  final List<String> activityIds; // Links to activities
   final DateTime createdAt;
 
   Plan({
@@ -80,7 +80,7 @@ class Plan {
     required this.timeZone,
     this.participants = const [],
     required this.ownerId,
-    this.eventIds = const [],
+    this.activityIds = const [],
     required this.createdAt,
   });
 
@@ -113,7 +113,7 @@ class Plan {
       planningState: _stringValue(json['planningState'], fallback: 'initial'),
       timeZone: _stringValue(json['timeZone'], fallback: 'UTC'),
       participants: _participants(json['participants']),
-      eventIds: _stringList(json['eventIds'] ?? json['activityIds']),
+      activityIds: _stringList(json['eventIds'] ?? json['activityIds']),
       ownerId: _stringValue(json['ownerId']),
       createdAt:
           _dateValue(json['createdAt']) ?? DateTime.fromMillisecondsSinceEpoch(0),
@@ -143,7 +143,7 @@ class Plan {
           .map((p) => PlanUser.fromJson(p))
           .toList(),
       ownerId: json['ownerId'] ?? '',
-      eventIds: List<String>.from(json['eventIds'] ?? []),
+      activityIds: List<String>.from(json['eventIds'] ?? []),
       createdAt: DateTime.parse(
         json['createdAt'] ?? DateTime.now().toIso8601String(),
       ),
