@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/invitation.dart';
+import '../models/plan_role_label.dart';
 import '../providers/invitation_provider.dart';
+import '../providers/plan_provider.dart';
 import '../providers/user_provider.dart';
 import 'login_screen.dart';
 
@@ -118,7 +120,10 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
               final from = invite.inviterLabel.isEmpty
                   ? 'Unknown'
                   : invite.inviterLabel;
-              final role = invite.roleLabel.isEmpty ? 'Unknown' : invite.roleLabel;
+              final planType = Provider.of<PlanProvider>(
+                context,
+              ).planTypeFor(invite.planId);
+              final role = planRoleLabel(planType, invite.roleLabel);
               return Card(
                 child: Padding(
                   padding: const EdgeInsets.all(12),

@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart'; // For launchUrl
 import '../models/event.dart';
 import '../models/event_type.dart';
 import '../models/plan.dart';
+import '../models/plan_role_label.dart';
 import '../providers/plan_provider.dart';
 import '../providers/user_provider.dart';
 import '../screens/event_screen.dart';
@@ -83,6 +84,13 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
               final events = planProvider.sortedEvents
                   .where((event) => event.planId == widget.plan.id)
                   .toList();
+              final storedRole = planProvider.viewerStoredRole(
+                widget.plan.id,
+                Provider.of<UserProvider>(context, listen: false).currentUserId,
+              );
+              final roleText = storedRole == null
+                  ? null
+                  : planRoleLabel(widget.plan.type, storedRole);
 
               return ListView(
                 padding: const EdgeInsets.all(16.0),
@@ -102,6 +110,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                           ),
                           const SizedBox(height: 8),
                           Text('Destination: ${widget.plan.destination}'),
+                          if (roleText != null) Text('Role: $roleText'),
                           Text('Budget: \$${widget.plan.budget}'),
                           Text(
                             'Dates: ${formatPlanDate(widget.plan.startDate)} - ${formatPlanDate(widget.plan.endDate)}',

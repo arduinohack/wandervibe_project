@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'login_screen.dart'; // Navigate on logout
 // Navigate to signup
 import '../models/plan.dart';
+import '../models/plan_role_label.dart';
 import '../providers/plan_provider.dart';
 import '../providers/user_provider.dart'; // For role and logout
 import 'coordinator_dashboard_screen.dart'; // For coordinators
@@ -33,8 +34,16 @@ class _HomeScreenState extends State<HomeScreen> {
     final navigator = Navigator.of(context);
     final status = await planProvider.fetchPlans(userProvider.token);
     if (!mounted) return;
+    int? roleStatus;
+    if (status == 200) {
+      roleStatus = await planProvider.loadViewerRoles(
+        userProvider.token,
+        userProvider.currentUserId,
+      );
+      if (!mounted) return;
+    }
     setState(() => _loaded = true);
-    if (status == 401) {
+    if (status == 401 || roleStatus == 401) {
       await _endSession(userProvider, planProvider, navigator);
     }
   }
@@ -156,11 +165,20 @@ class _HomeScreenState extends State<HomeScreen> {
             itemCount: planProvider.plans.length,
             itemBuilder: (context, index) {
               final plan = planProvider.plans[index];
+              final userId = Provider.of<UserProvider>(context).currentUserId;
+              final storedRole = planProvider.viewerStoredRole(plan.id, userId);
+              final roleText = storedRole == null
+                  ? null
+                  : planRoleLabel(plan.type, storedRole);
               return Card(
                 child: ListTile(
                   title: Text(plan.name),
                   subtitle: Text(
-                    'Type: ${plan.type}\nDates: ${formatPlanDate(plan.startDate)} – ${formatPlanDate(plan.endDate)}',
+                    [
+                      'Type: ${plan.type}',
+                      if (roleText != null) 'Role: $roleText',
+                      'Dates: ${formatPlanDate(plan.startDate)} – ${formatPlanDate(plan.endDate)}',
+                    ].join('\n'),
                   ),
                 ),
               );

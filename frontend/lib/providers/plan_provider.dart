@@ -12,6 +12,30 @@ import '../models/event_type.dart'; // Your Event model
 import '../models/user.dart'; // Your User model
 import '../utils/logger.dart';
 
+String? _roleFromUsersBody(String body, String userId) {
+  final dynamic data = json.decode(body);
+  final List<dynamic> users;
+  if (data is Map && data['users'] is List) {
+    users = data['users'] as List;
+  } else if (data is List) {
+    users = data;
+  } else {
+    return null;
+  }
+  for (final item in users) {
+    if (item is! Map) continue;
+    final idValue = item['userId'];
+    final id = idValue is Map
+        ? (idValue['_id'] ?? idValue['id'])?.toString() ?? ''
+        : idValue?.toString() ?? '';
+    if (id != userId) continue;
+    final role = item['role'];
+    if (role == null) return null;
+    return role.toString();
+  }
+  return null;
+}
+
 class PlanProvider extends ChangeNotifier {
   List<Plan> _plans = []; // Private list of plans
   Plan? _currentPlan; // Current selected plan
@@ -27,6 +51,30 @@ class PlanProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
 
   String? _currentPlanId; // Track current plan for itinerary
+  final Map<String, String> _viewerRoles = {};
+
+  /// Stored Owner, Collaborator, or Guest for the signed-in user on this plan.
+  /// Owner is known from ownerId. Other roles come from GET /api/plans/:id/users.
+  String? viewerStoredRole(String planId, String? userId) {
+    final fetched = _viewerRoles[planId];
+    if (fetched != null && fetched.isNotEmpty) return fetched;
+    if (userId == null || userId.isEmpty) return null;
+    for (final plan in _plans) {
+      if (plan.id == planId && plan.ownerId == userId) return 'Owner';
+    }
+    return null;
+  }
+
+  /// Plan type already loaded from GET /api/plans, when this plan is one of them.
+  String? planTypeFor(String planId) {
+    for (final plan in _plans) {
+      if (plan.id == planId) {
+        final type = plan.type.trim();
+        return type.isEmpty ? null : type;
+      }
+    }
+    return null;
+  }
 
   // Fetch itinerary for a plan (real API with token passed as param)
   Future<void> fetchPlan(String planId, String? token) async {
@@ -86,6 +134,7 @@ class PlanProvider extends ChangeNotifier {
 
   void clearPlans() {
     _plans = [];
+    _viewerRoles.clear();
     _plansError = null;
     _isLoading = false;
     notifyListeners();
@@ -141,6 +190,55 @@ class PlanProvider extends ChangeNotifier {
     } finally {
       _isLoading = false;
       notifyListeners();
+    }
+  }
+
+  /// Fills viewerStoredRole from GET /api/plans/:planId/users. Does not change
+  /// the plan list request. Returns 401 when the token is rejected.
+  Future<int?> loadViewerRoles(String? token, String? userId) async {
+    if (token == null || token.isEmpty) return 401;
+    final plans = List<Plan>.from(_plans);
+    if (userId == null || userId.isEmpty || plans.isEmpty) return 200;
+
+    final next = <String, String>{};
+    final pending = <Future<int?>>[];
+    for (final plan in plans) {
+      if (plan.ownerId == userId) {
+        next[plan.id] = 'Owner';
+        continue;
+      }
+      pending.add(_readMembershipRole(plan.id, token, userId, next));
+    }
+    final codes = await Future.wait(pending);
+    _viewerRoles
+      ..clear()
+      ..addAll(next);
+    notifyListeners();
+    if (codes.contains(401)) return 401;
+    return 200;
+  }
+
+  Future<int?> _readMembershipRole(
+    String planId,
+    String token,
+    String userId,
+    Map<String, String> into,
+  ) async {
+    try {
+      final response = await http.get(
+        Uri.parse(
+          (await backendBaseUrl) + apiPlanUsers.replaceAll('{planId}', planId),
+        ),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (response.statusCode == 401) return 401;
+      if (response.statusCode != 200) return response.statusCode;
+      final role = _roleFromUsersBody(response.body, userId);
+      if (role != null && role.isNotEmpty) into[planId] = role;
+      return 200;
+    } catch (e) {
+      logger.e('Error reading membership role: $e');
+      return null;
     }
   }
 

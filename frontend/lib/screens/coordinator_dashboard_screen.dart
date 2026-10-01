@@ -5,6 +5,7 @@ import '../providers/invitation_provider.dart';
 import '../providers/user_provider.dart'; // For token
 import '../models/plan.dart';
 import '../models/invitation.dart';
+import '../models/plan_role_label.dart';
 import '../models/user.dart'; // For UserRole
 import '../utils/logger.dart';
 import 'plan_detail_screen.dart'; // For plan details
@@ -242,7 +243,7 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
                   invite.planName.isEmpty ? 'Unnamed plan' : invite.planName,
                 ),
                 subtitle: Text(
-                  'Role: ${invite.roleLabel.isEmpty ? 'Unknown' : invite.roleLabel}\nStatus: ${invite.status.name}\nFrom: ${invite.inviterLabel.isEmpty ? 'Unknown' : invite.inviterLabel}',
+                  'Role: ${planRoleLabel(Provider.of<PlanProvider>(context).planTypeFor(invite.planId), invite.roleLabel)}\nStatus: ${invite.status.name}\nFrom: ${invite.inviterLabel.isEmpty ? 'Unknown' : invite.inviterLabel}',
                 ),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
