@@ -47,6 +47,59 @@ router.get('/users', async (req, res) => {
   }
 });
 
+// Read-only account. PlanUser.role is the stored membership. ownerId with no row is Owner.
+router.get('/users/:userId', async (req, res) => {
+  try {
+    const userId = String(req.params.userId || '');
+    const user = await User.findById(userId)
+      .select('email firstName lastName phoneNumber role')
+      .lean();
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const memberships = await PlanUser.find({ userId }).select('planId role').lean();
+    const roleByPlan = new Map(memberships.map((row) => [String(row.planId), row.role || '']));
+    const planIds = memberships.map((row) => row.planId).filter(Boolean);
+    const plans = await Plan.find({
+      $or: [
+        { _id: { $in: planIds } },
+        { ownerId: userId },
+      ],
+    })
+      .select('name type startDate endDate ownerId')
+      .lean();
+
+    const listed = plans
+      .map((plan) => {
+        const id = String(plan._id);
+        const stored = roleByPlan.has(id) ? roleByPlan.get(id) : '';
+        const role = stored || (String(plan.ownerId) === userId ? 'Owner' : '');
+        return {
+          _id: id,
+          name: plan.name || '',
+          type: plan.type || '',
+          startDate: plan.startDate ? new Date(plan.startDate).toISOString() : null,
+          endDate: plan.endDate ? new Date(plan.endDate).toISOString() : null,
+          role,
+        };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name) || a._id.localeCompare(b._id));
+
+    res.json({
+      _id: String(user._id),
+      email: user.email || '',
+      firstName: user.firstName || '',
+      lastName: user.lastName || '',
+      phoneNumber: user.phoneNumber || '',
+      role: user.role || '',
+      plans: listed,
+    });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 router.get('/logs', async (req, res) => {
   try {
     const query = {};

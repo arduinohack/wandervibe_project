@@ -481,3 +481,133 @@ describe('admin user search', () => {
     expect(denied.body.users).toBeUndefined();
   });
 });
+
+describe('admin user explorer', () => {
+  test('an admin sees the account and that user plans without secrets', async () => {
+    const ada = await registerAndLogin();
+    await User.updateOne({ _id: ada.userId }, { $set: { role: 'admin' } });
+    const grace = await User.create({
+      firstName: 'Grace',
+      lastName: 'Hopper',
+      email: 'grace@example.com',
+      phoneNumber: '555-0100',
+      password: 'password1',
+      role: 'member',
+      resetToken: 'reset-secret',
+    });
+    const graceId = String(grace._id);
+
+    await Plan.create({
+      _id: 'plan-paris',
+      type: 'trip',
+      name: 'Paris',
+      destination: 'Paris',
+      startDate: new Date('2026-06-01T00:00:00.000Z'),
+      endDate: new Date('2026-06-08T00:00:00.000Z'),
+      ownerId: graceId,
+    });
+    await PlanUser.create({ planId: 'plan-paris', userId: graceId, role: 'Owner' });
+
+    await Plan.create({
+      _id: 'plan-hall',
+      type: 'plan',
+      name: 'Reception',
+      location: 'Hall',
+      ownerId: ada.userId,
+    });
+    await PlanUser.create({ planId: 'plan-hall', userId: ada.userId, role: 'Owner' });
+    await PlanUser.create({ planId: 'plan-hall', userId: graceId, role: 'Guest' });
+
+    await Plan.create({
+      _id: 'plan-rome',
+      type: 'trip',
+      name: 'Rome',
+      destination: 'Rome',
+      ownerId: ada.userId,
+    });
+
+    await Plan.create({
+      _id: 'plan-lisbon',
+      type: 'trip',
+      name: 'Lisbon',
+      destination: 'Lisbon',
+      ownerId: graceId,
+    });
+
+    const found = await request(app)
+      .get(`/api/admin/users/${graceId}`)
+      .set('Authorization', `Bearer ${ada.token}`);
+    expect(found.status).toBe(200);
+    expect(Object.keys(found.body).sort()).toEqual([
+      '_id',
+      'email',
+      'firstName',
+      'lastName',
+      'phoneNumber',
+      'plans',
+      'role',
+    ]);
+    expect(found.body).toMatchObject({
+      _id: graceId,
+      email: 'grace@example.com',
+      firstName: 'Grace',
+      lastName: 'Hopper',
+      phoneNumber: '555-0100',
+      role: 'member',
+    });
+    expect(found.body.password).toBeUndefined();
+    expect(found.body.resetToken).toBeUndefined();
+    expect(found.body.token).toBeUndefined();
+    expect(JSON.stringify(found.body)).not.toContain('password1');
+    expect(JSON.stringify(found.body)).not.toContain('reset-secret');
+    expect(JSON.stringify(found.body)).not.toContain(ada.token);
+
+    expect(found.body.plans.map((plan) => plan._id)).toEqual(['plan-lisbon', 'plan-paris', 'plan-hall']);
+    const paris = found.body.plans.find((plan) => plan._id === 'plan-paris');
+    expect(Object.keys(paris).sort()).toEqual(['_id', 'endDate', 'name', 'role', 'startDate', 'type']);
+    expect(paris).toMatchObject({
+      name: 'Paris',
+      type: 'trip',
+      startDate: '2026-06-01T00:00:00.000Z',
+      endDate: '2026-06-08T00:00:00.000Z',
+      role: 'Owner',
+    });
+    expect(found.body.plans.find((plan) => plan._id === 'plan-hall')).toMatchObject({
+      name: 'Reception',
+      type: 'plan',
+      startDate: null,
+      endDate: null,
+      role: 'Guest',
+    });
+    expect(found.body.plans.find((plan) => plan._id === 'plan-lisbon').role).toBe('Owner');
+    expect(found.body.plans.find((plan) => plan._id === 'plan-rome')).toBeUndefined();
+  });
+
+  test('explorer allows an admin, rejects a member, and 404s an unknown id', async () => {
+    const ada = await registerAndLogin();
+
+    const anon = await request(app).get(`/api/admin/users/${ada.userId}`);
+    expect(anon.status).toBe(401);
+    expect(anon.body.message).toBe('No token, authorization denied');
+
+    const member = await request(app)
+      .get(`/api/admin/users/${ada.userId}`)
+      .set('Authorization', `Bearer ${ada.token}`);
+    expect(member.status).toBe(403);
+    expect(member.body.message).toBe('Admin access required');
+
+    await User.updateOne({ _id: ada.userId }, { $set: { role: 'admin' } });
+    const self = await request(app)
+      .get(`/api/admin/users/${ada.userId}`)
+      .set('Authorization', `Bearer ${ada.token}`);
+    expect(self.status).toBe(200);
+    expect(self.body.email).toBe('ada@example.com');
+    expect(self.body.plans).toEqual([]);
+
+    const missing = await request(app)
+      .get('/api/admin/users/does-not-exist')
+      .set('Authorization', `Bearer ${ada.token}`);
+    expect(missing.status).toBe(404);
+    expect(missing.body.message).toBe('User not found');
+  });
+});

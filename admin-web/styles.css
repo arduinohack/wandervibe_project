@@ -116,6 +116,7 @@ header {
     width: 100%;
     max-width: 100%;
     box-sizing: border-box;
+    overflow-x: auto;
   }
 
   #logs-form,
@@ -158,8 +159,21 @@ h1 {
 }
 
 .logs-heading .user-picker {
-  flex: 0 1 auto;
+  flex: 1 1 42ch;
+  min-width: 0;
+  max-width: 100%;
   margin-left: auto;
+}
+
+.logs-heading .user-picker-field > label {
+  flex: 1 1 42ch;
+  min-width: 0;
+}
+
+#admin-account-filter {
+  width: 100%;
+  min-width: 0;
+  overflow-x: auto;
 }
 
 section {
@@ -238,12 +252,6 @@ th, td {
   border-bottom: 1px solid #e4ddd2;
 }
 
-.log-id {
-  margin-top: 0.15rem;
-  font-size: 0.85em;
-  color: #6b645c;
-}
-
 th {
   font-family: inherit;
   font-size: inherit;
@@ -306,6 +314,22 @@ p[role="alert"],
   padding-left: 1.2rem;
 }
 
+.explorer-fields {
+  display: grid;
+  grid-template-columns: 8.5rem 1fr;
+  gap: 0.2rem 0.75rem;
+  margin: 0 0 0.8rem;
+}
+
+.explorer-fields dt {
+  margin: 0;
+  font-weight: 600;
+}
+
+.explorer-fields dd {
+  margin: 0;
+}
+
 #filter-event {
   width: 18rem;
   max-width: 100%;
@@ -329,6 +353,37 @@ p[role="alert"],
   background: transparent;
   color: #1c1915;
   border-color: #1c1915;
+}
+
+.filter-clearable {
+  position: relative;
+  display: block;
+}
+
+.filter-clearable input {
+  width: 100%;
+  box-sizing: border-box;
+  padding-right: 1.75rem;
+}
+
+.filter-clear {
+  position: absolute;
+  top: 50%;
+  right: 0.3rem;
+  transform: translateY(-50%);
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #1c1915;
+  line-height: 1;
+}
+
+.filter-clear:hover {
+  background: transparent;
+  color: #1c1915;
 }
 
 .plan-menu {

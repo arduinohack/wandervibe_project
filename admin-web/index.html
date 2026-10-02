@@ -38,10 +38,12 @@
           <h2>Support logs</h2>
           <div class="user-picker">
             <div class="user-picker-field">
-              <label>Find account
-                <input id="admin-account-filter" class="user-picker-query" type="text" name="admin-account-filter" autocomplete="off" spellcheck="false" data-lpignore="true" data-1p-ignore data-form-type="other">
+              <label>Account Filter
+                <span class="filter-clearable">
+                  <input id="admin-account-filter" class="user-picker-query" type="text" name="admin-account-filter" placeholder="Part of the address to filter on." autocomplete="off" spellcheck="false" data-lpignore="true" data-1p-ignore data-form-type="other">
+                  <button type="button" class="filter-clear" id="clear-account-filter" aria-label="Clear account filter">x</button>
+                </span>
               </label>
-              <button type="button" class="user-picker-clear">Clear</button>
               <ul class="user-picker-results" role="listbox" hidden></ul>
             </div>
             <p class="user-picker-chosen"></p>
@@ -54,7 +56,10 @@
             </select>
           </label>
           <label>Plan id
-            <input id="filter-plan" name="planId" type="text" autocomplete="off">
+            <span class="filter-clearable">
+              <input id="filter-plan" name="planId" type="text" autocomplete="off" spellcheck="false" data-lpignore="true" data-1p-ignore data-form-type="other">
+              <button type="button" class="filter-clear" id="clear-plan-filter" aria-label="Clear plan id">x</button>
+            </span>
           </label>
           <button type="submit">Load logs</button>
         </form>
@@ -66,12 +71,33 @@
                 <th id="created-at-header">createdAt</th>
                 <th>event</th>
                 <th>level</th>
-                <th>User</th>
+                <th>Account Email</th>
                 <th>Plan</th>
                 <th>message</th>
               </tr>
             </thead>
             <tbody id="logs-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="explorer" hidden>
+        <h2>Explorer</h2>
+        <p id="explorer-status" role="status"></p>
+        <dl id="explorer-fields" class="explorer-fields"></dl>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Role</th>
+                <th>Start</th>
+                <th>End</th>
+                <th>Plan id</th>
+              </tr>
+            </thead>
+            <tbody id="explorer-plans"></tbody>
           </table>
         </div>
       </section>

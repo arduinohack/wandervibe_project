@@ -42,34 +42,35 @@ const ZONE_CHOICES = [
   'Europe/London',
 ];
 
-// SupportLog event strings the mounted API already writes. Product names are
-// PlanCreated and UserDeleted. The rest are request-log "METHOD route" values.
-// There is no distinct-events route; rows can add names after a successful load.
+// SupportLog event strings the mounted API already writes. Activity routes use
+// /api/activities. PlanCreated and UserDeleted stay. A loaded row can still add
+// an older name such as POST /api/events. Stored rows are not rewritten.
 const KNOWN_EVENTS = [
+  'DELETE /api/activities/:id',
   'DELETE /api/admin/users/:userId',
-  'DELETE /api/events/:id',
+  'GET /api/activities/:id/history',
+  'GET /api/activities/plan/:planId',
   'GET /api/admin/users',
-  'GET /api/events/:id/history',
-  'GET /api/events/plan/:planId',
+  'GET /api/admin/users/:userId',
   'GET /api/invites',
   'GET /api/plans',
   'GET /api/plans/:planId/itinerary',
   'GET /api/plans/:planId/users',
   'PATCH /api/auth/users/:userId',
+  'POST /api/activities',
+  'POST /api/activities/:id/restore',
   'POST /api/auth/forgot-password',
   'POST /api/auth/login',
   'POST /api/auth/logout',
   'POST /api/auth/register',
   'POST /api/auth/reset-password',
   'POST /api/auth/verify-token',
-  'POST /api/events',
-  'POST /api/events/:id/restore',
   'POST /api/invites/invitations/:invitationId/respond',
   'POST /api/plans',
   'POST /api/plans/:planId/invite',
   'POST /api/plans/:planId/reassign-coordinator',
   'POST /api/plans/:planId/remove-user',
-  'PUT /api/events/:id',
+  'PUT /api/activities/:id',
   'PlanCreated',
   'UserDeleted',
 ];
@@ -93,10 +94,13 @@ const loginBanner = document.getElementById('login-banner');
 let loadedLogs = [];
 let selectedUserId = '';
 let selectedUserEmail = '';
+let logUserId = '';
+let explorerSeq = 0;
 let userSearchTimer = 0;
 let userSearchSeq = 0;
 let eventOptions = KNOWN_EVENTS.slice();
 let planMenu = null;
+let accountMenu = null;
 
 function token() {
   return sessionStorage.getItem(TOKEN_KEY) || '';
@@ -375,6 +379,9 @@ const MESSAGE_OVERRIDES = {
   'GET /api/admin/users': {
     200: 'Account search',
   },
+  'GET /api/admin/users/:userId': {
+    200: 'Opened account',
+  },
   'DELETE /api/admin/users/:userId': {
     409: 'Delete blocked',
   },
@@ -473,6 +480,7 @@ function clearSelectedUser() {
   userSearchSeq += 1;
   selectedUserId = '';
   selectedUserEmail = '';
+  logUserId = '';
   const idField = document.getElementById('delete-user-id');
   if (idField) idField.value = '';
   for (const input of document.querySelectorAll('.user-picker-query')) input.value = '';
@@ -492,6 +500,7 @@ function showPickerNote(list, text) {
 function chooseUser(user) {
   selectedUserId = user && user._id != null ? String(user._id) : '';
   selectedUserEmail = user && user.email != null ? String(user.email) : '';
+  logUserId = selectedUserId;
   document.getElementById('delete-user-id').value = selectedUserId;
   for (const input of document.querySelectorAll('.user-picker-query')) input.value = selectedUserEmail;
   const label = selectedUserEmail ? `Selected ${selectedUserEmail}` : '';
@@ -540,7 +549,10 @@ async function searchUsers(input, q) {
     button.setAttribute('role', 'option');
     const name = [user.firstName, user.lastName].filter(Boolean).join(' ');
     button.textContent = name ? `${user.email} — ${name}` : String(user.email || '');
-    button.addEventListener('click', () => chooseUser(user));
+    button.addEventListener('click', () => {
+      chooseUser(user);
+      if (input.id === 'admin-account-filter') openExplorer(user && user._id);
+    });
     item.appendChild(button);
     list.appendChild(item);
   }
@@ -563,6 +575,7 @@ for (const input of document.querySelectorAll('.user-picker-query')) {
   input.addEventListener('input', () => {
     selectedUserId = '';
     selectedUserEmail = '';
+    logUserId = '';
     document.getElementById('delete-user-id').value = '';
     for (const chosen of document.querySelectorAll('.user-picker-chosen')) chosen.textContent = '';
     for (const other of document.querySelectorAll('.user-picker-query')) {
@@ -576,19 +589,173 @@ for (const button of document.querySelectorAll('.user-picker-clear')) {
   button.addEventListener('click', () => clearSelectedUser());
 }
 
+document.getElementById('clear-account-filter').addEventListener('click', (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+  clearTimeout(userSearchTimer);
+  userSearchSeq += 1;
+  logUserId = '';
+  const account = document.getElementById('admin-account-filter');
+  if (account) account.value = '';
+  const picker = account && account.closest('.user-picker');
+  if (picker) {
+    const chosen = picker.querySelector('.user-picker-chosen');
+    if (chosen) chosen.textContent = '';
+    const list = picker.querySelector('.user-picker-results');
+    if (list) {
+      list.hidden = true;
+      list.replaceChildren();
+    }
+  }
+});
+
+document.getElementById('clear-plan-filter').addEventListener('click', (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+  document.getElementById('filter-plan').value = '';
+});
+
+function loadLogsOnEnter(event) {
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  loadLogs();
+}
+
+document.getElementById('admin-account-filter').addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  clearTimeout(userSearchTimer);
+  userSearchSeq += 1;
+  const picker = event.target.closest('.user-picker');
+  const list = picker && picker.querySelector('.user-picker-results');
+  if (list) {
+    list.hidden = true;
+    list.replaceChildren();
+  }
+  loadLogs();
+});
+
+document.getElementById('filter-plan').addEventListener('keydown', loadLogsOnEnter);
+
 document.addEventListener('pointerdown', (event) => {
   if (planMenu && !planMenu.contains(event.target)) closePlanMenu();
+  if (accountMenu && !accountMenu.contains(event.target)) closeAccountMenu();
   if (event.target.closest('.user-picker')) return;
   hideUserResults();
 });
 
 document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape') closePlanMenu();
+  if (event.key === 'Escape') {
+    closePlanMenu();
+    closeAccountMenu();
+  }
 });
+
+function clearExplorer() {
+  explorerSeq += 1;
+  const section = document.getElementById('explorer');
+  const status = document.getElementById('explorer-status');
+  const fields = document.getElementById('explorer-fields');
+  const plans = document.getElementById('explorer-plans');
+  if (section) section.hidden = true;
+  if (status) status.textContent = '';
+  if (fields) fields.replaceChildren();
+  if (plans) plans.replaceChildren();
+}
+
+function explorerDate(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function renderExplorer(account) {
+  const fields = document.getElementById('explorer-fields');
+  const plansBody = document.getElementById('explorer-plans');
+  const rows = [
+    ['Email', account.email],
+    ['First name', account.firstName],
+    ['Last name', account.lastName],
+    ['Phone', account.phoneNumber],
+    ['Role', account.role],
+  ];
+  fields.replaceChildren();
+  for (const [label, value] of rows) {
+    const term = document.createElement('dt');
+    term.textContent = label;
+    const detail = document.createElement('dd');
+    detail.textContent = value == null ? '' : String(value);
+    fields.append(term, detail);
+  }
+  plansBody.replaceChildren();
+  const plans = Array.isArray(account.plans) ? account.plans : [];
+  for (const plan of plans) {
+    const row = document.createElement('tr');
+    for (const value of [
+      plan.name,
+      plan.type,
+      plan.role,
+      explorerDate(plan.startDate),
+      explorerDate(plan.endDate),
+      plan._id,
+    ]) {
+      const cell = document.createElement('td');
+      cell.textContent = value == null ? '' : String(value);
+      row.appendChild(cell);
+    }
+    plansBody.appendChild(row);
+  }
+}
+
+async function openExplorer(userId) {
+  const id = userId == null ? '' : String(userId);
+  const section = document.getElementById('explorer');
+  const status = document.getElementById('explorer-status');
+  const fields = document.getElementById('explorer-fields');
+  const plansBody = document.getElementById('explorer-plans');
+  if (!section || !id) return;
+  const seq = ++explorerSeq;
+  section.hidden = false;
+  status.textContent = 'Loading account.';
+  fields.replaceChildren();
+  plansBody.replaceChildren();
+  let response;
+  try {
+    response = await fetch(`${API}/api/admin/users/${encodeURIComponent(id)}`, {
+      headers: authHeaders(),
+    });
+  } catch (err) {
+    if (seq !== explorerSeq) return;
+    status.textContent = 'Could not reach the API.';
+    return;
+  }
+  if (seq !== explorerSeq) return;
+  const body = await readBody(response);
+  if (seq !== explorerSeq) return;
+  if (response.status === 401) {
+    clearToken();
+    clearSelectedUser();
+    clearExplorer();
+    showLoggedIn(false);
+    loginError.textContent = messageFrom(body, 'Login expired.');
+    return;
+  }
+  if (!response.ok) {
+    status.textContent = messageFrom(body, 'Could not open this account.');
+    return;
+  }
+  status.textContent = Array.isArray(body.plans) && body.plans.length ? '' : 'No plans.';
+  renderExplorer(body);
+}
 
 logoutButton.addEventListener('click', () => {
   clearToken();
   clearSelectedUser();
+  clearExplorer();
   loadedLogs = [];
   logsBody.replaceChildren();
   logsStatus.textContent = '';
@@ -675,17 +842,18 @@ function closePlanMenu() {
   planMenu = null;
 }
 
-function copyPlanId(planId) {
+function copyText(value) {
+  const text = String(value);
   if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(planId).catch(() => copyPlanIdFallback(planId));
+    navigator.clipboard.writeText(text).catch(() => copyTextFallback(text));
     return;
   }
-  copyPlanIdFallback(planId);
+  copyTextFallback(text);
 }
 
-function copyPlanIdFallback(planId) {
+function copyTextFallback(text) {
   const area = document.createElement('textarea');
-  area.value = planId;
+  area.value = text;
   area.setAttribute('readonly', '');
   area.style.position = 'fixed';
   area.style.top = '0';
@@ -699,7 +867,71 @@ function copyPlanIdFallback(planId) {
   area.remove();
 }
 
+function copyPlanId(planId) {
+  copyText(planId);
+}
+
+function closeAccountMenu() {
+  if (!accountMenu) return;
+  accountMenu.remove();
+  accountMenu = null;
+}
+
+function placeContextMenu(menu, x, y) {
+  document.body.appendChild(menu);
+  const rect = menu.getBoundingClientRect();
+  const left = Math.max(8, Math.min(x, window.innerWidth - rect.width - 8));
+  const top = Math.max(8, Math.min(y, window.innerHeight - rect.height - 8));
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+}
+
+function openAccountMenu(x, y, email, actorUserId) {
+  closePlanMenu();
+  closeAccountMenu();
+  const menu = document.createElement('ul');
+  menu.className = 'plan-menu';
+  menu.setAttribute('role', 'menu');
+  const actions = [
+    ['Set account filter', () => {
+      clearTimeout(userSearchTimer);
+      userSearchSeq += 1;
+      logUserId = actorUserId;
+      const input = document.getElementById('admin-account-filter');
+      if (input) input.value = email;
+      const picker = input && input.closest('.user-picker');
+      if (picker) {
+        const chosen = picker.querySelector('.user-picker-chosen');
+        if (chosen) chosen.textContent = email ? `Selected ${email}` : '';
+        const list = picker.querySelector('.user-picker-results');
+        if (list) {
+          list.hidden = true;
+          list.replaceChildren();
+        }
+      }
+      closeAccountMenu();
+    }],
+    ['Copy email', () => {
+      copyText(email);
+      closeAccountMenu();
+    }],
+  ];
+  for (const [label, onClick] of actions) {
+    const item = document.createElement('li');
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.setAttribute('role', 'menuitem');
+    button.textContent = label;
+    button.addEventListener('click', onClick);
+    item.appendChild(button);
+    menu.appendChild(item);
+  }
+  placeContextMenu(menu, x, y);
+  accountMenu = menu;
+}
+
 function openPlanMenu(x, y, planId) {
+  closeAccountMenu();
   closePlanMenu();
   const menu = document.createElement('ul');
   menu.className = 'plan-menu';
@@ -725,17 +957,13 @@ function openPlanMenu(x, y, planId) {
     item.appendChild(button);
     menu.appendChild(item);
   }
-  document.body.appendChild(menu);
-  const rect = menu.getBoundingClientRect();
-  const left = Math.max(8, Math.min(x, window.innerWidth - rect.width - 8));
-  const top = Math.max(8, Math.min(y, window.innerHeight - rect.height - 8));
-  menu.style.left = `${left}px`;
-  menu.style.top = `${top}px`;
+  placeContextMenu(menu, x, y);
   planMenu = menu;
 }
 
 async function loadLogs() {
   closePlanMenu();
+  closeAccountMenu();
   logsStatus.classList.remove('is-error');
   logsStatus.textContent = '';
   logsBody.replaceChildren();
@@ -744,7 +972,7 @@ async function loadLogs() {
   const planId = document.getElementById('filter-plan').value.trim();
   if (eventName) params.set('event', eventName);
   if (planId) params.set('planId', planId);
-  if (selectedUserId) params.set('userId', selectedUserId);
+  if (logUserId) params.set('userId', logUserId);
   const query = params.toString();
   const url = `${API}/api/admin/logs${query ? `?${query}` : ''}`;
   let response;
@@ -776,18 +1004,27 @@ function cellText(value) {
   return value == null ? '' : String(value);
 }
 
+function appendAccountCell(tr, email, actorUserId) {
+  const cell = document.createElement('td');
+  const label = cellText(email).trim();
+  cell.textContent = cellText(email);
+  const id = cellText(actorUserId).trim();
+  if (id) cell.title = id;
+  if (label) {
+    cell.addEventListener('contextmenu', (menuEvent) => {
+      menuEvent.preventDefault();
+      openAccountMenu(menuEvent.clientX, menuEvent.clientY, label, id);
+    });
+  }
+  tr.appendChild(cell);
+}
+
 function appendNamedIdCell(tr, name, idValue, onContextMenu) {
   const cell = document.createElement('td');
-  const label = document.createElement('div');
-  label.textContent = cellText(name);
-  cell.appendChild(label);
+  cell.textContent = cellText(name);
   const id = cellText(idValue).trim();
   if (id) {
     cell.title = id;
-    const secondary = document.createElement('div');
-    secondary.className = 'log-id';
-    secondary.textContent = id;
-    cell.appendChild(secondary);
     if (onContextMenu) {
       cell.addEventListener('contextmenu', (menuEvent) => {
         menuEvent.preventDefault();
@@ -808,13 +1045,17 @@ function renderLogs(logs) {
   logsStatus.textContent = '';
   for (const row of logs) {
     const tr = document.createElement('tr');
+    const actorUserId = cellText(row.actorUserId).trim();
+    const planId = cellText(row.planId).trim();
+    if (actorUserId) tr.dataset.actorUserId = actorUserId;
+    if (planId) tr.dataset.planId = planId;
     for (const key of ['createdAt', 'event', 'level']) {
       const cell = document.createElement('td');
       const value = row[key];
       cell.textContent = key === 'createdAt' ? formatCreatedAt(value) : cellText(value);
       tr.appendChild(cell);
     }
-    appendNamedIdCell(tr, row.actorEmail, row.actorUserId);
+    appendAccountCell(tr, row.actorEmail, row.actorUserId);
     appendNamedIdCell(tr, row.planName, row.planId, (menuEvent, planId) => {
       openPlanMenu(menuEvent.clientX, menuEvent.clientY, planId);
     });
