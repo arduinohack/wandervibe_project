@@ -9,6 +9,7 @@ const app = require('../app');
 const User = require('../models/User');
 const Plan = require('../models/Plan');
 const PlanUser = require('../models/PlanUser');
+const { Event } = require('../models/Event');
 const SupportLog = require('../models/SupportLog');
 const { shouldSkipRequestLog } = require('../middleware/requestLog');
 
@@ -56,6 +57,7 @@ afterEach(async () => {
     User.deleteMany({}),
     Plan.deleteMany({}),
     PlanUser.deleteMany({}),
+    Event.deleteMany({}),
     SupportLog.deleteMany({}),
   ]);
 });
@@ -609,5 +611,168 @@ describe('admin user explorer', () => {
       .set('Authorization', `Bearer ${ada.token}`);
     expect(missing.status).toBe(404);
     expect(missing.body.message).toBe('User not found');
+  });
+});
+
+describe('admin plan explorer', () => {
+  test('an admin sees the plan, its members, and its activities', async () => {
+    const ada = await registerAndLogin();
+    await User.updateOne({ _id: ada.userId }, { $set: { role: 'admin' } });
+    const grace = await User.create({
+      firstName: 'Grace',
+      lastName: 'Hopper',
+      email: 'grace@example.com',
+      password: 'password1',
+      role: 'member',
+      resetToken: 'reset-secret',
+    });
+    const graceId = String(grace._id);
+
+    await Plan.create({
+      _id: 'plan-paris',
+      type: 'trip',
+      name: 'Paris',
+      destination: 'Paris',
+      startDate: new Date('2026-06-01T00:00:00.000Z'),
+      endDate: new Date('2026-06-08T00:00:00.000Z'),
+      timeZone: 'Europe/Paris',
+      ownerId: ada.userId,
+    });
+    await PlanUser.create({ planId: 'plan-paris', userId: ada.userId, role: 'Owner' });
+    await PlanUser.create({ planId: 'plan-paris', userId: graceId, role: 'Guest' });
+    await Event.create({
+      _id: 'act-late',
+      name: 'Dinner',
+      type: 'dining',
+      planId: 'plan-paris',
+      ownerId: ada.userId,
+      startTime: new Date('2026-06-02T19:00:00.000Z'),
+    });
+    await Event.create({
+      _id: 'act-early',
+      name: 'Train',
+      type: 'train',
+      planId: 'plan-paris',
+      ownerId: ada.userId,
+      startTime: new Date('2026-06-01T08:00:00.000Z'),
+    });
+    await Event.create({
+      _id: 'act-other',
+      name: 'Elsewhere',
+      type: 'tour',
+      planId: 'plan-rome',
+      ownerId: ada.userId,
+      startTime: new Date('2026-06-01T07:00:00.000Z'),
+    });
+
+    await Plan.create({
+      _id: 'plan-lisbon',
+      type: 'trip',
+      name: 'Lisbon',
+      destination: 'Lisbon',
+      ownerId: graceId,
+    });
+
+    const found = await request(app)
+      .get('/api/admin/plans/plan-paris')
+      .set('Authorization', `Bearer ${ada.token}`);
+    expect(found.status).toBe(200);
+    expect(Object.keys(found.body).sort()).toEqual([
+      '_id',
+      'activities',
+      'destination',
+      'endDate',
+      'members',
+      'name',
+      'startDate',
+      'timeZone',
+      'type',
+    ]);
+    expect(found.body).toMatchObject({
+      _id: 'plan-paris',
+      name: 'Paris',
+      type: 'trip',
+      destination: 'Paris',
+      startDate: '2026-06-01T00:00:00.000Z',
+      endDate: '2026-06-08T00:00:00.000Z',
+      timeZone: 'Europe/Paris',
+    });
+    expect(found.body.password).toBeUndefined();
+    expect(found.body.token).toBeUndefined();
+    expect(JSON.stringify(found.body)).not.toContain('password1');
+    expect(JSON.stringify(found.body)).not.toContain('reset-secret');
+    expect(JSON.stringify(found.body)).not.toContain(ada.token);
+
+    expect(found.body.members.map((member) => member.email)).toEqual([
+      'ada@example.com',
+      'grace@example.com',
+    ]);
+    expect(Object.keys(found.body.members[0]).sort()).toEqual([
+      'email',
+      'firstName',
+      'lastName',
+      'role',
+    ]);
+    expect(found.body.members[0]).toMatchObject({
+      email: 'ada@example.com',
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      role: 'Owner',
+    });
+    expect(found.body.members[1]).toMatchObject({
+      email: 'grace@example.com',
+      firstName: 'Grace',
+      lastName: 'Hopper',
+      role: 'Guest',
+    });
+
+    expect(found.body.activities.map((activity) => activity._id)).toEqual(['act-early', 'act-late']);
+    expect(Object.keys(found.body.activities[0]).sort()).toEqual(['_id', 'name', 'startTime', 'type']);
+    expect(found.body.activities[0]).toMatchObject({
+      _id: 'act-early',
+      name: 'Train',
+      type: 'train',
+      startTime: '2026-06-01T08:00:00.000Z',
+    });
+    expect(found.body.activities[1]).toMatchObject({
+      name: 'Dinner',
+      type: 'dining',
+      startTime: '2026-06-02T19:00:00.000Z',
+    });
+
+    const ownedOnly = await request(app)
+      .get('/api/admin/plans/plan-lisbon')
+      .set('Authorization', `Bearer ${ada.token}`);
+    expect(ownedOnly.status).toBe(200);
+    expect(ownedOnly.body.members).toEqual([
+      expect.objectContaining({
+        email: 'grace@example.com',
+        firstName: 'Grace',
+        lastName: 'Hopper',
+        role: 'Owner',
+      }),
+    ]);
+    expect(ownedOnly.body.activities).toEqual([]);
+  });
+
+  test('plan explorer allows an admin, rejects a member, and 404s an unknown id', async () => {
+    const ada = await registerAndLogin();
+
+    const anon = await request(app).get('/api/admin/plans/plan-paris');
+    expect(anon.status).toBe(401);
+    expect(anon.body.message).toBe('No token, authorization denied');
+
+    const member = await request(app)
+      .get('/api/admin/plans/plan-paris')
+      .set('Authorization', `Bearer ${ada.token}`);
+    expect(member.status).toBe(403);
+    expect(member.body.message).toBe('Admin access required');
+
+    await User.updateOne({ _id: ada.userId }, { $set: { role: 'admin' } });
+    const missing = await request(app)
+      .get('/api/admin/plans/does-not-exist')
+      .set('Authorization', `Bearer ${ada.token}`);
+    expect(missing.status).toBe(404);
+    expect(missing.body.message).toBe('Plan not found');
   });
 });

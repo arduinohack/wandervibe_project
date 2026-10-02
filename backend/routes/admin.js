@@ -100,6 +100,88 @@ router.get('/users/:userId', async (req, res) => {
   }
 });
 
+function isoOrNull(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString();
+}
+
+// Read-only plan. PlanUser.role is the stored membership. ownerId with no row is Owner.
+router.get('/plans/:planId', async (req, res) => {
+  try {
+    const planId = String(req.params.planId || '');
+    const plan = await Plan.findById(planId)
+      .select('name type destination startDate endDate timeZone ownerId')
+      .lean();
+    if (!plan) {
+      return res.status(404).json({ message: 'Plan not found' });
+    }
+
+    const memberships = await PlanUser.find({ planId }).select('userId role').lean();
+    const memberIds = [];
+    const roleByUser = new Map();
+    for (const row of memberships) {
+      const id = String(row.userId || '');
+      if (!id || roleByUser.has(id)) continue;
+      roleByUser.set(id, row.role || '');
+      memberIds.push(id);
+    }
+    const ownerId = String(plan.ownerId || '');
+    if (ownerId && !roleByUser.has(ownerId)) {
+      roleByUser.set(ownerId, 'Owner');
+      memberIds.push(ownerId);
+    }
+
+    const [users, activities] = await Promise.all([
+      memberIds.length
+        ? User.find({ _id: { $in: memberIds } }).select('email firstName lastName').lean()
+        : [],
+      Event.find({ planId }).select('name type startTime').lean(),
+    ]);
+    const userById = new Map(users.map((user) => [String(user._id), user]));
+    const members = memberIds
+      .map((id) => {
+        const user = userById.get(id);
+        return {
+          email: (user && user.email) || '',
+          firstName: (user && user.firstName) || '',
+          lastName: (user && user.lastName) || '',
+          role: roleByUser.get(id) || '',
+        };
+      })
+      .sort((a, b) => a.email.localeCompare(b.email) || a.role.localeCompare(b.role));
+
+    const listedActivities = activities
+      .map((activity) => ({
+        _id: String(activity._id),
+        name: activity.name || '',
+        type: activity.type || '',
+        startTime: isoOrNull(activity.startTime),
+      }))
+      .sort((a, b) => {
+        if (a.startTime === b.startTime) return a._id.localeCompare(b._id);
+        if (!a.startTime) return 1;
+        if (!b.startTime) return -1;
+        return a.startTime < b.startTime ? -1 : 1;
+      });
+
+    res.json({
+      _id: String(plan._id),
+      name: plan.name || '',
+      type: plan.type || '',
+      destination: plan.destination || '',
+      startDate: isoOrNull(plan.startDate),
+      endDate: isoOrNull(plan.endDate),
+      timeZone: plan.timeZone || '',
+      members,
+      activities: listedActivities,
+    });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 router.get('/logs', async (req, res) => {
   try {
     const query = {};

@@ -50,6 +50,7 @@ const KNOWN_EVENTS = [
   'DELETE /api/admin/users/:userId',
   'GET /api/activities/:id/history',
   'GET /api/activities/plan/:planId',
+  'GET /api/admin/plans/:planId',
   'GET /api/admin/users',
   'GET /api/admin/users/:userId',
   'GET /api/invites',
@@ -96,6 +97,7 @@ let selectedUserId = '';
 let selectedUserEmail = '';
 let logUserId = '';
 let explorerSeq = 0;
+let planExplorerSeq = 0;
 let userSearchTimer = 0;
 let userSearchSeq = 0;
 let eventOptions = KNOWN_EVENTS.slice();
@@ -382,6 +384,9 @@ const MESSAGE_OVERRIDES = {
   'GET /api/admin/users/:userId': {
     200: 'Opened account',
   },
+  'GET /api/admin/plans/:planId': {
+    200: 'Opened plan',
+  },
   'DELETE /api/admin/users/:userId': {
     409: 'Delete blocked',
   },
@@ -497,15 +502,61 @@ function showPickerNote(list, text) {
   list.hidden = false;
 }
 
-function chooseUser(user) {
-  selectedUserId = user && user._id != null ? String(user._id) : '';
-  selectedUserEmail = user && user.email != null ? String(user.email) : '';
-  logUserId = selectedUserId;
+function userIdOf(user) {
+  return user && user._id != null ? String(user._id) : '';
+}
+
+function userEmailOf(user) {
+  return user && user.email != null ? String(user.email) : '';
+}
+
+function setPickerChoice(input, email) {
+  if (input) input.value = email;
+  const picker = input && input.closest('.user-picker');
+  if (!picker) return;
+  const chosen = picker.querySelector('.user-picker-chosen');
+  if (chosen) chosen.textContent = email ? `Selected ${email}` : '';
+  const list = picker.querySelector('.user-picker-results');
+  if (list) {
+    list.hidden = true;
+    list.replaceChildren();
+  }
+}
+
+function chooseAccountFilter(user) {
+  const id = userIdOf(user);
+  const email = userEmailOf(user);
+  logUserId = id;
+  setPickerChoice(document.getElementById('admin-account-filter'), email);
+  openExplorer(id);
+}
+
+function chooseDeleteUser(user) {
+  selectedUserId = userIdOf(user);
+  selectedUserEmail = userEmailOf(user);
   document.getElementById('delete-user-id').value = selectedUserId;
-  for (const input of document.querySelectorAll('.user-picker-query')) input.value = selectedUserEmail;
-  const label = selectedUserEmail ? `Selected ${selectedUserEmail}` : '';
-  for (const chosen of document.querySelectorAll('.user-picker-chosen')) chosen.textContent = label;
-  hideUserResults();
+  setPickerChoice(document.getElementById('admin-account-delete'), selectedUserEmail);
+}
+
+function clearDeleteSelection() {
+  clearTimeout(userSearchTimer);
+  userSearchSeq += 1;
+  selectedUserId = '';
+  selectedUserEmail = '';
+  const idField = document.getElementById('delete-user-id');
+  if (idField) idField.value = '';
+  const input = document.getElementById('admin-account-delete');
+  if (input) input.value = '';
+  const picker = input && input.closest('.user-picker');
+  if (picker) {
+    const chosen = picker.querySelector('.user-picker-chosen');
+    if (chosen) chosen.textContent = '';
+    const list = picker.querySelector('.user-picker-results');
+    if (list) {
+      list.hidden = true;
+      list.replaceChildren();
+    }
+  }
 }
 
 async function searchUsers(input, q) {
@@ -528,6 +579,7 @@ async function searchUsers(input, q) {
   if (response.status === 401) {
     clearToken();
     clearSelectedUser();
+    clearExplorer();
     showLoggedIn(false);
     loginError.textContent = messageFrom(body, 'Login expired.');
     return;
@@ -550,8 +602,8 @@ async function searchUsers(input, q) {
     const name = [user.firstName, user.lastName].filter(Boolean).join(' ');
     button.textContent = name ? `${user.email} — ${name}` : String(user.email || '');
     button.addEventListener('click', () => {
-      chooseUser(user);
-      if (input.id === 'admin-account-filter') openExplorer(user && user._id);
+      if (input.id === 'admin-account-filter') chooseAccountFilter(user);
+      else chooseDeleteUser(user);
     });
     item.appendChild(button);
     list.appendChild(item);
@@ -573,20 +625,23 @@ function scheduleUserSearch(input) {
 
 for (const input of document.querySelectorAll('.user-picker-query')) {
   input.addEventListener('input', () => {
-    selectedUserId = '';
-    selectedUserEmail = '';
-    logUserId = '';
-    document.getElementById('delete-user-id').value = '';
-    for (const chosen of document.querySelectorAll('.user-picker-chosen')) chosen.textContent = '';
-    for (const other of document.querySelectorAll('.user-picker-query')) {
-      if (other !== input) other.value = '';
+    const picker = input.closest('.user-picker');
+    const chosen = picker && picker.querySelector('.user-picker-chosen');
+    if (chosen) chosen.textContent = '';
+    if (input.id === 'admin-account-filter') {
+      logUserId = '';
+    } else {
+      selectedUserId = '';
+      selectedUserEmail = '';
+      const idField = document.getElementById('delete-user-id');
+      if (idField) idField.value = '';
     }
     scheduleUserSearch(input);
   });
 }
 
 for (const button of document.querySelectorAll('.user-picker-clear')) {
-  button.addEventListener('click', () => clearSelectedUser());
+  button.addEventListener('click', () => clearDeleteSelection());
 }
 
 document.getElementById('clear-account-filter').addEventListener('click', (event) => {
@@ -645,23 +700,79 @@ document.addEventListener('pointerdown', (event) => {
 });
 
 document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape') {
-    closePlanMenu();
-    closeAccountMenu();
+  if (event.key !== 'Escape') return;
+  const planDialog = document.getElementById('plan-dialog');
+  if (planDialog && planDialog.open) {
+    event.preventDefault();
+    planDialog.close();
+    return;
   }
+  const dialog = document.getElementById('explorer-dialog');
+  if (dialog && dialog.open) {
+    event.preventDefault();
+    dialog.close();
+    return;
+  }
+  closePlanMenu();
+  closeAccountMenu();
 });
 
-function clearExplorer() {
-  explorerSeq += 1;
-  const section = document.getElementById('explorer');
+function clearExplorerFields() {
   const status = document.getElementById('explorer-status');
   const fields = document.getElementById('explorer-fields');
   const plans = document.getElementById('explorer-plans');
-  if (section) section.hidden = true;
   if (status) status.textContent = '';
   if (fields) fields.replaceChildren();
   if (plans) plans.replaceChildren();
 }
+
+function clearPlanExplorerFields() {
+  const status = document.getElementById('plan-dialog-status');
+  const fields = document.getElementById('plan-dialog-fields');
+  const members = document.getElementById('plan-dialog-members');
+  const activities = document.getElementById('plan-dialog-activities');
+  if (status) status.textContent = '';
+  if (fields) fields.replaceChildren();
+  if (members) members.replaceChildren();
+  if (activities) activities.replaceChildren();
+}
+
+function clearPlanExplorer() {
+  planExplorerSeq += 1;
+  const dialog = document.getElementById('plan-dialog');
+  if (dialog && dialog.open) dialog.close();
+  clearPlanExplorerFields();
+}
+
+function clearExplorer() {
+  clearPlanExplorer();
+  explorerSeq += 1;
+  const dialog = document.getElementById('explorer-dialog');
+  if (dialog && dialog.open) dialog.close();
+  clearExplorerFields();
+}
+
+document.getElementById('explorer-dialog').addEventListener('close', () => {
+  explorerSeq += 1;
+  clearExplorerFields();
+  const planDialog = document.getElementById('plan-dialog');
+  if (planDialog && planDialog.open) planDialog.close();
+});
+
+document.getElementById('explorer-close').addEventListener('click', () => {
+  const dialog = document.getElementById('explorer-dialog');
+  if (dialog && dialog.open) dialog.close();
+});
+
+document.getElementById('plan-dialog').addEventListener('close', () => {
+  planExplorerSeq += 1;
+  clearPlanExplorerFields();
+});
+
+document.getElementById('plan-dialog-close').addEventListener('click', () => {
+  const dialog = document.getElementById('plan-dialog');
+  if (dialog && dialog.open) dialog.close();
+});
 
 function explorerDate(value) {
   if (!value) return '';
@@ -694,7 +805,21 @@ function renderExplorer(account) {
   plansBody.replaceChildren();
   const plans = Array.isArray(account.plans) ? account.plans : [];
   for (const plan of plans) {
+    const planId = plan && plan._id != null ? String(plan._id) : '';
     const row = document.createElement('tr');
+    if (planId) {
+      row.className = 'explorer-plan-row';
+      row.tabIndex = 0;
+      row.setAttribute('role', 'button');
+      row.setAttribute('aria-label', `Open plan ${plan.name || planId}`);
+      const openPlan = () => openPlanExplorer(planId);
+      row.addEventListener('click', openPlan);
+      row.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        openPlan();
+      });
+    }
     for (const value of [
       plan.name,
       plan.type,
@@ -711,15 +836,119 @@ function renderExplorer(account) {
   }
 }
 
+function explorerDateTime(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  const hour = String(date.getUTCHours()).padStart(2, '0');
+  const minute = String(date.getUTCMinutes()).padStart(2, '0');
+  return `${year}-${month}-${day} ${hour}:${minute}`;
+}
+
+function renderPlanExplorer(plan) {
+  const fields = document.getElementById('plan-dialog-fields');
+  const membersBody = document.getElementById('plan-dialog-members');
+  const activitiesBody = document.getElementById('plan-dialog-activities');
+  const rows = [
+    ['Name', plan.name],
+    ['Type', plan.type],
+    ['Destination', plan.destination],
+    ['Start', explorerDate(plan.startDate)],
+    ['End', explorerDate(plan.endDate)],
+    ['Time zone', plan.timeZone],
+  ];
+  fields.replaceChildren();
+  for (const [label, value] of rows) {
+    const term = document.createElement('dt');
+    term.textContent = label;
+    const detail = document.createElement('dd');
+    detail.textContent = value == null ? '' : String(value);
+    fields.append(term, detail);
+  }
+  membersBody.replaceChildren();
+  const members = Array.isArray(plan.members) ? plan.members : [];
+  for (const member of members) {
+    const row = document.createElement('tr');
+    for (const value of [member.email, member.firstName, member.lastName, member.role]) {
+      const cell = document.createElement('td');
+      cell.textContent = value == null ? '' : String(value);
+      row.appendChild(cell);
+    }
+    membersBody.appendChild(row);
+  }
+  activitiesBody.replaceChildren();
+  const activities = Array.isArray(plan.activities) ? plan.activities : [];
+  for (const activity of activities) {
+    const row = document.createElement('tr');
+    for (const value of [activity.name, activity.type, explorerDateTime(activity.startTime)]) {
+      const cell = document.createElement('td');
+      cell.textContent = value == null ? '' : String(value);
+      row.appendChild(cell);
+    }
+    activitiesBody.appendChild(row);
+  }
+}
+
+async function openPlanExplorer(planId) {
+  const id = planId == null ? '' : String(planId);
+  const dialog = document.getElementById('plan-dialog');
+  const status = document.getElementById('plan-dialog-status');
+  const fields = document.getElementById('plan-dialog-fields');
+  const membersBody = document.getElementById('plan-dialog-members');
+  const activitiesBody = document.getElementById('plan-dialog-activities');
+  if (!dialog || !id) return;
+  const seq = ++planExplorerSeq;
+  if (!dialog.open) dialog.showModal();
+  status.textContent = 'Loading plan.';
+  fields.replaceChildren();
+  membersBody.replaceChildren();
+  activitiesBody.replaceChildren();
+  let response;
+  try {
+    response = await fetch(`${API}/api/admin/plans/${encodeURIComponent(id)}`, {
+      headers: authHeaders(),
+    });
+  } catch (err) {
+    if (seq !== planExplorerSeq) return;
+    status.textContent = 'Could not reach the API.';
+    return;
+  }
+  if (seq !== planExplorerSeq) return;
+  const body = await readBody(response);
+  if (seq !== planExplorerSeq) return;
+  if (response.status === 401) {
+    clearToken();
+    clearSelectedUser();
+    clearExplorer();
+    showLoggedIn(false);
+    loginError.textContent = messageFrom(body, 'Login expired.');
+    return;
+  }
+  if (!response.ok) {
+    status.textContent = messageFrom(body, 'Could not open this plan.');
+    return;
+  }
+  const memberCount = Array.isArray(body.members) ? body.members.length : 0;
+  const activityCount = Array.isArray(body.activities) ? body.activities.length : 0;
+  const notes = [];
+  if (!memberCount) notes.push('No members.');
+  if (!activityCount) notes.push('No activities.');
+  status.textContent = notes.join(' ');
+  renderPlanExplorer(body);
+}
+
 async function openExplorer(userId) {
   const id = userId == null ? '' : String(userId);
-  const section = document.getElementById('explorer');
+  const dialog = document.getElementById('explorer-dialog');
   const status = document.getElementById('explorer-status');
   const fields = document.getElementById('explorer-fields');
   const plansBody = document.getElementById('explorer-plans');
-  if (!section || !id) return;
+  if (!dialog || !id) return;
   const seq = ++explorerSeq;
-  section.hidden = false;
+  if (!dialog.open) dialog.showModal();
   status.textContent = 'Loading account.';
   fields.replaceChildren();
   plansBody.replaceChildren();
@@ -986,6 +1215,8 @@ async function loadLogs() {
   const body = await readBody(response);
   if (response.status === 401) {
     clearToken();
+    clearSelectedUser();
+    clearExplorer();
     showLoggedIn(false);
     loginError.textContent = messageFrom(body, 'Login expired.');
     return;
@@ -1098,6 +1329,8 @@ document.getElementById('delete-form').addEventListener('submit', async (event) 
   const body = await readBody(response);
   if (response.status === 401) {
     clearToken();
+    clearSelectedUser();
+    clearExplorer();
     showLoggedIn(false);
     loginError.textContent = messageFrom(body, 'Login expired.');
     return;
@@ -1117,7 +1350,7 @@ document.getElementById('delete-form').addEventListener('submit', async (event) 
   }
   if (response.status === 200 || response.status === 204) {
     deleteStatus.textContent = messageFrom(body, 'User deleted');
-    clearSelectedUser();
+    clearDeleteSelection();
     return;
   }
   deleteStatus.classList.add('is-error');

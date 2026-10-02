@@ -81,27 +81,6 @@
         </div>
       </section>
 
-      <section id="explorer" hidden>
-        <h2>Explorer</h2>
-        <p id="explorer-status" role="status"></p>
-        <dl id="explorer-fields" class="explorer-fields"></dl>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Type</th>
-                <th>Role</th>
-                <th>Start</th>
-                <th>End</th>
-                <th>Plan id</th>
-              </tr>
-            </thead>
-            <tbody id="explorer-plans"></tbody>
-          </table>
-        </div>
-      </section>
-
       <section>
         <h2>Delete user</h2>
         <form id="delete-form">
@@ -140,6 +119,64 @@
       </section>
     </div>
   </main>
+  <dialog id="explorer-dialog" aria-labelledby="explorer-title">
+    <div class="explorer-bar">
+      <h2 id="explorer-title">Explorer</h2>
+      <button type="button" id="explorer-close">Close</button>
+    </div>
+    <p id="explorer-status" role="status"></p>
+    <dl id="explorer-fields" class="explorer-fields"></dl>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Type</th>
+            <th>Role</th>
+            <th>Start</th>
+            <th>End</th>
+            <th>Plan id</th>
+          </tr>
+        </thead>
+        <tbody id="explorer-plans"></tbody>
+      </table>
+    </div>
+  </dialog>
+  <dialog id="plan-dialog" aria-labelledby="plan-dialog-title">
+    <div class="explorer-bar">
+      <h2 id="plan-dialog-title">Plan</h2>
+      <button type="button" id="plan-dialog-close">Close</button>
+    </div>
+    <p id="plan-dialog-status" role="status"></p>
+    <dl id="plan-dialog-fields" class="explorer-fields"></dl>
+    <h3>Members</h3>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Email</th>
+            <th>First name</th>
+            <th>Last name</th>
+            <th>Role</th>
+          </tr>
+        </thead>
+        <tbody id="plan-dialog-members"></tbody>
+      </table>
+    </div>
+    <h3>Activities</h3>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Type</th>
+            <th>Start</th>
+          </tr>
+        </thead>
+        <tbody id="plan-dialog-activities"></tbody>
+      </table>
+    </div>
+  </dialog>
   <script src="app.js"></script>
 </body>
 </html>
