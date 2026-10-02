@@ -21,6 +21,9 @@ async function logSupport(entry = {}) {
       level,
       event: entry.event,
       actorUserId: entry.actorUserId,
+      actorEmail: typeof entry.actorEmail === 'string' && entry.actorEmail.trim()
+        ? entry.actorEmail.trim()
+        : undefined,
       planId: entry.planId,
       eventId: entry.eventId,
       invitationId: entry.invitationId,

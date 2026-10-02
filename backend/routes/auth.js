@@ -8,11 +8,24 @@ const authMiddleware = require('../middleware/auth.js');  // Add this line for t
 const { v4: uuidv4 } = require('uuid');  // For reset token
 const { sendEmail, selectedProviderName } = require('../utils/email/sendEmail');
 
+function noteSupportAccount(req, { actorUserId, actorEmail } = {}) {
+  const noted = {};
+  if (actorUserId) noted.actorUserId = String(actorUserId);
+  if (typeof actorEmail === 'string' && actorEmail.trim()) noted.actorEmail = actorEmail.trim();
+  req.supportAccount = noted;
+}
+
+function submittedEmail(body) {
+  if (!body || typeof body.email !== 'string') return '';
+  return body.email.trim();
+}
+
 // POST /api/auth/login (Verifies email/password, returns token)
 router.post('/login', async (req, res) => {
   // This initial request for login does not use middleware
   const userId = req.user?.id ?? 'User ID not in request';
   const { email, password } = req.body;
+  const emailForLog = submittedEmail(req.body);
   logger.info('Login Request', {
     userId: userId,
     event: 'AuthLogin',
@@ -21,10 +34,11 @@ router.post('/login', async (req, res) => {
  
   // Validate required fields
   if (!email || !password) {
+    noteSupportAccount(req, { actorEmail: emailForLog });
     logger.error('Missing required fields: email, password', {
       userId: userId,
       event: 'AuthLogin',
-      context: { email: email, password: password }  // Sanitize sensitive data!
+      context: { email: email }
     });
     return res.status(400).json({ message: 'Missing required fields: email, password' });
   }
@@ -33,10 +47,11 @@ router.post('/login', async (req, res) => {
     // Find user
     const user = await User.findOne({ email });
     if (!user) {
+      noteSupportAccount(req, { actorEmail: emailForLog });
       logger.error('User Not Found', {
         userId: userId,
         event: 'AuthLogin',
-        context: { email: email }  // Sanitize sensitive data!
+        context: { email: email }
       });
       return res.status(400).json({ message: 'Invalid credentials' });
     }
@@ -44,10 +59,11 @@ router.post('/login', async (req, res) => {
     // Verify password (compare hashed)
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
+      noteSupportAccount(req, { actorUserId: user._id, actorEmail: user.email || emailForLog });
       logger.error('Password mismatch - invalid credentials', {
         userId: userId,
         event: 'AuthLogin',
-        context: { email: email }  // Sanitize sensitive data!
+        context: { email: email }
       });
       return res.status(400).json({ message: 'Invalid credentials' });
     }
@@ -62,6 +78,7 @@ router.post('/login', async (req, res) => {
     // Return token and user without password
     const userWithoutPassword = user.toObject();  // Convert to plain object
     delete userWithoutPassword.password;  // Hide password
+    noteSupportAccount(req, { actorUserId: user._id, actorEmail: user.email });
     res.status(200).json({ token, user: userWithoutPassword });
     logger.info('Login successful', {
       userId: user._id,
@@ -365,6 +382,13 @@ router.patch('/users/:userId', authMiddleware, async (req, res) => {
 
 // Logout endpoint: POST /api/auth/logout
 router.post('/logout', authMiddleware, async (req, res) => {
+  const actorUserId = String((req.user && (req.user.userId || req.user.id)) || '');
+  let actorEmail = '';
+  if (actorUserId) {
+    const account = await User.findById(actorUserId).select('email');
+    actorEmail = account && typeof account.email === 'string' ? account.email : '';
+  }
+  noteSupportAccount(req, { actorUserId, actorEmail });
   logger.info('At Logout', {
     userId: req.user.userId,
     event: 'AuthLogout',

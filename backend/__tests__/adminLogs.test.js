@@ -76,6 +76,109 @@ describe('support logs', () => {
     expect(loginRes.body.user.role).toBe('member');
   });
 
+  test('a successful login row stores actorEmail and no password', async () => {
+    const ada = await registerAndLogin();
+    await User.updateOne({ _id: ada.userId }, { $set: { role: 'admin' } });
+
+    expect(ada.loginRes.status).toBe(200);
+    expect(ada.loginRes.body.user.email).toBe('ada@example.com');
+    expect(await waitForCount({ event: 'POST /api/auth/login', message: '200' }, 1)).toBeGreaterThanOrEqual(1);
+
+    const listed = await request(app)
+      .get('/api/admin/logs')
+      .query({ event: 'POST /api/auth/login' })
+      .set('Authorization', `Bearer ${ada.token}`);
+    expect(listed.status).toBe(200);
+    const row = listed.body.logs.find((item) => item.message === '200');
+    expect(row).toEqual(expect.objectContaining({
+      event: 'POST /api/auth/login',
+      level: 'info',
+      message: '200',
+      actorUserId: ada.userId,
+      actorEmail: ada.loginRes.body.user.email,
+      planName: '',
+    }));
+    expect(row.password).toBeUndefined();
+    expect(row.extra).toEqual(expect.objectContaining({
+      method: 'POST',
+      path: '/api/auth/login',
+      statusCode: 200,
+    }));
+    expect(row.extra.password).toBeUndefined();
+    expect(row.extra.token).toBeUndefined();
+    expect(JSON.stringify(row)).not.toContain('password1');
+    expect(JSON.stringify(row)).not.toContain(ada.token);
+
+    const mismatch = await request(app)
+      .post('/api/auth/login')
+      .send({ email: 'ada@example.com', password: 'wrong-password' });
+    expect(mismatch.status).toBe(400);
+    const unknown = await request(app)
+      .post('/api/auth/login')
+      .send({ email: 'missing@example.com', password: 'password1' });
+    expect(unknown.status).toBe(400);
+    expect(await waitForCount({ event: 'POST /api/auth/login', message: '400' }, 2)).toBeGreaterThanOrEqual(2);
+
+    const failedListed = await request(app)
+      .get('/api/admin/logs')
+      .query({ event: 'POST /api/auth/login' })
+      .set('Authorization', `Bearer ${ada.token}`);
+    expect(failedListed.status).toBe(200);
+    const mismatchRow = failedListed.body.logs.find((item) => item.message === '400' && item.actorUserId === ada.userId);
+    expect(mismatchRow).toEqual(expect.objectContaining({
+      event: 'POST /api/auth/login',
+      actorUserId: ada.userId,
+      actorEmail: 'ada@example.com',
+    }));
+    expect(mismatchRow.password).toBeUndefined();
+    expect(mismatchRow.extra.password).toBeUndefined();
+    expect(mismatchRow.extra.token).toBeUndefined();
+    expect(JSON.stringify(mismatchRow)).not.toContain('wrong-password');
+    const unknownRow = failedListed.body.logs.find((item) => item.actorEmail === 'missing@example.com');
+    expect(unknownRow).toEqual(expect.objectContaining({
+      event: 'POST /api/auth/login',
+      message: '400',
+      actorEmail: 'missing@example.com',
+    }));
+    expect(unknownRow.actorUserId == null || unknownRow.actorUserId === '').toBe(true);
+    expect(unknownRow.password).toBeUndefined();
+    expect(unknownRow.extra.password).toBeUndefined();
+    expect(JSON.stringify(unknownRow)).not.toContain('password1');
+
+    const loggedOut = await request(app)
+      .post('/api/auth/logout')
+      .set('Authorization', `Bearer ${ada.token}`);
+    expect(loggedOut.status).toBe(200);
+    expect(await waitForCount({ event: 'POST /api/auth/logout', message: '200' }, 1)).toBeGreaterThanOrEqual(1);
+    const logoutListed = await request(app)
+      .get('/api/admin/logs')
+      .query({ event: 'POST /api/auth/logout' })
+      .set('Authorization', `Bearer ${ada.token}`);
+    expect(logoutListed.status).toBe(200);
+    const logoutRow = logoutListed.body.logs.find((item) => item.message === '200');
+    expect(logoutRow).toEqual(expect.objectContaining({
+      event: 'POST /api/auth/logout',
+      message: '200',
+      actorUserId: ada.userId,
+      actorEmail: 'ada@example.com',
+    }));
+    expect(logoutRow.extra.token).toBeUndefined();
+    expect(logoutRow.extra.password).toBeUndefined();
+    expect(JSON.stringify(logoutRow)).not.toContain(ada.token);
+
+    const anon = await request(app).post('/api/auth/logout');
+    expect(anon.status).toBe(401);
+    expect(await waitForCount({ event: 'POST /api/auth/logout', message: '401' }, 1)).toBeGreaterThanOrEqual(1);
+    const blankListed = await request(app)
+      .get('/api/admin/logs')
+      .query({ event: 'POST /api/auth/logout' })
+      .set('Authorization', `Bearer ${ada.token}`);
+    const blank = blankListed.body.logs.find((item) => item.message === '401');
+    expect(blank.actorUserId == null || blank.actorUserId === '').toBe(true);
+    expect(blank.actorEmail == null || blank.actorEmail === '').toBe(true);
+    expect(blank.extra.token).toBeUndefined();
+  });
+
   test('logs require a token and reject a member', async () => {
     const anon = await request(app).get('/api/admin/logs');
     expect(anon.status).toBe(401);

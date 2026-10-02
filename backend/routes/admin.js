@@ -91,7 +91,9 @@ router.get('/logs', async (req, res) => {
     const emailById = new Map(users.map((user) => [String(user._id), user.email || '']));
     const nameById = new Map(plans.map((plan) => [String(plan._id), plan.name || '']));
     for (const row of logs) {
-      row.actorEmail = emailById.get(String(row.actorUserId || '')) || '';
+      const storedEmail = typeof row.actorEmail === 'string' ? row.actorEmail.trim() : '';
+      const lookedUp = emailById.get(String(row.actorUserId || '')) || '';
+      row.actorEmail = storedEmail || lookedUp;
       row.planName = nameById.get(String(row.planId || '')) || '';
     }
 

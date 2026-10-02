@@ -7,6 +7,7 @@ const supportLogSchema = new mongoose.Schema({
   level: { type: String, enum: ['info', 'warn', 'error'], required: true },
   event: { type: String, required: true },
   actorUserId: { type: String },
+  actorEmail: { type: String },
   planId: { type: String },
   eventId: { type: String },
   invitationId: { type: String },
