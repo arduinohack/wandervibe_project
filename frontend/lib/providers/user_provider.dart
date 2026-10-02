@@ -30,7 +30,7 @@ class UserProvider extends ChangeNotifier {
       ); // Log input
       final response = await http
           .post(
-            Uri.parse((await backendBaseUrl) + apiAuthLogin),
+            Uri.parse((backendBaseUrl) + apiAuthLogin),
             headers: {'Content-Type': 'application/json'},
             body: json.encode({'email': email, 'password': password}),
           )
@@ -84,7 +84,7 @@ class UserProvider extends ChangeNotifier {
       final timeoutDuration = Duration(seconds: await AppConfig.timeoutSeconds);
       final response = await http
           .post(
-            Uri.parse((await backendBaseUrl) + apiAuthRegister),
+            Uri.parse((backendBaseUrl) + apiAuthRegister),
             headers: {'Content-Type': 'application/json'},
             body: json.encode({
               'firstName': firstName,
@@ -127,7 +127,7 @@ class UserProvider extends ChangeNotifier {
         // Call backend logout (optional, for blacklisting)
         final response = await http
             .post(
-              Uri.parse((await backendBaseUrl) + apiAuthLogout),
+              Uri.parse((backendBaseUrl) + apiAuthLogout),
               headers: {
                 'Content-Type': 'application/json',
                 'Authorization': 'Bearer $token',
@@ -163,7 +163,7 @@ class UserProvider extends ChangeNotifier {
         // Verify token with backend
         final response = await http
             .post(
-              Uri.parse((await backendBaseUrl) + apiAuthVerifyToken),
+              Uri.parse((backendBaseUrl) + apiAuthVerifyToken),
               headers: {
                 'Content-Type': 'application/json',
                 'Authorization': 'Bearer $_jwtToken',
@@ -239,7 +239,7 @@ class UserProvider extends ChangeNotifier {
       final response = await http
           .patch(
             Uri.parse(
-              (await backendBaseUrl) +
+              (backendBaseUrl) +
                   apiUsersUpdate.replaceAll('{id}', currentUserId!),
             ),
             headers: {
@@ -281,7 +281,7 @@ class UserProvider extends ChangeNotifier {
       final timeoutDuration = Duration(seconds: await AppConfig.timeoutSeconds);
       final response = await http
           .post(
-            Uri.parse((await backendBaseUrl) + apiAuthForgotPassword),
+            Uri.parse((backendBaseUrl) + apiAuthForgotPassword),
             headers: {'Content-Type': 'application/json'},
             body: json.encode({'email': email}),
           )

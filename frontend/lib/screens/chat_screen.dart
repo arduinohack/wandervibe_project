@@ -27,7 +27,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _connectSocket() async {
-    final baseUrl = await backendBaseUrl;
+    final baseUrl = backendBaseUrl;
     if (!mounted) return;
 
     final connected = io.io(

@@ -135,7 +135,7 @@ class PlanProvider extends ChangeNotifier {
 
       final response = await http.get(
         Uri.parse(
-          (await backendBaseUrl) +
+          (backendBaseUrl) +
               apiPlansItinerary.replaceAll('{planId}', planId),
         ),
         headers: {'Authorization': 'Bearer $token'},
@@ -214,7 +214,7 @@ class PlanProvider extends ChangeNotifier {
       }
 
       final response = await http.get(
-        Uri.parse((await backendBaseUrl) + apiPlans),
+        Uri.parse((backendBaseUrl) + apiPlans),
         headers: {'Authorization': 'Bearer $token'},
       );
 
@@ -287,7 +287,7 @@ class PlanProvider extends ChangeNotifier {
     try {
       final response = await http.get(
         Uri.parse(
-          (await backendBaseUrl) + apiPlanUsers.replaceAll('{planId}', planId),
+          (backendBaseUrl) + apiPlanUsers.replaceAll('{planId}', planId),
         ),
         headers: {'Authorization': 'Bearer $token'},
       );
@@ -311,7 +311,7 @@ class PlanProvider extends ChangeNotifier {
       if (token == null) throw Exception('No token—log in first');
 
       final response = await http.get(
-        Uri.parse('${await backendBaseUrl}/api/plans/$planId/users'),
+        Uri.parse('$backendBaseUrl/api/plans/$planId/users'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
@@ -348,7 +348,7 @@ class PlanProvider extends ChangeNotifier {
       }
 
       final response = await http.post(
-        Uri.parse(await backendBaseUrl + apiPlans),
+        Uri.parse(backendBaseUrl + apiPlans),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
@@ -396,7 +396,7 @@ class PlanProvider extends ChangeNotifier {
       final start = startTime.toUtc();
       final end = start.add(const Duration(hours: 3));
       final response = await http.post(
-        Uri.parse((await backendBaseUrl) + apiActivities),
+        Uri.parse((backendBaseUrl) + apiActivities),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
@@ -441,7 +441,7 @@ class PlanProvider extends ChangeNotifier {
     try {
       if (token == null || token.isEmpty) return 401;
       final response = await http.put(
-        Uri.parse('${await backendBaseUrl}$apiActivities/$activityId'),
+        Uri.parse('$backendBaseUrl$apiActivities/$activityId'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
@@ -483,7 +483,7 @@ class PlanProvider extends ChangeNotifier {
     try {
       if (token == null || token.isEmpty) return 401;
       final response = await http.delete(
-        Uri.parse('${await backendBaseUrl}$apiActivities/$activityId'),
+        Uri.parse('$backendBaseUrl$apiActivities/$activityId'),
         headers: {'Authorization': 'Bearer $token'},
       );
       if (response.statusCode == 401 || response.statusCode == 403) {
@@ -508,7 +508,7 @@ class PlanProvider extends ChangeNotifier {
     try {
       if (token == null) throw Exception('No token—log in first');
 
-      final baseUrl = await backendBaseUrl; // Await first (get the string)
+      final baseUrl = backendBaseUrl;
       final url = Uri.parse(baseUrl + apiActivities);
       final response = await http.post(
         url,
@@ -558,7 +558,7 @@ class PlanProvider extends ChangeNotifier {
     try {
       if (token == null) throw Exception('No token—log in first');
 
-      final baseUrl = await backendBaseUrl; // Await first (get the string)
+      final baseUrl = backendBaseUrl;
       final url = Uri.parse('$baseUrl$apiActivities/${updatedActivity.id}');
       final body = json.encode(updatedActivity.toJson());
       logger.i('Updating activity: $body'); // Log data sent
@@ -605,7 +605,7 @@ class PlanProvider extends ChangeNotifier {
     try {
       if (token == null) throw Exception('No token—log in first');
 
-      final baseUrl = await backendBaseUrl; // Await first (get the string)
+      final baseUrl = backendBaseUrl;
       final url = Uri.parse('$baseUrl$apiActivities/$activityId');
       final response = await http.delete(
         url,

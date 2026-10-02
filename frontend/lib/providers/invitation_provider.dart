@@ -37,7 +37,7 @@ class InvitationProvider extends ChangeNotifier {
       }
 
       final response = await http.get(
-        Uri.parse((await backendBaseUrl) + apiInvites),
+        Uri.parse((backendBaseUrl) + apiInvites),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
@@ -89,7 +89,7 @@ class InvitationProvider extends ChangeNotifier {
 
       final response = await http.post(
         Uri.parse(
-          (await backendBaseUrl) +
+          (backendBaseUrl) +
               apiInvitesRespond.replaceAll('{invitationId}', invitationId),
         ),
         headers: {
