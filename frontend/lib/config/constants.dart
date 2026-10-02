@@ -1,22 +1,10 @@
-import 'package:flutter/foundation.dart'; // For kIsWeb (platform detection)
-import 'package:shared_preferences/shared_preferences.dart'; // Add for settings
-import 'dart:io'; // For Platform checks (Windows/Mac/Linux detection)
+// Compile-time API origin. Override with --dart-define=API_BASE=http://host:3000.
+const String backendBaseUrl = String.fromEnvironment(
+  'API_BASE',
+  defaultValue: 'http://localhost:3000',
+);
 
-// Stored backendUrl overrides the platform default.
-// Desktop, web, and iOS use localhost. The Android emulator uses 10.0.2.2.
-Future<String> get backendBaseUrl async {
-  final prefs = await SharedPreferences.getInstance();
-  final stored = prefs.getString('backendUrl');
-  if (stored != null && stored.trim().isNotEmpty) {
-    return stored.trim();
-  }
-  if (!kIsWeb && Platform.isAndroid) {
-    return 'http://10.0.2.2:3000';
-  }
-  return 'http://localhost:3000';
-}
-
-// API paths (use with await getBackendUrl() + path)
+// API paths (append to backendBaseUrl)
 const String apiAuthLogin = '/api/auth/login';
 const String apiAuthLogout = "/api/auth/logout";
 const String apiAuthRegister = '/api/auth/register';
