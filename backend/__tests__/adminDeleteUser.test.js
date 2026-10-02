@@ -541,9 +541,11 @@ describe('admin activity explorer', () => {
       details: 'Corner table',
     });
     expect(found.body.revisions.map((row) => row.action)).toEqual(['update', 'create']);
-    expect(Object.keys(found.body.revisions[0]).sort()).toEqual(['action', 'createdAt', 'userId']);
+    expect(Object.keys(found.body.revisions[0]).sort()).toEqual(['action', 'createdAt', 'email', 'userId']);
     expect(found.body.revisions[0].userId).toBe(grace.userId);
+    expect(found.body.revisions[0].email).toBe('grace@example.com');
     expect(found.body.revisions[1].userId).toBe(grace.userId);
+    expect(found.body.revisions[1].email).toBe('grace@example.com');
     expect(JSON.stringify(found.body)).not.toContain('password1');
 
     const missing = await request(app)

@@ -232,6 +232,11 @@ router.get('/activities/:activityId', async (req, res) => {
       .select('action createdAt userId')
       .sort({ createdAt: -1 })
       .lean();
+    const userIds = [...new Set(revisions.map((row) => row.userId).filter(Boolean))];
+    const users = userIds.length
+      ? await User.find({ _id: { $in: userIds } }).select('email').lean()
+      : [];
+    const emailById = new Map(users.map((user) => [String(user._id), user.email || '']));
     res.json({
       _id: String(activity._id),
       name: activity.name || '',
@@ -245,6 +250,7 @@ router.get('/activities/:activityId', async (req, res) => {
         action: revision.action || '',
         createdAt: isoOrNull(revision.createdAt),
         userId: revision.userId || '',
+        email: emailById.get(String(revision.userId || '')) || '',
       })),
     });
   } catch (err) {

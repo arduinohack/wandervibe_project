@@ -959,7 +959,7 @@ function renderActivityExplorer(activity) {
   const revisions = Array.isArray(activity.revisions) ? activity.revisions : [];
   for (const revision of revisions) {
     const row = document.createElement('tr');
-    for (const value of [revision.action, explorerDateTime(revision.createdAt), revision.userId]) {
+    for (const value of [revision.action, explorerDateTime(revision.createdAt), revision.email]) {
       const cell = document.createElement('td');
       cell.textContent = value == null ? '' : String(value);
       row.appendChild(cell);
