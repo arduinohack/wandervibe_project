@@ -300,3 +300,173 @@ describe('admin delete user', () => {
     expect(await SupportLog.countDocuments({ event: 'UserDeleted' })).toBe(0);
   });
 });
+
+describe('admin delete plan', () => {
+  test('deleting a sole plan removes its activities, revisions, invitations, and support logs', async () => {
+    const admin = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Admin',
+      email: 'ada@example.com',
+    });
+    await User.updateOne({ _id: admin.userId }, { $set: { role: 'admin' } });
+    const grace = await registerAndLogin({
+      firstName: 'Grace',
+      lastName: 'Hopper',
+      email: 'grace@example.com',
+    });
+    const planId = await createPlan(grace.token, 'Paris');
+    const eventId = await createDinner(grace.token, planId);
+    expect(await ActivityRevision.countDocuments({ planId })).toBe(1);
+    await Invitation.create({
+      _id: 'invite-old',
+      planId,
+      userId: 'someone-else',
+      invitedBy: grace.userId,
+      role: 'Guest',
+      status: 'rejected',
+    });
+    await SupportLog.create({
+      level: 'info',
+      event: 'Note',
+      actorUserId: grace.userId,
+      planId,
+      message: 'remove me',
+    });
+
+    const removed = await request(app)
+      .delete(`/api/admin/plans/${planId}`)
+      .set('Authorization', `Bearer ${admin.token}`);
+    expect(removed.status).toBe(200);
+    expect(removed.body.message).toBe('Plan deleted');
+
+    expect(await User.findById(grace.userId)).not.toBeNull();
+    expect(await Plan.findById(planId)).toBeNull();
+    expect(await Event.findById(eventId)).toBeNull();
+    expect(await Event.countDocuments({ planId })).toBe(0);
+    expect(await ActivityRevision.countDocuments({ planId })).toBe(0);
+    expect(await Invitation.countDocuments({ planId })).toBe(0);
+    expect(await PlanUser.countDocuments({ planId })).toBe(0);
+    expect(await SupportLog.findOne({ event: 'Note', planId })).toBeNull();
+  });
+
+  test('another member blocks plan delete and nothing is written', async () => {
+    const admin = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Admin',
+      email: 'ada@example.com',
+    });
+    await User.updateOne({ _id: admin.userId }, { $set: { role: 'admin' } });
+    const grace = await registerAndLogin({
+      firstName: 'Grace',
+      lastName: 'Hopper',
+      email: 'grace@example.com',
+    });
+    const alan = await registerAndLogin({
+      firstName: 'Alan',
+      lastName: 'Turing',
+      email: 'alan@example.com',
+    });
+    const planId = await createPlan(grace.token, 'Paris');
+    const eventId = await createDinner(grace.token, planId);
+    await acceptCollaborator(grace.token, planId, 'alan@example.com', alan.token);
+    await SupportLog.create({
+      level: 'info',
+      event: 'Note',
+      actorUserId: grace.userId,
+      planId,
+      message: 'keep me',
+    });
+
+    const before = {
+      plans: await Plan.countDocuments(),
+      members: await PlanUser.countDocuments({ planId }),
+      events: await Event.countDocuments({ planId }),
+      revisions: await ActivityRevision.countDocuments({ planId }),
+      invites: await Invitation.countDocuments({ planId }),
+    };
+
+    const denied = await request(app)
+      .delete(`/api/admin/plans/${planId}`)
+      .set('Authorization', `Bearer ${admin.token}`);
+    expect(denied.status).toBe(409);
+    expect(denied.body.message).toBe('Plan is still shared with someone else');
+
+    expect(await Plan.findById(planId)).not.toBeNull();
+    expect(await Event.findById(eventId)).not.toBeNull();
+    expect((await PlanUser.findOne({ planId, userId: grace.userId })).role).toBe('Owner');
+    expect((await PlanUser.findOne({ planId, userId: alan.userId })).role).toBe('Collaborator');
+    expect(await SupportLog.findOne({ event: 'Note', planId })).not.toBeNull();
+    expect(await Plan.countDocuments()).toBe(before.plans);
+    expect(await PlanUser.countDocuments({ planId })).toBe(before.members);
+    expect(await Event.countDocuments({ planId })).toBe(before.events);
+    expect(await ActivityRevision.countDocuments({ planId })).toBe(before.revisions);
+    expect(await Invitation.countDocuments({ planId })).toBe(before.invites);
+    expect(await User.findById(grace.userId)).not.toBeNull();
+    expect(await User.findById(alan.userId)).not.toBeNull();
+  });
+
+  test('a pending invitation blocks plan delete', async () => {
+    const admin = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Admin',
+      email: 'ada@example.com',
+    });
+    await User.updateOne({ _id: admin.userId }, { $set: { role: 'admin' } });
+    const grace = await registerAndLogin({
+      firstName: 'Grace',
+      lastName: 'Hopper',
+      email: 'grace@example.com',
+    });
+    const alan = await registerAndLogin({
+      firstName: 'Alan',
+      lastName: 'Turing',
+      email: 'alan@example.com',
+    });
+    const planId = await createPlan(grace.token, 'Paris');
+    const inviteRes = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${grace.token}`)
+      .send({ email: 'alan@example.com', role: 'Guest' });
+    expect(inviteRes.status).toBe(201);
+
+    const denied = await request(app)
+      .delete(`/api/admin/plans/${planId}`)
+      .set('Authorization', `Bearer ${admin.token}`);
+    expect(denied.status).toBe(409);
+    expect(await Plan.findById(planId)).not.toBeNull();
+    expect(await Invitation.countDocuments({ planId, status: 'pending' })).toBe(1);
+    expect(await PlanUser.countDocuments({ planId, userId: grace.userId })).toBe(1);
+  });
+
+  test('plan delete allows an admin, rejects a member, and 404s an unknown id', async () => {
+    const admin = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Admin',
+      email: 'ada@example.com',
+    });
+    const grace = await registerAndLogin({
+      firstName: 'Grace',
+      lastName: 'Hopper',
+      email: 'grace@example.com',
+    });
+    const planId = await createPlan(grace.token, 'Paris');
+
+    const anon = await request(app).delete(`/api/admin/plans/${planId}`);
+    expect(anon.status).toBe(401);
+    expect(anon.body.message).toBe('No token, authorization denied');
+
+    const member = await request(app)
+      .delete(`/api/admin/plans/${planId}`)
+      .set('Authorization', `Bearer ${grace.token}`);
+    expect(member.status).toBe(403);
+    expect(member.body.message).toBe('Admin access required');
+
+    await User.updateOne({ _id: admin.userId }, { $set: { role: 'admin' } });
+    const missing = await request(app)
+      .delete('/api/admin/plans/does-not-exist')
+      .set('Authorization', `Bearer ${admin.token}`);
+    expect(missing.status).toBe(404);
+    expect(missing.body.message).toBe('Plan not found');
+    expect(await Plan.findById(planId)).not.toBeNull();
+  });
+});

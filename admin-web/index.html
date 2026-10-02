@@ -80,26 +80,6 @@
           </table>
         </div>
       </section>
-
-      <section>
-        <h2>Delete user</h2>
-        <form id="delete-form">
-          <div class="user-picker">
-            <div class="user-picker-field">
-              <label>Find account
-                <input id="admin-account-delete" class="user-picker-query" type="text" name="admin-account-delete" autocomplete="off" spellcheck="false" data-lpignore="true" data-1p-ignore data-form-type="other">
-              </label>
-              <button type="button" class="user-picker-clear">Clear</button>
-              <ul class="user-picker-results" role="listbox" hidden></ul>
-            </div>
-            <p class="user-picker-chosen"></p>
-          </div>
-          <input id="delete-user-id" name="userId" type="hidden">
-          <button type="submit">Delete user</button>
-        </form>
-        <p id="delete-status" role="status"></p>
-        <ul id="delete-plans"></ul>
-      </section>
       </div>
 
       <section id="settings-page" hidden>
@@ -132,15 +112,17 @@
           <tr>
             <th>Name</th>
             <th>Type</th>
-            <th>Role</th>
             <th>Start</th>
             <th>End</th>
-            <th>Plan id</th>
+            <th>Role</th>
           </tr>
         </thead>
         <tbody id="explorer-plans"></tbody>
       </table>
     </div>
+    <p id="explorer-delete-status" role="status"></p>
+    <ul id="explorer-delete-plans"></ul>
+    <button type="button" id="explorer-delete" class="explorer-delete">Delete user</button>
   </dialog>
   <dialog id="plan-dialog" aria-labelledby="plan-dialog-title">
     <div class="explorer-bar">
@@ -176,6 +158,8 @@
         <tbody id="plan-dialog-activities"></tbody>
       </table>
     </div>
+    <p id="plan-delete-status" role="status"></p>
+    <button type="button" id="plan-delete" class="explorer-delete">Delete plan</button>
   </dialog>
   <script src="app.js"></script>
 </body>

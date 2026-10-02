@@ -47,6 +47,7 @@ const ZONE_CHOICES = [
 // an older name such as POST /api/events. Stored rows are not rewritten.
 const KNOWN_EVENTS = [
   'DELETE /api/activities/:id',
+  'DELETE /api/admin/plans/:planId',
   'DELETE /api/admin/users/:userId',
   'GET /api/activities/:id/history',
   'GET /api/activities/plan/:planId',
@@ -82,8 +83,6 @@ const logoutButton = document.getElementById('logout');
 const loginError = document.getElementById('login-error');
 const logsStatus = document.getElementById('logs-status');
 const logsBody = document.getElementById('logs-body');
-const deleteStatus = document.getElementById('delete-status');
-const deletePlans = document.getElementById('delete-plans');
 const appNav = document.getElementById('app-nav');
 const logsPage = document.getElementById('logs-page');
 const settingsPage = document.getElementById('settings-page');
@@ -93,9 +92,11 @@ const searchDelayInput = document.getElementById('search-delay');
 const loginBanner = document.getElementById('login-banner');
 
 let loadedLogs = [];
-let selectedUserId = '';
-let selectedUserEmail = '';
 let logUserId = '';
+let explorerUserId = '';
+let explorerUserEmail = '';
+let planExplorerId = '';
+let planExplorerName = '';
 let explorerSeq = 0;
 let planExplorerSeq = 0;
 let userSearchTimer = 0;
@@ -387,6 +388,9 @@ const MESSAGE_OVERRIDES = {
   'GET /api/admin/plans/:planId': {
     200: 'Opened plan',
   },
+  'DELETE /api/admin/plans/:planId': {
+    409: 'Delete blocked',
+  },
   'DELETE /api/admin/users/:userId': {
     409: 'Delete blocked',
   },
@@ -483,11 +487,7 @@ function hideUserResults() {
 function clearSelectedUser() {
   clearTimeout(userSearchTimer);
   userSearchSeq += 1;
-  selectedUserId = '';
-  selectedUserEmail = '';
   logUserId = '';
-  const idField = document.getElementById('delete-user-id');
-  if (idField) idField.value = '';
   for (const input of document.querySelectorAll('.user-picker-query')) input.value = '';
   for (const chosen of document.querySelectorAll('.user-picker-chosen')) chosen.textContent = '';
   hideUserResults();
@@ -528,35 +528,7 @@ function chooseAccountFilter(user) {
   const email = userEmailOf(user);
   logUserId = id;
   setPickerChoice(document.getElementById('admin-account-filter'), email);
-  openExplorer(id);
-}
-
-function chooseDeleteUser(user) {
-  selectedUserId = userIdOf(user);
-  selectedUserEmail = userEmailOf(user);
-  document.getElementById('delete-user-id').value = selectedUserId;
-  setPickerChoice(document.getElementById('admin-account-delete'), selectedUserEmail);
-}
-
-function clearDeleteSelection() {
-  clearTimeout(userSearchTimer);
-  userSearchSeq += 1;
-  selectedUserId = '';
-  selectedUserEmail = '';
-  const idField = document.getElementById('delete-user-id');
-  if (idField) idField.value = '';
-  const input = document.getElementById('admin-account-delete');
-  if (input) input.value = '';
-  const picker = input && input.closest('.user-picker');
-  if (picker) {
-    const chosen = picker.querySelector('.user-picker-chosen');
-    if (chosen) chosen.textContent = '';
-    const list = picker.querySelector('.user-picker-results');
-    if (list) {
-      list.hidden = true;
-      list.replaceChildren();
-    }
-  }
+  openExplorer(id, email);
 }
 
 async function searchUsers(input, q) {
@@ -602,8 +574,7 @@ async function searchUsers(input, q) {
     const name = [user.firstName, user.lastName].filter(Boolean).join(' ');
     button.textContent = name ? `${user.email} — ${name}` : String(user.email || '');
     button.addEventListener('click', () => {
-      if (input.id === 'admin-account-filter') chooseAccountFilter(user);
-      else chooseDeleteUser(user);
+      chooseAccountFilter(user);
     });
     item.appendChild(button);
     list.appendChild(item);
@@ -628,20 +599,9 @@ for (const input of document.querySelectorAll('.user-picker-query')) {
     const picker = input.closest('.user-picker');
     const chosen = picker && picker.querySelector('.user-picker-chosen');
     if (chosen) chosen.textContent = '';
-    if (input.id === 'admin-account-filter') {
-      logUserId = '';
-    } else {
-      selectedUserId = '';
-      selectedUserEmail = '';
-      const idField = document.getElementById('delete-user-id');
-      if (idField) idField.value = '';
-    }
+    logUserId = '';
     scheduleUserSearch(input);
   });
-}
-
-for (const button of document.querySelectorAll('.user-picker-clear')) {
-  button.addEventListener('click', () => clearDeleteSelection());
 }
 
 document.getElementById('clear-account-filter').addEventListener('click', (event) => {
@@ -721,9 +681,16 @@ function clearExplorerFields() {
   const status = document.getElementById('explorer-status');
   const fields = document.getElementById('explorer-fields');
   const plans = document.getElementById('explorer-plans');
+  const deleteStatus = document.getElementById('explorer-delete-status');
+  const deletePlans = document.getElementById('explorer-delete-plans');
   if (status) status.textContent = '';
   if (fields) fields.replaceChildren();
   if (plans) plans.replaceChildren();
+  if (deleteStatus) {
+    deleteStatus.textContent = '';
+    deleteStatus.classList.remove('is-error');
+  }
+  if (deletePlans) deletePlans.replaceChildren();
 }
 
 function clearPlanExplorerFields() {
@@ -731,10 +698,15 @@ function clearPlanExplorerFields() {
   const fields = document.getElementById('plan-dialog-fields');
   const members = document.getElementById('plan-dialog-members');
   const activities = document.getElementById('plan-dialog-activities');
+  const deleteStatus = document.getElementById('plan-delete-status');
   if (status) status.textContent = '';
   if (fields) fields.replaceChildren();
   if (members) members.replaceChildren();
   if (activities) activities.replaceChildren();
+  if (deleteStatus) {
+    deleteStatus.textContent = '';
+    deleteStatus.classList.remove('is-error');
+  }
 }
 
 function clearPlanExplorer() {
@@ -747,6 +719,8 @@ function clearPlanExplorer() {
 function clearExplorer() {
   clearPlanExplorer();
   explorerSeq += 1;
+  explorerUserId = '';
+  explorerUserEmail = '';
   const dialog = document.getElementById('explorer-dialog');
   if (dialog && dialog.open) dialog.close();
   clearExplorerFields();
@@ -754,6 +728,8 @@ function clearExplorer() {
 
 document.getElementById('explorer-dialog').addEventListener('close', () => {
   explorerSeq += 1;
+  explorerUserId = '';
+  explorerUserEmail = '';
   clearExplorerFields();
   const planDialog = document.getElementById('plan-dialog');
   if (planDialog && planDialog.open) planDialog.close();
@@ -766,6 +742,8 @@ document.getElementById('explorer-close').addEventListener('click', () => {
 
 document.getElementById('plan-dialog').addEventListener('close', () => {
   planExplorerSeq += 1;
+  planExplorerId = '';
+  planExplorerName = '';
   clearPlanExplorerFields();
 });
 
@@ -823,10 +801,9 @@ function renderExplorer(account) {
     for (const value of [
       plan.name,
       plan.type,
-      plan.role,
       explorerDate(plan.startDate),
       explorerDate(plan.endDate),
-      plan._id,
+      plan.role,
     ]) {
       const cell = document.createElement('td');
       cell.textContent = value == null ? '' : String(value);
@@ -900,6 +877,13 @@ async function openPlanExplorer(planId) {
   const membersBody = document.getElementById('plan-dialog-members');
   const activitiesBody = document.getElementById('plan-dialog-activities');
   if (!dialog || !id) return;
+  planExplorerId = id;
+  planExplorerName = '';
+  const deleteStatus = document.getElementById('plan-delete-status');
+  if (deleteStatus) {
+    deleteStatus.textContent = '';
+    deleteStatus.classList.remove('is-error');
+  }
   const seq = ++planExplorerSeq;
   if (!dialog.open) dialog.showModal();
   status.textContent = 'Loading plan.';
@@ -931,6 +915,7 @@ async function openPlanExplorer(planId) {
     status.textContent = messageFrom(body, 'Could not open this plan.');
     return;
   }
+  planExplorerName = body.name == null ? '' : String(body.name);
   const memberCount = Array.isArray(body.members) ? body.members.length : 0;
   const activityCount = Array.isArray(body.activities) ? body.activities.length : 0;
   const notes = [];
@@ -940,13 +925,22 @@ async function openPlanExplorer(planId) {
   renderPlanExplorer(body);
 }
 
-async function openExplorer(userId) {
+async function openExplorer(userId, email) {
   const id = userId == null ? '' : String(userId);
   const dialog = document.getElementById('explorer-dialog');
   const status = document.getElementById('explorer-status');
   const fields = document.getElementById('explorer-fields');
   const plansBody = document.getElementById('explorer-plans');
   if (!dialog || !id) return;
+  explorerUserId = id;
+  if (email) explorerUserEmail = String(email);
+  const deleteStatus = document.getElementById('explorer-delete-status');
+  const deletePlans = document.getElementById('explorer-delete-plans');
+  if (deleteStatus) {
+    deleteStatus.textContent = '';
+    deleteStatus.classList.remove('is-error');
+  }
+  if (deletePlans) deletePlans.replaceChildren();
   const seq = ++explorerSeq;
   if (!dialog.open) dialog.showModal();
   status.textContent = 'Loading account.';
@@ -977,6 +971,7 @@ async function openExplorer(userId) {
     status.textContent = messageFrom(body, 'Could not open this account.');
     return;
   }
+  if (body.email) explorerUserEmail = String(body.email);
   status.textContent = Array.isArray(body.plans) && body.plans.length ? '' : 'No plans.';
   renderExplorer(body);
 }
@@ -988,9 +983,6 @@ logoutButton.addEventListener('click', () => {
   loadedLogs = [];
   logsBody.replaceChildren();
   logsStatus.textContent = '';
-  deleteStatus.textContent = '';
-  deleteStatus.classList.remove('is-error');
-  deletePlans.replaceChildren();
   showLoggedIn(false);
 });
 
@@ -1302,18 +1294,15 @@ document.getElementById('logs-form').addEventListener('submit', (event) => {
   loadLogs();
 });
 
-document.getElementById('delete-form').addEventListener('submit', async (event) => {
-  event.preventDefault();
-  deleteStatus.classList.remove('is-error');
-  deleteStatus.textContent = '';
-  deletePlans.replaceChildren();
-  const userId = selectedUserId;
-  if (!userId) {
-    deleteStatus.classList.add('is-error');
-    deleteStatus.textContent = 'Choose a user by email.';
-    return;
-  }
-  const who = selectedUserEmail || userId;
+document.getElementById('explorer-delete').addEventListener('click', async () => {
+  const status = document.getElementById('explorer-delete-status');
+  const plans = document.getElementById('explorer-delete-plans');
+  status.classList.remove('is-error');
+  status.textContent = '';
+  plans.replaceChildren();
+  const userId = explorerUserId;
+  if (!userId) return;
+  const who = explorerUserEmail || 'this account';
   if (!window.confirm(`Delete user ${who}?`)) return;
   let response;
   try {
@@ -1322,8 +1311,8 @@ document.getElementById('delete-form').addEventListener('submit', async (event) 
       headers: authHeaders(),
     });
   } catch (err) {
-    deleteStatus.classList.add('is-error');
-    deleteStatus.textContent = 'Could not reach the API.';
+    status.classList.add('is-error');
+    status.textContent = 'Could not reach the API.';
     return;
   }
   const body = await readBody(response);
@@ -1336,25 +1325,73 @@ document.getElementById('delete-form').addEventListener('submit', async (event) 
     return;
   }
   if (response.status === 409) {
-    deleteStatus.classList.add('is-error');
-    deleteStatus.textContent = messageFrom(body, 'Delete was blocked.');
-    const plans = Array.isArray(body.plans) ? body.plans : [];
-    for (const plan of plans) {
+    status.classList.add('is-error');
+    status.textContent = messageFrom(body, 'Delete was blocked.');
+    const blocking = Array.isArray(body.plans) ? body.plans : [];
+    for (const plan of blocking) {
       const item = document.createElement('li');
-      const name = plan && plan.name ? plan.name : 'Plan';
-      const id = plan && plan._id ? plan._id : '';
-      item.textContent = id ? `${name} (${id})` : name;
-      deletePlans.appendChild(item);
+      item.textContent = plan && plan.name ? String(plan.name) : 'Plan';
+      plans.appendChild(item);
     }
     return;
   }
   if (response.status === 200 || response.status === 204) {
-    deleteStatus.textContent = messageFrom(body, 'User deleted');
-    clearDeleteSelection();
+    clearExplorer();
+    logsStatus.classList.remove('is-error');
+    logsStatus.textContent = messageFrom(body, 'User deleted');
     return;
   }
-  deleteStatus.classList.add('is-error');
-  deleteStatus.textContent = messageFrom(body, 'Delete failed.');
+  status.classList.add('is-error');
+  status.textContent = messageFrom(body, 'Delete failed.');
+});
+
+document.getElementById('plan-delete').addEventListener('click', async () => {
+  const status = document.getElementById('plan-delete-status');
+  status.classList.remove('is-error');
+  status.textContent = '';
+  const planId = planExplorerId;
+  if (!planId) return;
+  const name = planExplorerName || 'this plan';
+  if (!window.confirm(`Delete plan ${name}?`)) return;
+  let response;
+  try {
+    response = await fetch(`${API}/api/admin/plans/${encodeURIComponent(planId)}`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    });
+  } catch (err) {
+    status.classList.add('is-error');
+    status.textContent = 'Could not reach the API.';
+    return;
+  }
+  const body = await readBody(response);
+  if (response.status === 401) {
+    clearToken();
+    clearSelectedUser();
+    clearExplorer();
+    showLoggedIn(false);
+    loginError.textContent = messageFrom(body, 'Login expired.');
+    return;
+  }
+  if (response.status === 409) {
+    status.classList.add('is-error');
+    status.textContent = messageFrom(body, 'Delete was blocked.');
+    return;
+  }
+  if (response.status === 200 || response.status === 204) {
+    const userId = explorerUserId;
+    const email = explorerUserEmail;
+    const planDialog = document.getElementById('plan-dialog');
+    if (planDialog && planDialog.open) planDialog.close();
+    if (userId) await openExplorer(userId, email);
+    const accountStatus = document.getElementById('explorer-status');
+    if (accountStatus && !accountStatus.textContent) {
+      accountStatus.textContent = messageFrom(body, 'Plan deleted');
+    }
+    return;
+  }
+  status.classList.add('is-error');
+  status.textContent = messageFrom(body, 'Delete failed.');
 });
 
 renderEventOptions();

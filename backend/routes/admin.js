@@ -182,6 +182,42 @@ router.get('/plans/:planId', async (req, res) => {
   }
 });
 
+// Another member or a pending invitation blocks the delete. Nothing is written.
+router.delete('/plans/:planId', async (req, res) => {
+  try {
+    const planId = String(req.params.planId || '');
+    const plan = await Plan.findById(planId).select('_id ownerId');
+    if (!plan) {
+      return res.status(404).json({ message: 'Plan not found' });
+    }
+
+    const ownerId = String(plan.ownerId || '');
+    const memberQuery = { planId };
+    if (ownerId) memberQuery.userId = { $ne: ownerId };
+    const [otherMember, pendingInvite] = await Promise.all([
+      PlanUser.exists(memberQuery),
+      Invitation.exists({ planId, status: 'pending' }),
+    ]);
+    if (otherMember || pendingInvite) {
+      return res.status(409).json({
+        message: 'Plan is still shared with someone else',
+      });
+    }
+
+    await Event.deleteMany({ planId });
+    await ActivityRevision.deleteMany({ planId });
+    await Invitation.deleteMany({ planId });
+    await SupportLog.deleteMany({ planId });
+    await PlanUser.deleteMany({ planId });
+    await Plan.deleteOne({ _id: planId });
+
+    res.json({ message: 'Plan deleted' });
+  } catch (err) {
+    console.error(`Admin delete plan failed: ${err.message}`);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 router.get('/logs', async (req, res) => {
   try {
     const query = {};

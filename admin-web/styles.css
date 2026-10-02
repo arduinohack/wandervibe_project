@@ -258,7 +258,8 @@ th {
 }
 
 p[role="alert"],
-#delete-status.is-error,
+#explorer-delete-status.is-error,
+#plan-delete-status.is-error,
 #logs-status.is-error,
 #settings-status.is-error {
   font-family: var(--wv-error-font);
@@ -309,9 +310,13 @@ p[role="alert"],
   min-width: 5.5rem;
 }
 
-#delete-plans {
+#explorer-delete-plans {
   margin: 0.4rem 0 0;
   padding-left: 1.2rem;
+}
+
+.explorer-delete {
+  margin-top: 0.8rem;
 }
 
 #explorer-dialog,
