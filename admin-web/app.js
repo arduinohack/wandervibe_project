@@ -1,4 +1,4 @@
-const API = 'http://localhost:3000';
+const API = 'http://192.168.1.140:3001';
 const TOKEN_KEY = 'wandervibeAdminToken';
 const USER_KEY = 'wandervibeAdminUser';
 const ZONE_KEY = 'wandervibe.admin.timeZone';
@@ -772,6 +772,32 @@ async function loadLogs() {
   renderLogs(loadedLogs);
 }
 
+function cellText(value) {
+  return value == null ? '' : String(value);
+}
+
+function appendNamedIdCell(tr, name, idValue, onContextMenu) {
+  const cell = document.createElement('td');
+  const label = document.createElement('div');
+  label.textContent = cellText(name);
+  cell.appendChild(label);
+  const id = cellText(idValue).trim();
+  if (id) {
+    cell.title = id;
+    const secondary = document.createElement('div');
+    secondary.className = 'log-id';
+    secondary.textContent = id;
+    cell.appendChild(secondary);
+    if (onContextMenu) {
+      cell.addEventListener('contextmenu', (menuEvent) => {
+        menuEvent.preventDefault();
+        onContextMenu(menuEvent, id);
+      });
+    }
+  }
+  tr.appendChild(cell);
+}
+
 function renderLogs(logs) {
   updateCreatedAtHeader();
   logsBody.replaceChildren();
@@ -782,22 +808,19 @@ function renderLogs(logs) {
   logsStatus.textContent = '';
   for (const row of logs) {
     const tr = document.createElement('tr');
-    for (const key of ['createdAt', 'event', 'level', 'actorUserId', 'planId', 'message']) {
+    for (const key of ['createdAt', 'event', 'level']) {
       const cell = document.createElement('td');
       const value = row[key];
-      if (key === 'createdAt') cell.textContent = formatCreatedAt(value);
-      else if (key === 'message') cell.textContent = formatLogMessage(row.event, value);
-      else if (key === 'planId') {
-        const planId = value == null ? '' : String(value).trim();
-        cell.textContent = planId;
-        cell.addEventListener('contextmenu', (menuEvent) => {
-          menuEvent.preventDefault();
-          if (!planId) return;
-          openPlanMenu(menuEvent.clientX, menuEvent.clientY, planId);
-        });
-      } else cell.textContent = value == null ? '' : String(value);
+      cell.textContent = key === 'createdAt' ? formatCreatedAt(value) : cellText(value);
       tr.appendChild(cell);
     }
+    appendNamedIdCell(tr, row.actorEmail, row.actorUserId);
+    appendNamedIdCell(tr, row.planName, row.planId, (menuEvent, planId) => {
+      openPlanMenu(menuEvent.clientX, menuEvent.clientY, planId);
+    });
+    const messageCell = document.createElement('td');
+    messageCell.textContent = formatLogMessage(row.event, row.message);
+    tr.appendChild(messageCell);
     logsBody.appendChild(tr);
   }
 }

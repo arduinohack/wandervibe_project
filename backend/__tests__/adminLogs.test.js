@@ -125,7 +125,9 @@ describe('support logs', () => {
       event: 'PlanCreated',
       level: 'info',
       actorUserId: ada.userId,
+      actorEmail: 'ada@example.com',
       planId,
+      planName: 'Paris',
       message: 'Plan created',
     }));
     expect(planRow.extra).toEqual(expect.objectContaining({ type: 'trip', name: 'Paris' }));
@@ -163,6 +165,32 @@ describe('support logs', () => {
       .get('/api/admin/logs')
       .set('Authorization', `Bearer ${ada.token}`);
     expect(demoted.status).toBe(403);
+  });
+
+  test('a missing user or plan leaves the name empty and keeps the ids', async () => {
+    const ada = await registerAndLogin();
+    await User.updateOne({ _id: ada.userId }, { $set: { role: 'admin' } });
+
+    await SupportLog.create({
+      level: 'info',
+      event: 'OrphanPlan',
+      actorUserId: 'missing-user',
+      planId: 'missing-plan',
+      message: 'orphan',
+    });
+
+    const listed = await request(app)
+      .get('/api/admin/logs')
+      .query({ planId: 'missing-plan' })
+      .set('Authorization', `Bearer ${ada.token}`);
+    expect(listed.status).toBe(200);
+    expect(listed.body.logs).toHaveLength(1);
+    expect(listed.body.logs[0]).toEqual(expect.objectContaining({
+      actorUserId: 'missing-user',
+      actorEmail: '',
+      planId: 'missing-plan',
+      planName: '',
+    }));
   });
 
   test('a plan create stores a request row and PlanCreated', async () => {

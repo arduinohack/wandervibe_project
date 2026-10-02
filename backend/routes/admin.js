@@ -73,10 +73,27 @@ router.get('/logs', async (req, res) => {
     if (!Number.isFinite(skip) || skip < 0) skip = 0;
 
     const direction = String(req.query.dir || '').toLowerCase() === 'asc' ? 1 : -1;
-    const logs = await SupportLog.find(query)
+    const docs = await SupportLog.find(query)
       .sort({ createdAt: direction })
       .skip(skip)
       .limit(limit);
+    const logs = docs.map((doc) => doc.toObject());
+    const userIds = [...new Set(logs.map((row) => row.actorUserId).filter(Boolean))];
+    const planIds = [...new Set(logs.map((row) => row.planId).filter(Boolean))];
+    const [users, plans] = await Promise.all([
+      userIds.length
+        ? User.find({ _id: { $in: userIds } }).select('email').lean()
+        : [],
+      planIds.length
+        ? Plan.find({ _id: { $in: planIds } }).select('name').lean()
+        : [],
+    ]);
+    const emailById = new Map(users.map((user) => [String(user._id), user.email || '']));
+    const nameById = new Map(plans.map((plan) => [String(plan._id), plan.name || '']));
+    for (const row of logs) {
+      row.actorEmail = emailById.get(String(row.actorUserId || '')) || '';
+      row.planName = nameById.get(String(row.planId || '')) || '';
+    }
 
     res.json({ logs });
   } catch (err) {

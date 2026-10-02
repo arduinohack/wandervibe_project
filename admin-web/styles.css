@@ -238,6 +238,12 @@ th, td {
   border-bottom: 1px solid #e4ddd2;
 }
 
+.log-id {
+  margin-top: 0.15rem;
+  font-size: 0.85em;
+  color: #6b645c;
+}
+
 th {
   font-family: inherit;
   font-size: inherit;
