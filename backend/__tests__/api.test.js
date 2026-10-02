@@ -1039,7 +1039,7 @@ describe('activity routes', () => {
     endTime: '2026-06-01T18:00:00.000Z',
   });
 
-  test('POST /api/activities creates in the events collection', async () => {
+  test('POST /api/activities creates in the activities collection', async () => {
     const ada = await registerAndLogin({
       firstName: 'Ada',
       lastName: 'Lovelace',
@@ -1065,9 +1065,13 @@ describe('activity routes', () => {
 
     expect(created.status).toBe(201);
     expect(created.body.planId).toBe(planId);
-    expect(Event.collection.collectionName).toBe('events');
+    expect(Event.collection.collectionName).toBe('activities');
+    expect(Plan.collection.collectionName).toBe('plans');
     const stored = await Event.find({ planId }).select('name');
     expect(stored.map((row) => row.name)).toEqual(['Harbor dinner']);
+    const inActivities = await mongoose.connection.db.collection('activities').find({ planId }).toArray();
+    expect(inActivities.map((row) => row.name)).toEqual(['Harbor dinner']);
+    expect(await mongoose.connection.db.collection('events').countDocuments({ planId })).toBe(0);
 
     const inviteRes = await request(app)
       .post(`/api/plans/${planId}/invite`)

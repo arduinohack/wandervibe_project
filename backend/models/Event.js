@@ -38,7 +38,7 @@ const eventSchema = new mongoose.Schema({
   baggageClaim: { type: String },  // For arrival
   roomNumber: { type: String },  // For hotel check-in
   // Add more as types evolve (Mongoose ignores unused)
-}, { timestamps: true });  // Auto createdAt/updatedAt
+}, { timestamps: true, collection: 'activities' });  // Auto createdAt/updatedAt. Collection name is activities; the model name stays Event.
 
 // Pre-save hook for type-specific validation
 eventSchema.pre('save', function (next) {
