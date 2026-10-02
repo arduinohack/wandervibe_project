@@ -10,7 +10,23 @@ const { DateTime } = require('luxon');  // For time zone/DST in Day Numbers
 const { v4: uuidv4 } = require('uuid');
 const { notifyUsers } = require('../utils/notifications');
 const { logSupport } = require('../utils/logSupport');
+const multer = require('multer');
+const {
+  parseCsv,
+  readColumnMap,
+  headerIndex,
+  cell,
+  planZone,
+  parseActivityTime,
+  importDateStamp,
+  escapeRegExp,
+  uploadKind,
+} = require('../utils/csvPlanImport');
 const router = express.Router();
+const csvUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+});
 const logger = require('../utils/logger');  // Added: Borrow exported logger from ../util/logger.js
 
 
@@ -321,6 +337,142 @@ router.get('/:planId/itinerary', authMiddleware, async (req, res) => {
   } catch (err) {
     console.error('Itinerary error:', err);
     res.status(500).json({ msg: 'Server error' });
+  }
+});
+
+async function nextImportName(sourceName, timeZone) {
+  const stamp = importDateStamp(timeZone);
+  const pattern = new RegExp(`^${escapeRegExp(sourceName)} ${stamp} (\\d+)$`);
+  const existing = await Plan.find({ name: pattern }).select('name').lean();
+  let max = 0;
+  for (const plan of existing) {
+    const match = pattern.exec(plan.name);
+    if (!match) continue;
+    const n = Number(match[1]);
+    if (n > max) max = n;
+  }
+  return `${sourceName} ${stamp} ${max + 1}`;
+}
+
+function readCsvUpload(req, res) {
+  return new Promise((resolve, reject) => {
+    csvUpload.single('file')(req, res, (err) => {
+      if (err) reject(err);
+      else resolve(req.file);
+    });
+  });
+}
+
+// POST /api/plans/:planId/import
+// Owner or Collaborator uploads a CSV. Creates a new plan and one activity per named row.
+router.post('/:planId/import', authMiddleware, async (req, res) => {
+  const { planId } = req.params;
+  try {
+    const source = await Plan.findById(planId);
+    if (!source) {
+      return res.status(404).json({ message: 'Plan not found' });
+    }
+
+    const callerId = req.user.userId || req.user.id;
+    const membership = await PlanUser.findOne({ planId, userId: callerId });
+    let role = canonicalMembershipRole(membership && membership.role);
+    if (!role && String(source.ownerId) === String(callerId)) role = 'Owner';
+    if (role !== 'Owner' && role !== 'Collaborator') {
+      return res.status(403).json({ message: 'Only Owner or Collaborator can import a plan' });
+    }
+
+    let file;
+    try {
+      file = await readCsvUpload(req, res);
+    } catch (err) {
+      if (res.headersSent) return;
+      return res.status(400).json({ message: 'Only a CSV file can be imported' });
+    }
+    if (res.headersSent) return;
+
+    const kind = uploadKind(file);
+    if (kind === 'spreadsheet' || kind === 'notcsv') {
+      return res.status(400).json({ message: 'Only a CSV file can be imported' });
+    }
+    if (kind !== 'csv') {
+      return res.status(400).json({ message: 'CSV file and a column map are required' });
+    }
+
+    const columnMap = readColumnMap(req.body && req.body.map);
+    if (!columnMap) {
+      return res.status(400).json({ message: 'CSV file and a column map are required' });
+    }
+
+    const rows = parseCsv(file.buffer.toString('utf8'));
+    const headers = rows[0] || [];
+    const nameIndex = headerIndex(headers, columnMap.name);
+    if (nameIndex < 0) {
+      return res.status(400).json({ message: 'The name column is not in the CSV' });
+    }
+    const typeIndex = headerIndex(headers, columnMap.type);
+    const startIndex = headerIndex(headers, columnMap.startTime);
+    const endIndex = headerIndex(headers, columnMap.endTime);
+    const locationIndex = headerIndex(headers, columnMap.location);
+    const zone = planZone(source.timeZone);
+
+    const activities = [];
+    let skipped = 0;
+    for (const dataRow of rows.slice(1)) {
+      const name = cell(dataRow, nameIndex);
+      if (!name) {
+        skipped += 1;
+        continue;
+      }
+      const activity = {
+        _id: uuidv4(),
+        name,
+        type: cell(dataRow, typeIndex) || 'activity',
+        location: cell(dataRow, locationIndex),
+        planId: '',
+        ownerId: callerId,
+        status: 'draft',
+      };
+      const startTime = parseActivityTime(cell(dataRow, startIndex), zone);
+      const endTime = parseActivityTime(cell(dataRow, endIndex), zone);
+      if (startTime) activity.startTime = startTime;
+      if (endTime) activity.endTime = endTime;
+      activities.push(activity);
+    }
+
+    const newPlanId = uuidv4();
+    const created = new Plan({
+      _id: newPlanId,
+      type: source.type,
+      name: await nextImportName(source.name, source.timeZone),
+      destination: source.destination,
+      startDate: source.startDate || null,
+      endDate: source.endDate || null,
+      location: source.location,
+      timeZone: source.timeZone,
+      ownerId: callerId,
+    });
+    await created.save();
+    await new PlanUser({
+      planId: newPlanId,
+      userId: callerId,
+      role: 'Owner',
+    }).save();
+
+    if (activities.length) {
+      for (const activity of activities) activity.planId = newPlanId;
+      await Event.insertMany(activities);
+    }
+
+    return res.status(201).json({
+      planId: newPlanId,
+      name: created.name,
+      inserted: activities.length,
+      skipped,
+    });
+  } catch (err) {
+    if (res.headersSent) return;
+    console.error('Plan import error:', err);
+    return res.status(500).json({ message: 'Server error' });
   }
 });
 
