@@ -645,7 +645,7 @@
           "raw": "{\n  \"name\": \"Earlier dinner\",\n  \"type\": \"dining\",\n  \"planId\": \"{{planId}}\",\n  \"startTime\": \"2026-06-01T15:00:00.000Z\",\n  \"endTime\": \"2026-06-01T18:00:00.000Z\"\n}",
           "options": { "raw": { "language": "json" } }
         },
-        "url": "{{baseUrl}}/api/events"
+        "url": "{{baseUrl}}/api/activities"
       },
       "event": [
         {

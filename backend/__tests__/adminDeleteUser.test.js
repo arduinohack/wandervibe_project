@@ -44,7 +44,7 @@ async function createPlan(token, name) {
 
 async function createDinner(token, planId) {
   const res = await request(app)
-    .post('/api/events')
+    .post('/api/activities')
     .set('Authorization', `Bearer ${token}`)
     .send({
       name: 'Dinner',
