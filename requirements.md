@@ -273,7 +273,17 @@ No impersonation. No reading a `.log` file from Flutter.
 
 Each item: `_id`, `email`, `firstName`, `lastName`, `role`. Never password, resetToken, or hashes.
 
-Admin-web: email field + dropdown of matches as the admin types (debounce ~300ms). Selecting a row sets the current admin target user (`_id` + email shown). Delete user and log filter `userId` use that id. Do not send `q` to any non-admin route.
+Admin-web: Account Filter matches as the admin types. Choosing a row sets the log filter user id only. It does not arm Delete user. Do not send `q` to any non-admin route.
+
+### Admin explorer (2 Oct 2026)
+
+Drill-down is a stack of dialogs. Close returns to the caller. Account Filter does not arm delete.
+
+- User dialog: email, first name, last name, phone, account role, and plans where that user has a stored role. Plan rows show plan name, type, dates, and role, not the plan id. `GET /api/admin/users/:userId`. Delete user is on this dialog and uses `DELETE /api/admin/users/:userId` (409 if a shared owned plan remains).
+- Plan dialog: opened from a plan row. Fields, members with stored role, activities by name, type, and start time. `GET /api/admin/plans/:planId`. Delete plan is on this dialog: `DELETE /api/admin/plans/:planId`. 409 if another member or a pending invitation remains. Sole plan removes its activities, revisions, invitations, and support logs, then the plan.
+- Activity dialog shipped 2 Oct 2026: opened from an activity row. Shows name, type, start, end, location, details, and revisions newest first. Each revision shows action, time, and the account email. A deleted account leaves the email blank. `GET /api/admin/activities/:activityId`. Delete activity is on this dialog: `DELETE /api/admin/activities/:activityId`, writes the same delete revision as the member path. Edit form is not shipped.
+- Support log table shows Account Email (`actorEmail`) and Plan (`planName`). Ids stay on the row for filters and tooltips, not as cell text. Login and logout rows persist `actorEmail`. Event menu seeds `/api/activities`. Old `/api/events` rows remain selectable.
+- Local runner: `node serve.js` in `admin-web` on port 5500. `r` or `R` reloads open admin tabs. `npx serve` remains a fallback.
 
 ---
 
