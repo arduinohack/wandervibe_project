@@ -161,6 +161,29 @@
     <p id="plan-delete-status" role="status"></p>
     <button type="button" id="plan-delete" class="explorer-delete">Delete plan</button>
   </dialog>
+  <dialog id="activity-dialog" aria-labelledby="activity-dialog-title">
+    <div class="explorer-bar">
+      <h2 id="activity-dialog-title">Activity</h2>
+      <button type="button" id="activity-dialog-close">Close</button>
+    </div>
+    <p id="activity-dialog-status" role="status"></p>
+    <dl id="activity-dialog-fields" class="explorer-fields"></dl>
+    <h3>Revisions</h3>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Action</th>
+            <th>Created</th>
+            <th>User</th>
+          </tr>
+        </thead>
+        <tbody id="activity-dialog-revisions"></tbody>
+      </table>
+    </div>
+    <p id="activity-delete-status" role="status"></p>
+    <button type="button" id="activity-delete" class="explorer-delete">Delete activity</button>
+  </dialog>
   <script src="app.js"></script>
 </body>
 </html>

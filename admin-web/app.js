@@ -47,10 +47,12 @@ const ZONE_CHOICES = [
 // an older name such as POST /api/events. Stored rows are not rewritten.
 const KNOWN_EVENTS = [
   'DELETE /api/activities/:id',
+  'DELETE /api/admin/activities/:activityId',
   'DELETE /api/admin/plans/:planId',
   'DELETE /api/admin/users/:userId',
   'GET /api/activities/:id/history',
   'GET /api/activities/plan/:planId',
+  'GET /api/admin/activities/:activityId',
   'GET /api/admin/plans/:planId',
   'GET /api/admin/users',
   'GET /api/admin/users/:userId',
@@ -97,8 +99,11 @@ let explorerUserId = '';
 let explorerUserEmail = '';
 let planExplorerId = '';
 let planExplorerName = '';
+let activityExplorerId = '';
+let activityExplorerName = '';
 let explorerSeq = 0;
 let planExplorerSeq = 0;
+let activityExplorerSeq = 0;
 let userSearchTimer = 0;
 let userSearchSeq = 0;
 let eventOptions = KNOWN_EVENTS.slice();
@@ -385,6 +390,9 @@ const MESSAGE_OVERRIDES = {
   'GET /api/admin/users/:userId': {
     200: 'Opened account',
   },
+  'GET /api/admin/activities/:activityId': {
+    200: 'Opened activity',
+  },
   'GET /api/admin/plans/:planId': {
     200: 'Opened plan',
   },
@@ -661,6 +669,12 @@ document.addEventListener('pointerdown', (event) => {
 
 document.addEventListener('keydown', (event) => {
   if (event.key !== 'Escape') return;
+  const activityDialog = document.getElementById('activity-dialog');
+  if (activityDialog && activityDialog.open) {
+    event.preventDefault();
+    activityDialog.close();
+    return;
+  }
   const planDialog = document.getElementById('plan-dialog');
   if (planDialog && planDialog.open) {
     event.preventDefault();
@@ -709,7 +723,31 @@ function clearPlanExplorerFields() {
   }
 }
 
+function clearActivityExplorerFields() {
+  const status = document.getElementById('activity-dialog-status');
+  const fields = document.getElementById('activity-dialog-fields');
+  const revisions = document.getElementById('activity-dialog-revisions');
+  const deleteStatus = document.getElementById('activity-delete-status');
+  if (status) status.textContent = '';
+  if (fields) fields.replaceChildren();
+  if (revisions) revisions.replaceChildren();
+  if (deleteStatus) {
+    deleteStatus.textContent = '';
+    deleteStatus.classList.remove('is-error');
+  }
+}
+
+function clearActivityExplorer() {
+  activityExplorerSeq += 1;
+  activityExplorerId = '';
+  activityExplorerName = '';
+  const dialog = document.getElementById('activity-dialog');
+  if (dialog && dialog.open) dialog.close();
+  clearActivityExplorerFields();
+}
+
 function clearPlanExplorer() {
+  clearActivityExplorer();
   planExplorerSeq += 1;
   const dialog = document.getElementById('plan-dialog');
   if (dialog && dialog.open) dialog.close();
@@ -745,6 +783,20 @@ document.getElementById('plan-dialog').addEventListener('close', () => {
   planExplorerId = '';
   planExplorerName = '';
   clearPlanExplorerFields();
+  const activityDialog = document.getElementById('activity-dialog');
+  if (activityDialog && activityDialog.open) activityDialog.close();
+});
+
+document.getElementById('activity-dialog').addEventListener('close', () => {
+  activityExplorerSeq += 1;
+  activityExplorerId = '';
+  activityExplorerName = '';
+  clearActivityExplorerFields();
+});
+
+document.getElementById('activity-dialog-close').addEventListener('click', () => {
+  const dialog = document.getElementById('activity-dialog');
+  if (dialog && dialog.open) dialog.close();
 });
 
 document.getElementById('plan-dialog-close').addEventListener('click', () => {
@@ -859,7 +911,22 @@ function renderPlanExplorer(plan) {
   activitiesBody.replaceChildren();
   const activities = Array.isArray(plan.activities) ? plan.activities : [];
   for (const activity of activities) {
+    const activityId = activity && activity._id != null ? String(activity._id) : '';
     const row = document.createElement('tr');
+    if (activityId) {
+      row.className = 'explorer-activity-row';
+      row.tabIndex = 0;
+      row.dataset.activityId = activityId;
+      row.setAttribute('role', 'button');
+      row.setAttribute('aria-label', `Open activity ${activity.name || activityId}`);
+      const openActivity = () => openActivityExplorer(activityId);
+      row.addEventListener('click', openActivity);
+      row.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        openActivity();
+      });
+    }
     for (const value of [activity.name, activity.type, explorerDateTime(activity.startTime)]) {
       const cell = document.createElement('td');
       cell.textContent = value == null ? '' : String(value);
@@ -867,6 +934,100 @@ function renderPlanExplorer(plan) {
     }
     activitiesBody.appendChild(row);
   }
+}
+
+function renderActivityExplorer(activity) {
+  const fields = document.getElementById('activity-dialog-fields');
+  const revisionsBody = document.getElementById('activity-dialog-revisions');
+  const rows = [
+    ['Name', activity.name],
+    ['Type', activity.type],
+    ['Start', explorerDateTime(activity.startTime)],
+    ['End', explorerDateTime(activity.endTime)],
+    ['Location', activity.location],
+    ['Details', activity.details],
+  ];
+  fields.replaceChildren();
+  for (const [label, value] of rows) {
+    const term = document.createElement('dt');
+    term.textContent = label;
+    const detail = document.createElement('dd');
+    detail.textContent = value == null ? '' : String(value);
+    fields.append(term, detail);
+  }
+  revisionsBody.replaceChildren();
+  const revisions = Array.isArray(activity.revisions) ? activity.revisions : [];
+  for (const revision of revisions) {
+    const row = document.createElement('tr');
+    for (const value of [revision.action, explorerDateTime(revision.createdAt), revision.userId]) {
+      const cell = document.createElement('td');
+      cell.textContent = value == null ? '' : String(value);
+      row.appendChild(cell);
+    }
+    revisionsBody.appendChild(row);
+  }
+}
+
+function removePlanActivityRow(activityId) {
+  const body = document.getElementById('plan-dialog-activities');
+  if (!body) return;
+  for (const row of [...body.querySelectorAll('tr')]) {
+    if (row.dataset.activityId === activityId) row.remove();
+  }
+  if (body.children.length) return;
+  const status = document.getElementById('plan-dialog-status');
+  if (!status || status.textContent.includes('No activities.')) return;
+  status.textContent = status.textContent ? `${status.textContent} No activities.` : 'No activities.';
+}
+
+async function openActivityExplorer(activityId) {
+  const id = activityId == null ? '' : String(activityId);
+  const dialog = document.getElementById('activity-dialog');
+  const status = document.getElementById('activity-dialog-status');
+  const fields = document.getElementById('activity-dialog-fields');
+  const revisionsBody = document.getElementById('activity-dialog-revisions');
+  if (!dialog || !id) return;
+  activityExplorerId = id;
+  activityExplorerName = '';
+  const deleteStatus = document.getElementById('activity-delete-status');
+  if (deleteStatus) {
+    deleteStatus.textContent = '';
+    deleteStatus.classList.remove('is-error');
+  }
+  const seq = ++activityExplorerSeq;
+  if (!dialog.open) dialog.showModal();
+  status.textContent = 'Loading activity.';
+  fields.replaceChildren();
+  revisionsBody.replaceChildren();
+  let response;
+  try {
+    response = await fetch(`${API}/api/admin/activities/${encodeURIComponent(id)}`, {
+      headers: authHeaders(),
+    });
+  } catch (err) {
+    if (seq !== activityExplorerSeq) return;
+    status.textContent = 'Could not reach the API.';
+    return;
+  }
+  if (seq !== activityExplorerSeq) return;
+  const body = await readBody(response);
+  if (seq !== activityExplorerSeq) return;
+  if (response.status === 401) {
+    clearToken();
+    clearSelectedUser();
+    clearExplorer();
+    showLoggedIn(false);
+    loginError.textContent = messageFrom(body, 'Login expired.');
+    return;
+  }
+  if (!response.ok) {
+    status.textContent = messageFrom(body, 'Could not open this activity.');
+    return;
+  }
+  activityExplorerName = body.name == null ? '' : String(body.name);
+  const revisionCount = Array.isArray(body.revisions) ? body.revisions.length : 0;
+  status.textContent = revisionCount ? '' : 'No revisions.';
+  renderActivityExplorer(body);
 }
 
 async function openPlanExplorer(planId) {
@@ -1388,6 +1549,44 @@ document.getElementById('plan-delete').addEventListener('click', async () => {
     if (accountStatus && !accountStatus.textContent) {
       accountStatus.textContent = messageFrom(body, 'Plan deleted');
     }
+    return;
+  }
+  status.classList.add('is-error');
+  status.textContent = messageFrom(body, 'Delete failed.');
+});
+
+document.getElementById('activity-delete').addEventListener('click', async () => {
+  const status = document.getElementById('activity-delete-status');
+  status.classList.remove('is-error');
+  status.textContent = '';
+  const activityId = activityExplorerId;
+  if (!activityId) return;
+  const name = activityExplorerName || 'this activity';
+  if (!window.confirm(`Delete activity ${name}?`)) return;
+  let response;
+  try {
+    response = await fetch(`${API}/api/admin/activities/${encodeURIComponent(activityId)}`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    });
+  } catch (err) {
+    status.classList.add('is-error');
+    status.textContent = 'Could not reach the API.';
+    return;
+  }
+  const body = await readBody(response);
+  if (response.status === 401) {
+    clearToken();
+    clearSelectedUser();
+    clearExplorer();
+    showLoggedIn(false);
+    loginError.textContent = messageFrom(body, 'Login expired.');
+    return;
+  }
+  if (response.status === 200 || response.status === 204) {
+    const dialog = document.getElementById('activity-dialog');
+    if (dialog && dialog.open) dialog.close();
+    removePlanActivityRow(activityId);
     return;
   }
   status.classList.add('is-error');

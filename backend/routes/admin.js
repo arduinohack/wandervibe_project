@@ -7,6 +7,7 @@ const { Event } = require('../models/Event');
 const ActivityRevision = require('../models/ActivityRevision');
 const SupportLog = require('../models/SupportLog');
 const { logSupport } = require('../utils/logSupport');
+const { recordActivityRevision } = require('../utils/recordActivityRevision');
 
 const router = express.Router();
 
@@ -214,6 +215,57 @@ router.delete('/plans/:planId', async (req, res) => {
     res.json({ message: 'Plan deleted' });
   } catch (err) {
     console.error(`Admin delete plan failed: ${err.message}`);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.get('/activities/:activityId', async (req, res) => {
+  try {
+    const activityId = String(req.params.activityId || '');
+    const activity = await Event.findById(activityId)
+      .select('name type planId startTime endTime location details')
+      .lean();
+    if (!activity) {
+      return res.status(404).json({ message: 'Activity not found' });
+    }
+    const revisions = await ActivityRevision.find({ eventId: activityId })
+      .select('action createdAt userId')
+      .sort({ createdAt: -1 })
+      .lean();
+    res.json({
+      _id: String(activity._id),
+      name: activity.name || '',
+      type: activity.type || '',
+      planId: activity.planId || '',
+      startTime: isoOrNull(activity.startTime),
+      endTime: isoOrNull(activity.endTime),
+      location: activity.location || '',
+      details: activity.details || '',
+      revisions: revisions.map((revision) => ({
+        action: revision.action || '',
+        createdAt: isoOrNull(revision.createdAt),
+        userId: revision.userId || '',
+      })),
+    });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Same delete revision as DELETE /api/activities/:id.
+router.delete('/activities/:activityId', async (req, res) => {
+  try {
+    const activityId = String(req.params.activityId || '');
+    const activity = await Event.findById(activityId);
+    if (!activity) {
+      return res.status(404).json({ message: 'Activity not found' });
+    }
+    const callerId = String((req.user && (req.user.userId || req.user.id)) || '');
+    await Event.findByIdAndDelete(activityId);
+    await recordActivityRevision(activity, 'delete', callerId);
+    res.json({ message: 'Activity deleted' });
+  } catch (err) {
+    console.error(`Admin delete activity failed: ${err.message}`);
     res.status(500).json({ message: 'Server error' });
   }
 });

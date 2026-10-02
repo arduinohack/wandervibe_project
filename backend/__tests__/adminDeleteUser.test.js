@@ -470,3 +470,144 @@ describe('admin delete plan', () => {
     expect(await Plan.findById(planId)).not.toBeNull();
   });
 });
+
+describe('admin activity explorer', () => {
+  test('an admin reads the activity and its revisions newest first', async () => {
+    const admin = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Admin',
+      email: 'ada@example.com',
+    });
+    await User.updateOne({ _id: admin.userId }, { $set: { role: 'admin' } });
+    const grace = await registerAndLogin({
+      firstName: 'Grace',
+      lastName: 'Hopper',
+      email: 'grace@example.com',
+    });
+    const planId = await createPlan(grace.token, 'Paris');
+    const created = await request(app)
+      .post('/api/activities')
+      .set('Authorization', `Bearer ${grace.token}`)
+      .send({
+        name: 'Dinner',
+        type: 'dining',
+        planId,
+        location: 'Le Bistro',
+        details: 'Window table',
+        startTime: '2026-06-01T15:00:00.000Z',
+        endTime: '2026-06-01T18:00:00.000Z',
+      });
+    expect(created.status).toBe(201);
+    const activityId = created.body._id;
+    const updated = await request(app)
+      .put(`/api/activities/${activityId}`)
+      .set('Authorization', `Bearer ${grace.token}`)
+      .send({ details: 'Corner table' });
+    expect(updated.status).toBe(200);
+
+    const anon = await request(app).get(`/api/admin/activities/${activityId}`);
+    expect(anon.status).toBe(401);
+    expect(anon.body.message).toBe('No token, authorization denied');
+
+    const member = await request(app)
+      .get(`/api/admin/activities/${activityId}`)
+      .set('Authorization', `Bearer ${grace.token}`);
+    expect(member.status).toBe(403);
+    expect(member.body.message).toBe('Admin access required');
+
+    const found = await request(app)
+      .get(`/api/admin/activities/${activityId}`)
+      .set('Authorization', `Bearer ${admin.token}`);
+    expect(found.status).toBe(200);
+    expect(Object.keys(found.body).sort()).toEqual([
+      '_id',
+      'details',
+      'endTime',
+      'location',
+      'name',
+      'planId',
+      'revisions',
+      'startTime',
+      'type',
+    ]);
+    expect(found.body).toMatchObject({
+      _id: activityId,
+      name: 'Dinner',
+      type: 'dining',
+      planId,
+      startTime: '2026-06-01T15:00:00.000Z',
+      endTime: '2026-06-01T18:00:00.000Z',
+      location: 'Le Bistro',
+      details: 'Corner table',
+    });
+    expect(found.body.revisions.map((row) => row.action)).toEqual(['update', 'create']);
+    expect(Object.keys(found.body.revisions[0]).sort()).toEqual(['action', 'createdAt', 'userId']);
+    expect(found.body.revisions[0].userId).toBe(grace.userId);
+    expect(found.body.revisions[1].userId).toBe(grace.userId);
+    expect(JSON.stringify(found.body)).not.toContain('password1');
+
+    const missing = await request(app)
+      .get('/api/admin/activities/does-not-exist')
+      .set('Authorization', `Bearer ${admin.token}`);
+    expect(missing.status).toBe(404);
+    expect(missing.body.message).toBe('Activity not found');
+  });
+
+  test('an admin delete removes the activity and writes the member delete revision', async () => {
+    const admin = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Admin',
+      email: 'ada@example.com',
+    });
+    await User.updateOne({ _id: admin.userId }, { $set: { role: 'admin' } });
+    const grace = await registerAndLogin({
+      firstName: 'Grace',
+      lastName: 'Hopper',
+      email: 'grace@example.com',
+    });
+    const planId = await createPlan(grace.token, 'Paris');
+    const activityId = await createDinner(grace.token, planId);
+    const keptId = await createDinner(grace.token, planId);
+
+    const member = await request(app)
+      .delete(`/api/admin/activities/${activityId}`)
+      .set('Authorization', `Bearer ${grace.token}`);
+    expect(member.status).toBe(403);
+    expect(member.body.message).toBe('Admin access required');
+    expect(await Event.findById(activityId)).not.toBeNull();
+    expect(await ActivityRevision.countDocuments({ eventId: activityId, action: 'delete' })).toBe(0);
+
+    const removed = await request(app)
+      .delete(`/api/admin/activities/${activityId}`)
+      .set('Authorization', `Bearer ${admin.token}`);
+    expect(removed.status).toBe(200);
+    expect(removed.body.message).toBe('Activity deleted');
+    expect(await Event.findById(activityId)).toBeNull();
+    expect(await Event.findById(keptId)).not.toBeNull();
+
+    const revision = await ActivityRevision.findOne({ eventId: activityId, action: 'delete' });
+    expect(revision).not.toBeNull();
+    expect(revision.deleted).toBe(true);
+    expect(revision.userId).toBe(admin.userId);
+    expect(revision.planId).toBe(planId);
+    expect(revision.snapshot.name).toBe('Dinner');
+    expect(revision.snapshot.type).toBe('dining');
+    expect(String(revision.snapshot._id)).toBe(activityId);
+
+    const history = await request(app)
+      .get(`/api/activities/${activityId}/history`)
+      .set('Authorization', `Bearer ${grace.token}`);
+    expect(history.status).toBe(200);
+    expect(history.body[0].action).toBe('delete');
+    expect(history.body[0].deleted).toBe(true);
+    expect(history.body[0].userId).toBe(admin.userId);
+    expect(history.body[0].snapshot.name).toBe('Dinner');
+    expect(history.body[0].snapshot.deleted).toBeUndefined();
+
+    const missing = await request(app)
+      .delete('/api/admin/activities/does-not-exist')
+      .set('Authorization', `Bearer ${admin.token}`);
+    expect(missing.status).toBe(404);
+    expect(missing.body.message).toBe('Activity not found');
+  });
+});
