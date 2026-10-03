@@ -516,6 +516,79 @@ function sharedInvite(row, user) {
   };
 }
 
+function textField(body, key) {
+  if (!Object.prototype.hasOwnProperty.call(body, key)) return { present: false };
+  const value = body[key];
+  if (value == null) return { present: true, value: '' };
+  if (typeof value !== 'string') return { present: true, invalid: true };
+  return { present: true, value: value.trim() };
+}
+
+function dateField(body, key) {
+  if (!Object.prototype.hasOwnProperty.call(body, key)) return { present: false };
+  const value = body[key];
+  if (value == null || value === '') return { present: true, value: null };
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return { present: true, invalid: true };
+  return { present: true, value: date };
+}
+
+// PUT /api/plans/:planId
+// The Owner may edit name, destination, dates, and time zone. Type and ownerId stay as stored.
+router.put('/:planId', authMiddleware, async (req, res) => {
+  const planId = String(req.params.planId || '');
+  try {
+    const plan = await Plan.findById(planId);
+    if (!plan) {
+      return res.status(404).json({ message: 'Plan not found' });
+    }
+
+    const callerId = req.user.userId || req.user.id;
+    const role = await callerPlanRole(plan, callerId);
+    if (role !== 'Owner') {
+      return res.status(403).json({ message: 'Only the Owner can edit a plan' });
+    }
+
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const name = textField(body, 'name');
+    if (name.invalid) return res.status(400).json({ message: 'Name must be text' });
+    if (name.present && !name.value) {
+      return res.status(400).json({ message: 'Name is required' });
+    }
+
+    const destination = textField(body, 'destination');
+    if (destination.invalid) {
+      return res.status(400).json({ message: 'Destination must be text' });
+    }
+    if (destination.present && plan.type === 'trip' && !destination.value) {
+      return res.status(400).json({ message: 'Destination is required' });
+    }
+
+    const startDate = dateField(body, 'startDate');
+    const endDate = dateField(body, 'endDate');
+    if (startDate.invalid || endDate.invalid) {
+      return res.status(400).json({ message: 'Enter a valid date' });
+    }
+
+    const timeZone = textField(body, 'timeZone');
+    if (timeZone.invalid) {
+      return res.status(400).json({ message: 'Time zone must be text' });
+    }
+
+    if (name.present) plan.name = name.value;
+    if (destination.present) plan.destination = destination.value;
+    if (startDate.present) plan.startDate = startDate.value;
+    if (endDate.present) plan.endDate = endDate.value;
+    if (timeZone.present) plan.timeZone = timeZone.value;
+
+    await plan.save();
+    return res.json({ plan });
+  } catch (err) {
+    console.error('Edit plan error:', err);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // DELETE /api/plans/:planId
 // The Owner may delete a plan that is not shared. Another member or a pending invite is 409.
 router.delete('/:planId', authMiddleware, async (req, res) => {

@@ -86,6 +86,13 @@ class PlanDeleteResult {
   const PlanDeleteResult({this.status, this.sharedWith = const []});
 }
 
+class PlanUpdateResult {
+  final int? status;
+  final Plan? plan;
+
+  const PlanUpdateResult({this.status, this.plan});
+}
+
 String _trimmed(dynamic value) {
   if (value == null) return '';
   return value.toString().trim();
@@ -539,6 +546,54 @@ class PlanProvider extends ChangeNotifier {
     } catch (e) {
       logger.e('Error updating activity: $e');
       return null;
+    }
+  }
+
+  /// PUT /api/plans/:planId with name, destination, dates, and time zone.
+  /// On 200 that plan in the loaded list is replaced. Type and ownerId are not sent.
+  Future<PlanUpdateResult> updatePlan({
+    required String planId,
+    required String name,
+    required String destination,
+    required DateTime? startDate,
+    required DateTime? endDate,
+    required String timeZone,
+    required String? token,
+  }) async {
+    try {
+      if (token == null || token.isEmpty) {
+        return const PlanUpdateResult(status: 401);
+      }
+      final response = await http.put(
+        Uri.parse('$backendBaseUrl$apiPlans/$planId'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode({
+          'name': name,
+          'destination': destination,
+          'startDate': startDate?.toUtc().toIso8601String(),
+          'endDate': endDate?.toUtc().toIso8601String(),
+          'timeZone': timeZone,
+        }),
+      );
+      if (response.statusCode != 200) {
+        return PlanUpdateResult(status: response.statusCode);
+      }
+      final data = json.decode(response.body);
+      final planJson = data is Map ? data['plan'] : null;
+      if (planJson is! Map) return const PlanUpdateResult(status: 200);
+      final updated = Plan.fromJson(Map<String, dynamic>.from(planJson));
+      _plans = [
+        for (final plan in _plans)
+          if (plan.id == planId) updated else plan,
+      ];
+      notifyListeners();
+      return PlanUpdateResult(status: 200, plan: updated);
+    } catch (e) {
+      logger.e('Error updating plan: $e');
+      return const PlanUpdateResult();
     }
   }
 

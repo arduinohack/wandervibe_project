@@ -39,6 +39,25 @@ bool canDeletePlan(String? storedRole) {
   return storedRole?.trim() == 'Owner';
 }
 
+bool canEditPlan(String? storedRole) {
+  return storedRole?.trim() == 'Owner';
+}
+
+/// UTC calendar date. Empty stays null. Anything else is not a plan date.
+DateTime? parsePlanDate(String text) {
+  final trimmed = text.trim();
+  if (trimmed.isEmpty) return null;
+  final match = RegExp(r'^(\d{4})-(\d{2})-(\d{2})$').firstMatch(trimmed);
+  if (match == null) return null;
+  final year = int.parse(match.group(1)!);
+  final month = int.parse(match.group(2)!);
+  final day = int.parse(match.group(3)!);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  final date = DateTime.utc(year, month, day);
+  if (date.month != month || date.day != day) return null;
+  return date;
+}
+
 /// UTC clock time for an activity start. Null stays "not set".
 String formatActivityStart(DateTime? value) {
   if (value == null) return 'not set';
@@ -67,10 +86,12 @@ class PlanDetailScreen extends StatefulWidget {
 class _PlanDetailScreenState extends State<PlanDetailScreen> {
   bool _loaded = false;
   int? _status;
+  late Plan _plan;
 
   @override
   void initState() {
     super.initState();
+    _plan = widget.plan;
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
@@ -220,6 +241,44 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     }
   }
 
+  Future<void> _editPlan() async {
+    final draft = await showDialog<_PlanEdit>(
+      context: context,
+      builder: (context) => _EditPlanDialog(plan: _plan),
+    );
+    if (draft == null || !mounted) return;
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final result = await planProvider.updatePlan(
+      planId: _plan.id,
+      name: draft.name,
+      destination: draft.destination,
+      startDate: draft.startDate,
+      endDate: draft.endDate,
+      timeZone: draft.timeZone,
+      token: userProvider.token,
+    );
+    if (!mounted) return;
+    if (result.status == 401) {
+      await _endSession(userProvider, planProvider, navigator);
+      return;
+    }
+    if (result.status == 403) {
+      messenger.showSnackBar(const SnackBar(content: Text('Not allowed')));
+      return;
+    }
+    final updated = result.plan;
+    if (result.status != 200 || updated == null) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Could not update plan')),
+      );
+      return;
+    }
+    setState(() => _plan = updated);
+  }
+
   Future<void> _deletePlan() async {
     final planId = widget.plan.id;
     if (planId.isEmpty) return;
@@ -293,7 +352,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          widget.plan.name,
+          _plan.name,
           overflow: TextOverflow.ellipsis,
           maxLines: 1,
         ),
@@ -334,7 +393,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
           );
           final roleText = storedRole == null
               ? null
-              : planRoleLabel(widget.plan.type, storedRole);
+              : planRoleLabel(_plan.type, storedRole);
           final activities = planProvider.itineraryActivities;
           final canChange = canAddActivity(storedRole);
 
@@ -348,20 +407,30 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        widget.plan.name,
+                        _plan.name,
                         style: const TextStyle(
                           fontSize: 24,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
                       const SizedBox(height: 8),
-                      Text('Destination: ${widget.plan.destination}'),
+                      Text('Destination: ${_plan.destination}'),
                       if (roleText != null) Text('Role: $roleText'),
-                      Text('Budget: \$${widget.plan.budget}'),
+                      Text('Budget: \$${_plan.budget}'),
                       Text(
-                        'Dates: ${formatPlanDate(widget.plan.startDate)} - ${formatPlanDate(widget.plan.endDate)}',
+                        'Dates: ${formatPlanDate(_plan.startDate)} - ${formatPlanDate(_plan.endDate)}',
                       ),
-                      Text('State: ${widget.plan.planningState}'),
+                      Text(
+                        'Time zone: ${_plan.timeZone.isEmpty ? 'not set' : _plan.timeZone}',
+                      ),
+                      Text('State: ${_plan.planningState}'),
+                      if (canEditPlan(storedRole)) ...[
+                        const SizedBox(height: 12),
+                        TextButton(
+                          onPressed: _editPlan,
+                          child: const Text('Edit plan'),
+                        ),
+                      ],
                       if (canDeletePlan(storedRole)) ...[
                         const SizedBox(height: 12),
                         TextButton(
@@ -661,6 +730,157 @@ class _EditActivityDialogState extends State<_EditActivityDialog> {
             Text(_error!, style: const TextStyle(color: Colors.red)),
           ],
         ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        TextButton(onPressed: _submit, child: const Text('Save')),
+      ],
+    );
+  }
+}
+
+class _PlanEdit {
+  final String name;
+  final String destination;
+  final DateTime? startDate;
+  final DateTime? endDate;
+  final String timeZone;
+
+  const _PlanEdit({
+    required this.name,
+    required this.destination,
+    required this.startDate,
+    required this.endDate,
+    required this.timeZone,
+  });
+}
+
+class _EditPlanDialog extends StatefulWidget {
+  final Plan plan;
+
+  const _EditPlanDialog({required this.plan});
+
+  @override
+  State<_EditPlanDialog> createState() => _EditPlanDialogState();
+}
+
+class _EditPlanDialogState extends State<_EditPlanDialog> {
+  late final TextEditingController _nameController;
+  late final TextEditingController _destinationController;
+  late final TextEditingController _startController;
+  late final TextEditingController _endController;
+  late final TextEditingController _timeZoneController;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    final plan = widget.plan;
+    _nameController = TextEditingController(text: plan.name);
+    _destinationController = TextEditingController(text: plan.destination);
+    _startController = TextEditingController(
+      text: plan.startDate == null ? '' : formatPlanDate(plan.startDate),
+    );
+    _endController = TextEditingController(
+      text: plan.endDate == null ? '' : formatPlanDate(plan.endDate),
+    );
+    _timeZoneController = TextEditingController(text: plan.timeZone);
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _destinationController.dispose();
+    _startController.dispose();
+    _endController.dispose();
+    _timeZoneController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final name = _nameController.text.trim();
+    final destination = _destinationController.text.trim();
+    final timeZone = _timeZoneController.text.trim();
+    final startText = _startController.text.trim();
+    final endText = _endController.text.trim();
+    final start = parsePlanDate(startText);
+    final end = parsePlanDate(endText);
+    if (name.isEmpty || timeZone.isEmpty) {
+      setState(() => _error = 'Enter a name and a time zone');
+      return;
+    }
+    if (widget.plan.type == 'trip' && destination.isEmpty) {
+      setState(() => _error = 'Enter a destination');
+      return;
+    }
+    if ((startText.isNotEmpty && start == null) ||
+        (endText.isNotEmpty && end == null)) {
+      setState(() => _error = 'Enter dates as YYYY-MM-DD');
+      return;
+    }
+    if (start != null && end != null && end.isBefore(start)) {
+      setState(() => _error = 'End date must not be before the start date');
+      return;
+    }
+    Navigator.pop(
+      context,
+      _PlanEdit(
+        name: name,
+        destination: destination,
+        startDate: start,
+        endDate: end,
+        timeZone: timeZone,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Edit plan'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _nameController,
+              decoration: const InputDecoration(labelText: 'Name'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _destinationController,
+              decoration: const InputDecoration(labelText: 'Destination'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _startController,
+              decoration: const InputDecoration(
+                labelText: 'Start date',
+                hintText: 'YYYY-MM-DD',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _endController,
+              decoration: const InputDecoration(
+                labelText: 'End date',
+                hintText: 'YYYY-MM-DD',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _timeZoneController,
+              decoration: const InputDecoration(labelText: 'Time zone'),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(_error!, style: const TextStyle(color: Colors.red)),
+            ],
+          ],
+        ),
       ),
       actions: [
         TextButton(
