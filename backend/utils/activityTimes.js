@@ -1,4 +1,5 @@
 const { Event } = require('../models/Event');
+const Plan = require('../models/Plan');
 
 function hasOwn(source, key) {
   return !!source && Object.prototype.hasOwnProperty.call(source, key);
@@ -83,24 +84,31 @@ async function resolveActivitySchedule({
     start = await previousActivityInstant(planId);
   }
 
-  let end = null;
   let minutes = duration.empty ? null : duration.minutes;
-  if (minutes != null && start) {
+  let end = null;
+  if (hasOwn(source, 'endTime')) {
+    const parsed = parseInstant(source.endTime);
+    if (parsed.invalid) return { error: 'End time is not a valid date' };
+    end = parsed.date || null;
+  } else if (!isCreate) {
+    end = instant(existingEnd);
+  } else if (minutes != null && start) {
     end = new Date(start.getTime() + minutes * 60000);
-  } else {
-    if (hasOwn(source, 'endTime')) {
-      const parsed = parseInstant(source.endTime);
-      if (parsed.invalid) return { error: 'End time is not a valid date' };
-      end = parsed.date || null;
-    } else if (!isCreate) {
-      end = instant(existingEnd);
-    }
-    if (minutes == null && start && end) {
-      minutes = Math.round((end.getTime() - start.getTime()) / 60000);
-    }
+  }
+
+  if (minutes == null && start && end) {
+    minutes = Math.round((end.getTime() - start.getTime()) / 60000);
   }
 
   return { startTime: start, endTime: end, durationMinutes: minutes };
 }
 
-module.exports = { resolveActivitySchedule };
+async function defaultActivityTimeZone(body, planId) {
+  const raw = body && typeof body.timeZone === 'string' ? body.timeZone.trim() : '';
+  if (raw) return raw;
+  if (!planId) return '';
+  const plan = await Plan.findById(planId).select('timeZone').lean();
+  return plan && typeof plan.timeZone === 'string' ? plan.timeZone.trim() : '';
+}
+
+module.exports = { resolveActivitySchedule, defaultActivityTimeZone };

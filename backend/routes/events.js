@@ -9,7 +9,7 @@ const { canonicalMembershipRole } = require('../middleware/roleCheck');
 const { applyTypeChange, assertTypeRequirements } = require('../utils/activityTypeFields');
 const { recordActivityRevision } = require('../utils/recordActivityRevision');
 const { syncPlanDates } = require('../utils/syncPlanDates');
-const { resolveActivitySchedule } = require('../utils/activityTimes');
+const { resolveActivitySchedule, defaultActivityTimeZone } = require('../utils/activityTimes');
 
 function applySchedule(target, schedule) {
   if (schedule.startTime) target.startTime = schedule.startTime;
@@ -86,6 +86,7 @@ router.post('/', authMiddleware, async (req, res) => {
     }
     const payload = { ...req.body, ownerId: callerId };
     applySchedule(payload, schedule);
+    payload.timeZone = await defaultActivityTimeZone(req.body, planId);
     const newEvent = new Event(payload);
     const savedEvent = await newEvent.save();
     await recordActivityRevision(savedEvent, 'create', callerId);

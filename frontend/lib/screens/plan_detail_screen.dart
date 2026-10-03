@@ -5,6 +5,7 @@ import '../models/plan.dart';
 import '../models/plan_role_label.dart';
 import '../providers/plan_provider.dart';
 import '../providers/user_provider.dart';
+import '../utils/activity_time.dart';
 import 'login_screen.dart';
 
 const activityTypes = [
@@ -30,22 +31,6 @@ bool canEditPlan(String? storedRole) {
   return storedRole?.trim() == 'Owner';
 }
 
-/// UTC clock time for an activity start. Null stays "not set".
-String formatActivityStart(DateTime? value) {
-  if (value == null) return 'not set';
-  final clock = formatActivityInput(value);
-  return clock.isEmpty ? 'not set' : '$clock UTC';
-}
-
-/// UTC `YYYY-MM-DD HH:mm` for an edit field. Null stays empty.
-String formatActivityInput(DateTime? value) {
-  if (value == null) return '';
-  final utc = value.toUtc();
-  String two(int number) => number.toString().padLeft(2, '0');
-  final year = utc.year.toString().padLeft(4, '0');
-  return '$year-${two(utc.month)}-${two(utc.day)} ${two(utc.hour)}:${two(utc.minute)}';
-}
-
 String _twoDigits(int number) => number.toString().padLeft(2, '0');
 
 String _utcDateLabel(DateTime? value) {
@@ -55,10 +40,12 @@ String _utcDateLabel(DateTime? value) {
   return '$year-${_twoDigits(utc.month)}-${_twoDigits(utc.day)}';
 }
 
-String _utcTimeLabel(DateTime? value) {
+String _clockLabel(DateTime? value, String suffix) {
   if (value == null) return 'Choose time';
   final utc = value.toUtc();
-  return '${_twoDigits(utc.hour)}:${_twoDigits(utc.minute)} UTC';
+  final clock = '${_twoDigits(utc.hour)}:${_twoDigits(utc.minute)}';
+  if (suffix.isEmpty) return clock;
+  return '$clock $suffix';
 }
 
 DateTime _calendarDate(DateTime? value) {
@@ -121,12 +108,14 @@ class _UtcDateTimePicker extends StatelessWidget {
   final DateTime? value;
   final ValueChanged<DateTime> onChanged;
   final VoidCallback? onClear;
+  final String clockSuffix;
 
   const _UtcDateTimePicker({
     required this.label,
     required this.value,
     required this.onChanged,
     this.onClear,
+    this.clockSuffix = 'UTC',
   });
 
   @override
@@ -157,7 +146,7 @@ class _UtcDateTimePicker extends StatelessWidget {
                   if (next == null || !context.mounted) return;
                   onChanged(next);
                 },
-                child: Text(_utcTimeLabel(value)),
+                child: Text(_clockLabel(value, clockSuffix)),
               ),
               if (onClear != null && value != null)
                 TextButton(onPressed: onClear, child: const Text('Clear')),
@@ -229,6 +218,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
       builder: (context) => _ActivityFormDialog(
         title: 'Add activity',
         actionLabel: 'Add',
+        planTimeZone: _shownPlan(planProvider).timeZone,
         initialStart: _defaultActivityStart(planProvider.itineraryActivities),
       ),
     );
@@ -240,8 +230,9 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
       planId: widget.plan.id,
       name: draft.name,
       type: draft.type,
-      startTime: draft.start,
-      endTime: draft.end,
+      startTime: draft.start!,
+      endTime: draft.end!,
+      timeZone: draft.timeZone,
       location: draft.location,
       details: draft.details,
       gate: draft.gate,
@@ -278,6 +269,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
   Future<void> _openActivityEdit(Activity activity) async {
     final activityId = activity.id;
     if (activityId == null || activityId.isEmpty) return;
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => _ActivityFormDialog(
@@ -285,6 +277,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
           actionLabel: 'Save',
           activity: activity,
           planId: widget.plan.id,
+          planTimeZone: _shownPlan(planProvider).timeZone,
         ),
       ),
     );
@@ -454,7 +447,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            'Type: $type\nStart: ${formatActivityStart(activity.startTime)}',
+                            'Type: $type\nStart: ${activityStartLabel(activity.startTime, activity.timeZone.trim().isEmpty ? shown.timeZone : activity.timeZone)}',
                           ),
                         ],
                       ),
@@ -472,8 +465,9 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
 class _ActivityFields {
   final String name;
   final String type;
-  final DateTime start;
-  final DateTime end;
+  final DateTime? start;
+  final DateTime? end;
+  final String timeZone;
   final String location;
   final String details;
   final String? gate;
@@ -488,6 +482,7 @@ class _ActivityFields {
     required this.type,
     required this.start,
     required this.end,
+    required this.timeZone,
     required this.location,
     required this.details,
     this.gate,
@@ -520,6 +515,7 @@ class _ActivityFormDialog extends StatefulWidget {
   final String actionLabel;
   final Activity? activity;
   final String? planId;
+  final String planTimeZone;
   final DateTime? initialStart;
 
   const _ActivityFormDialog({
@@ -527,6 +523,7 @@ class _ActivityFormDialog extends StatefulWidget {
     required this.actionLabel,
     this.activity,
     this.planId,
+    this.planTimeZone = '',
     this.initialStart,
   });
 
@@ -547,8 +544,11 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
   late final TextEditingController _destinationZoneController;
   late final TextEditingController _roomController;
   late String _type;
+  late String _zone;
   DateTime? _start;
   DateTime? _end;
+  bool _startChanged = false;
+  bool _endChanged = false;
   String? _error;
 
   String _storedDurationText(Activity? activity) {
@@ -581,6 +581,31 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     );
     _roomController = TextEditingController(text: activity?.roomNumber ?? '');
     _type = _storedActivityType(activity);
+    _zone = _openingZone(activity);
+  }
+
+  String _openingZone(Activity? activity) {
+    final stored = activity?.timeZone.trim() ?? '';
+    if (stored.isNotEmpty) return stored;
+    final planZone = widget.planTimeZone.trim();
+    if (planZone.isNotEmpty) return planZone;
+    return 'UTC';
+  }
+
+  DateTime _instantFromWall(DateTime wall) {
+    final clock = wall.toUtc();
+    return instantFromWall(
+      year: clock.year,
+      month: clock.month,
+      day: clock.day,
+      hour: clock.hour,
+      minute: clock.minute,
+      zone: _zone,
+    );
+  }
+
+  String get _zoneAbbreviation {
+    return zoneAbbreviation(_start ?? _end ?? DateTime.now().toUtc(), _zone);
   }
 
   @override
@@ -597,22 +622,27 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     super.dispose();
   }
 
-  void _setStart(DateTime value) {
+  void _setStart(DateTime wall) {
+    final value = _instantFromWall(wall);
     final minutes = _wholeMinutes(_durationController.text);
     setState(() {
       _start = value;
+      _startChanged = true;
       _error = null;
       if (minutes != null) {
         _end = value.add(Duration(minutes: minutes));
+        _endChanged = true;
       } else if (_end != null) {
         _durationController.text = _end!.difference(value).inMinutes.toString();
       }
     });
   }
 
-  void _setEnd(DateTime value) {
+  void _setEnd(DateTime wall) {
+    final value = _instantFromWall(wall);
     setState(() {
       _end = value;
+      _endChanged = true;
       _error = null;
       final start = _start;
       if (start != null) {
@@ -630,6 +660,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     }
     setState(() {
       _end = start.add(Duration(minutes: minutes));
+      _endChanged = true;
       _error = null;
     });
   }
@@ -644,15 +675,12 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
   _ActivityFields? _fields() {
     final name = _nameController.text.trim();
     final start = _start;
-    var end = _end;
+    final end = _end;
     final typedDuration = _durationController.text.trim();
     var minutes = _wholeMinutes(typedDuration);
     if (typedDuration.isNotEmpty && minutes == null) {
       setState(() => _error = 'Enter duration as whole minutes');
       return null;
-    }
-    if (start != null && minutes != null) {
-      end = start.add(Duration(minutes: minutes));
     }
     if (name.isEmpty || start == null || end == null) {
       setState(() => _error = 'Enter a name, a start, and an end');
@@ -671,11 +699,13 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       );
       return null;
     }
+    final editing = widget.isScreen;
     return _ActivityFields(
       name: name,
       type: _type,
-      start: start,
-      end: end,
+      start: editing && !_startChanged ? null : start,
+      end: editing && !_endChanged ? null : end,
+      timeZone: _zone,
       location: _locationController.text.trim(),
       details: _detailsController.text.trim(),
       gate: _usesFlightFields ? _gateController.text.trim() : null,
@@ -718,6 +748,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       type: fields.type,
       startTime: fields.start,
       endTime: fields.end,
+      timeZone: fields.timeZone,
       location: fields.location,
       details: fields.details,
       gate: fields.gate,
@@ -832,14 +863,28 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
             setState(() => _type = value);
           },
         ),
+        DropdownButtonFormField<String>(
+          initialValue: _zone,
+          decoration: const InputDecoration(labelText: 'Time zone'),
+          items: [
+            for (final zone in activityZoneOptions(_zone))
+              DropdownMenuItem(value: zone, child: Text(zone)),
+          ],
+          onChanged: (value) {
+            if (value == null) return;
+            setState(() => _zone = value);
+          },
+        ),
         _UtcDateTimePicker(
           label: 'Start',
-          value: _start,
+          value: wallValue(_start, _zone),
+          clockSuffix: _zoneAbbreviation,
           onChanged: _setStart,
         ),
         _UtcDateTimePicker(
           label: 'End',
-          value: _end,
+          value: wallValue(_end, _zone),
+          clockSuffix: _zoneAbbreviation,
           onChanged: _setEnd,
         ),
         _textField(

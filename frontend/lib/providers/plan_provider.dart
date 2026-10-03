@@ -50,10 +50,11 @@ String _activityInstant(DateTime utc) {
 Map<String, dynamic> _activityWriteBody({
   required String name,
   required String type,
-  required DateTime startTime,
-  required DateTime endTime,
+  DateTime? startTime,
+  DateTime? endTime,
   required String location,
   required String details,
+  required String timeZone,
   String? gate,
   String? baggageClaim,
   String? originTimeZone,
@@ -65,11 +66,12 @@ Map<String, dynamic> _activityWriteBody({
   final body = <String, dynamic>{
     'name': name,
     'type': type,
-    'startTime': _activityInstant(startTime),
-    'endTime': _activityInstant(endTime),
     'location': location,
     'details': details,
+    'timeZone': timeZone,
   };
+  if (startTime != null) body['startTime'] = _activityInstant(startTime);
+  if (endTime != null) body['endTime'] = _activityInstant(endTime);
   if (durationMinutes != null) body['durationMinutes'] = durationMinutes;
   if (planId != null) body['planId'] = planId;
   if (type == 'flight' || type == 'train') {
@@ -532,6 +534,7 @@ class PlanProvider extends ChangeNotifier {
     required String type,
     required DateTime startTime,
     required DateTime endTime,
+    required String timeZone,
     required String location,
     required String details,
     String? gate,
@@ -556,6 +559,7 @@ class PlanProvider extends ChangeNotifier {
             type: type,
             startTime: startTime,
             endTime: endTime,
+            timeZone: timeZone,
             location: location,
             details: details,
             gate: gate,
@@ -594,8 +598,9 @@ class PlanProvider extends ChangeNotifier {
     required String activityId,
     required String name,
     required String type,
-    required DateTime startTime,
-    required DateTime endTime,
+    DateTime? startTime,
+    DateTime? endTime,
+    required String timeZone,
     required String location,
     required String details,
     String? gate,
@@ -621,6 +626,7 @@ class PlanProvider extends ChangeNotifier {
             type: type,
             startTime: startTime,
             endTime: endTime,
+            timeZone: timeZone,
             location: location,
             details: details,
             gate: gate,

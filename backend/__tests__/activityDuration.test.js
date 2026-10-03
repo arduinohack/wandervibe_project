@@ -146,4 +146,88 @@ describe('activity start, end, and duration', () => {
     expect(iso(second.body.startTime)).toBe('2026-07-01T11:00:00.000Z');
     expect(second.body.durationMinutes).toBe(90);
   });
+
+  test('a hotel is saved in America/New_York', async () => {
+    const token = await registerAndLogin('hotel-zone@example.com');
+    const planRes = await request(app)
+      .post('/api/plans')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        type: 'trip',
+        name: 'New York',
+        destination: 'New York',
+        timeZone: 'America/New_York',
+      });
+    expect(planRes.status).toBe(201);
+    const planId = planRes.body.plan._id;
+
+    const created = await request(app)
+      .post('/api/activities')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        name: 'Inn',
+        type: 'hotel',
+        planId,
+        startTime: '2026-07-04T22:00:00.000Z',
+        endTime: '2026-07-05T16:00:00.000Z',
+      });
+
+    expect(created.status).toBe(201);
+    expect(created.body.type).toBe('hotel');
+    expect(created.body.timeZone).toBe('America/New_York');
+    expect(created.body.originTimeZone || '').toBe('');
+    expect(created.body.destinationTimeZone || '').toBe('');
+  });
+
+  test('a PUT that omits start and end leaves the stored times', async () => {
+    const token = await registerAndLogin('keep-times@example.com');
+    const planId = await createPlan(token);
+
+    const created = await request(app)
+      .post('/api/activities')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        name: 'Inn',
+        type: 'hotel',
+        planId,
+        timeZone: 'America/New_York',
+        startTime: '2026-07-04T22:00:00.000Z',
+        endTime: '2026-07-05T16:00:00.000Z',
+      });
+    expect(created.status).toBe(201);
+
+    const later = await request(app)
+      .post('/api/activities')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        name: 'Dinner',
+        type: 'dining',
+        planId,
+        startTime: '2026-07-05T23:00:00.000Z',
+        endTime: '2026-07-06T01:00:00.000Z',
+      });
+    expect(later.status).toBe(201);
+
+    const updated = await request(app)
+      .put(`/api/activities/${created.body._id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Renamed inn' });
+
+    expect(updated.status).toBe(200);
+    expect(updated.body.name).toBe('Renamed inn');
+    expect(updated.body.timeZone).toBe('America/New_York');
+    expect(iso(updated.body.startTime)).toBe('2026-07-04T22:00:00.000Z');
+    expect(iso(updated.body.endTime)).toBe('2026-07-05T16:00:00.000Z');
+
+    const moved = await request(app)
+      .put(`/api/activities/${created.body._id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ endTime: '2026-07-05T18:00:00.000Z' });
+    expect(moved.status).toBe(200);
+    expect(iso(moved.body.endTime)).toBe('2026-07-05T18:00:00.000Z');
+
+    const storedLater = await Event.findById(later.body._id);
+    expect(iso(storedLater.startTime)).toBe('2026-07-05T23:00:00.000Z');
+    expect(iso(storedLater.endTime)).toBe('2026-07-06T01:00:00.000Z');
+  });
 });

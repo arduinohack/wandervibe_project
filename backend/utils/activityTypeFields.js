@@ -14,6 +14,7 @@ const SHARED_FIELDS = [
   'ownerId',
   'eventNum',
   'extras',
+  'timeZone',
 ];
 
 // Field → activity types that keep it. Schema default is '' only for customType.
