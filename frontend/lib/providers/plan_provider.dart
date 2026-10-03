@@ -97,6 +97,19 @@ int _byStartTime(Activity a, Activity b) {
   return aStart.compareTo(bStart);
 }
 
+List<Activity> _sortedByStartTime(List<Activity> activities) {
+  final indexed = <({Activity activity, int index})>[
+    for (var index = 0; index < activities.length; index++)
+      (activity: activities[index], index: index),
+  ];
+  indexed.sort((a, b) {
+    final byStart = _byStartTime(a.activity, b.activity);
+    if (byStart != 0) return byStart;
+    return a.index.compareTo(b.index);
+  });
+  return [for (final item in indexed) item.activity];
+}
+
 String? _roleFromUsersBody(String body, String userId) {
   final dynamic data = json.decode(body);
   final List<dynamic> users;
@@ -281,9 +294,9 @@ class PlanProvider extends ChangeNotifier {
         if (item is! Map) continue;
         parsed.add(Activity.fromJson(_itineraryActivityJson(item)));
       }
-      parsed.sort(_byStartTime);
-      _itinerary = parsed;
-      _activities = parsed;
+      final sorted = _sortedByStartTime(parsed);
+      _itinerary = sorted;
+      _activities = sorted;
       _itineraryError = null;
       logger.i('Fetched ${_itinerary.length} activities for plan $planId');
       return 200;
@@ -304,6 +317,14 @@ class PlanProvider extends ChangeNotifier {
 
   String? get plansError => _plansError;
   List<Activity> get itineraryActivities => _itinerary;
+
+  /// Shows [activities] in start-time order. Does not call the API.
+  void replaceItineraryActivities(List<Activity> activities) {
+    final next = _sortedByStartTime(activities);
+    _itinerary = next;
+    _activities = List<Activity>.from(next);
+    notifyListeners();
+  }
   String? get itineraryError => _itineraryError;
 
   void clearPlans() {
@@ -580,7 +601,7 @@ class PlanProvider extends ChangeNotifier {
       final dynamic data = json.decode(response.body);
       if (data is! Map) return 201;
       final created = Activity.fromJson(_itineraryActivityJson(data));
-      final next = [..._itinerary, created]..sort(_byStartTime);
+      final next = _sortedByStartTime([..._itinerary, created]);
       _itinerary = next;
       _activities = List<Activity>.from(next);
       notifyListeners();
@@ -646,10 +667,10 @@ class PlanProvider extends ChangeNotifier {
       final dynamic data = json.decode(response.body);
       if (data is Map) {
         final updated = Activity.fromJson(_itineraryActivityJson(data));
-        final next = [
+        final next = _sortedByStartTime([
           for (final activity in _itinerary)
             if (activity.id == activityId) updated else activity,
-        ]..sort(_byStartTime);
+        ]);
         _itinerary = next;
         _activities = List<Activity>.from(next);
         notifyListeners();

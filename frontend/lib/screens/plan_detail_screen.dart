@@ -5,6 +5,7 @@ import '../models/plan.dart';
 import '../models/plan_role_label.dart';
 import '../providers/plan_provider.dart';
 import '../providers/user_provider.dart';
+import '../utils/activity_chain.dart';
 import '../utils/activity_time.dart';
 import 'login_screen.dart';
 
@@ -178,6 +179,73 @@ String _durationLabel(Activity activity) {
     return '${end.difference(start).inMinutes} min';
   }
   return 'not set';
+}
+
+bool _sameInstant(DateTime? left, DateTime? right) {
+  if (left == null || right == null) return left == null && right == null;
+  return left.toUtc().isAtSameMomentAs(right.toUtc());
+}
+
+String _activityTypeName(Activity activity) {
+  final stored = activity.typeLabel.trim();
+  if (stored.isNotEmpty) return stored;
+  return activity.type.name;
+}
+
+Activity _activityWithTimes(Activity activity, DateTime? start, DateTime? end) {
+  return Activity(
+    id: activity.id,
+    planId: activity.planId,
+    name: activity.name,
+    location: activity.location,
+    type: activity.type,
+    typeLabel: activity.typeLabel,
+    cost: activity.cost,
+    costType: activity.costType,
+    startTime: start,
+    duration: activity.duration,
+    endTime: end,
+    activityNum: activity.activityNum,
+    status: activity.status,
+    missingFields: activity.missingFields,
+    subActivities: activity.subActivities,
+    urlLinks: activity.urlLinks,
+    details: activity.details,
+    gate: activity.gate,
+    baggageClaim: activity.baggageClaim,
+    roomNumber: activity.roomNumber,
+    originTimeZone: activity.originTimeZone,
+    destinationTimeZone: activity.destinationTimeZone,
+    timeZone: activity.timeZone,
+    customType: activity.customType,
+    serviceProvider: activity.serviceProvider,
+    bookingReference: activity.bookingReference,
+    extras: activity.extras,
+    createdAt: activity.createdAt,
+  );
+}
+
+List<String?> _dayHeaders(
+  List<Activity> activities,
+  List<_ShownActivityTimes> times,
+  String planZone,
+) {
+  final headers = List<String?>.filled(activities.length, null);
+  String? previousDay;
+  var dayNumber = 0;
+  for (var index = 0; index < activities.length; index++) {
+    final activity = activities[index];
+    final dayZone = _activityIsFlight(activity)
+        ? _flightOriginZone(activity, planZone)
+        : _activityZone(activity, planZone);
+    final dayKey = _localDayKey(times[index].start, dayZone);
+    if (index == 0 || dayKey != previousDay) {
+      dayNumber += 1;
+      headers[index] = dayKey == null ? 'Day $dayNumber' : 'Day $dayNumber · $dayKey';
+      previousDay = dayKey;
+    }
+  }
+  return headers;
 }
 
 int? _wholeMinutes(String text) {
@@ -373,45 +441,110 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     );
   }
 
-  List<Widget> _itinerarySections({
-    required List<Activity> activities,
+  bool _applyingOrder = false;
+
+  Future<void> _reorderActivities(int oldIndex, int newIndex) async {
+    if (_applyingOrder) return;
+    if (oldIndex == newIndex) return;
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+    final ordered = List<Activity>.from(planProvider.itineraryActivities);
+    if (oldIndex < 0 || oldIndex >= ordered.length || newIndex < 0 || newIndex >= ordered.length) {
+      return;
+    }
+    final moved = ordered.removeAt(oldIndex);
+    ordered.insert(newIndex, moved);
+    final chained = chainActivityTimes([
+      for (final activity in ordered)
+        ActivityChainInput(
+          start: activity.startTime,
+          end: activity.endTime,
+          durationMinutes: activity.duration?.inMinutes,
+        ),
+    ]);
+    planProvider.replaceItineraryActivities([
+      for (var index = 0; index < ordered.length; index++)
+        _activityWithTimes(ordered[index], chained[index].start, chained[index].end),
+    ]);
+    _applyingOrder = true;
+    try {
+      for (var index = 0; index < ordered.length; index++) {
+        final activity = ordered[index];
+        final times = chained[index];
+        if (_sameInstant(activity.startTime, times.start) &&
+            _sameInstant(activity.endTime, times.end)) {
+          continue;
+        }
+        final activityId = activity.id;
+        if (activityId == null || activityId.isEmpty || times.start == null) continue;
+        final status = await planProvider.updateActivity(
+          activityId: activityId,
+          name: activity.name,
+          type: _activityTypeName(activity),
+          startTime: times.start,
+          endTime: times.end,
+          timeZone: activity.timeZone,
+          location: activity.location ?? '',
+          details: activity.details ?? '',
+          gate: activity.gate,
+          baggageClaim: activity.baggageClaim,
+          originTimeZone: activity.originTimeZone,
+          destinationTimeZone: activity.destinationTimeZone,
+          roomNumber: activity.roomNumber,
+          durationMinutes: activity.duration?.inMinutes,
+          planId: widget.plan.id,
+          token: userProvider.token,
+        );
+        if (!mounted) return;
+        if (status == 401) {
+          await _endSession(userProvider, planProvider, navigator);
+          return;
+        }
+        if (status == 403) {
+          messenger.showSnackBar(const SnackBar(content: Text('Not allowed')));
+          return;
+        }
+        if (status != 200) {
+          messenger.showSnackBar(
+            const SnackBar(content: Text('Could not update activity')),
+          );
+          return;
+        }
+      }
+    } finally {
+      _applyingOrder = false;
+    }
+  }
+
+  Widget _activityBlock({
+    required Key blockKey,
+    required Activity activity,
+    required _ShownActivityTimes times,
+    required String? dayHeader,
     required String planZone,
     required bool canChange,
+    int? dragIndex,
   }) {
-    final times = _shownActivityTimes(activities);
-    final sections = <Widget>[];
-    String? previousDay;
-    var dayNumber = 0;
-    for (var index = 0; index < activities.length; index++) {
-      final activity = activities[index];
-      final shownTimes = times[index];
-      final flight = _activityIsFlight(activity);
-      final dayZone = flight
-          ? _flightOriginZone(activity, planZone)
-          : _activityZone(activity, planZone);
-      final dayKey = _localDayKey(shownTimes.start, dayZone);
-      if (index == 0 || dayKey != previousDay) {
-        dayNumber += 1;
-        final header = dayKey == null ? 'Day $dayNumber' : 'Day $dayNumber · $dayKey';
-        sections.add(
+    final flight = _activityIsFlight(activity);
+    final type = activity.typeLabel.isEmpty ? activity.type.name : activity.typeLabel;
+    final activityId = activity.id;
+    final startZone = flight
+        ? _flightOriginZone(activity, planZone)
+        : _activityZone(activity, planZone);
+    return Column(
+      key: blockKey,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (dayHeader != null)
           Padding(
             padding: const EdgeInsets.only(top: 8, bottom: 8),
             child: Text(
-              header,
+              dayHeader,
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
           ),
-        );
-        previousDay = dayKey;
-      }
-      final type = activity.typeLabel.isEmpty
-          ? activity.type.name
-          : activity.typeLabel;
-      final activityId = activity.id;
-      final startZone = flight
-          ? _flightOriginZone(activity, planZone)
-          : _activityZone(activity, planZone);
-      sections.add(
         Card(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
@@ -421,18 +554,24 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                 Text('Type: $type'),
                 const SizedBox(height: 4),
                 if (flight) ...[
+                  Text('Departure: ${activityStartLabel(times.start, startZone)}'),
                   Text(
-                    'Departure: ${activityStartLabel(shownTimes.start, startZone)}',
-                  ),
-                  Text(
-                    'Arrival: ${activityStartLabel(shownTimes.end, _flightDestinationZone(activity, planZone))}',
+                    'Arrival: ${activityStartLabel(times.end, _flightDestinationZone(activity, planZone))}',
                   ),
                 ] else
-                  Text('Start: ${activityStartLabel(shownTimes.start, startZone)}'),
+                  Text('Start: ${activityStartLabel(times.start, startZone)}'),
                 Text('Duration: ${_durationLabel(activity)}'),
                 const SizedBox(height: 4),
                 Row(
                   children: [
+                    if (dragIndex != null)
+                      ReorderableDragStartListener(
+                        index: dragIndex,
+                        child: const Tooltip(
+                          message: 'Reorder activity',
+                          child: Icon(Icons.drag_handle),
+                        ),
+                      ),
                     Expanded(
                       child: Text(
                         activity.name,
@@ -454,9 +593,8 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
             ),
           ),
         ),
-      );
-    }
-    return sections;
+      ],
+    );
   }
 
   Future<void> _openPlanEdit(Plan plan) async {
@@ -519,6 +657,8 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
               : planRoleLabel(shown.type, storedRole);
           final activities = planProvider.itineraryActivities;
           final canChange = canAddActivity(storedRole);
+          final shownTimes = _shownActivityTimes(activities);
+          final dayHeaders = _dayHeaders(activities, shownTimes, shown.timeZone);
 
           return ListView(
             padding: const EdgeInsets.all(16),
@@ -588,12 +728,43 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                     textAlign: TextAlign.center,
                   ),
                 )
+              else if (canChange)
+                ReorderableListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  buildDefaultDragHandles: false,
+                  itemCount: activities.length,
+                  onReorderItem: (oldIndex, newIndex) {
+                    _reorderActivities(oldIndex, newIndex);
+                  },
+                  itemBuilder: (context, index) {
+                    final activity = activities[index];
+                    final activityId = activity.id;
+                    return _activityBlock(
+                      blockKey: ValueKey(
+                        activityId == null || activityId.isEmpty
+                            ? 'activity-$index'
+                            : activityId,
+                      ),
+                      activity: activity,
+                      times: shownTimes[index],
+                      dayHeader: dayHeaders[index],
+                      planZone: shown.timeZone,
+                      canChange: true,
+                      dragIndex: index,
+                    );
+                  },
+                )
               else
-                ..._itinerarySections(
-                  activities: activities,
-                  planZone: shown.timeZone,
-                  canChange: canChange,
-                ),
+                for (var index = 0; index < activities.length; index++)
+                  _activityBlock(
+                    blockKey: ValueKey('guest-$index'),
+                    activity: activities[index],
+                    times: shownTimes[index],
+                    dayHeader: dayHeaders[index],
+                    planZone: shown.timeZone,
+                    canChange: false,
+                  ),
             ],
           );
         },
