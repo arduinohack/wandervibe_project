@@ -60,6 +60,7 @@ Map<String, dynamic> _activityWriteBody({
   String? destinationTimeZone,
   String? roomNumber,
   String? planId,
+  int? durationMinutes,
 }) {
   final body = <String, dynamic>{
     'name': name,
@@ -69,6 +70,7 @@ Map<String, dynamic> _activityWriteBody({
     'location': location,
     'details': details,
   };
+  if (durationMinutes != null) body['durationMinutes'] = durationMinutes;
   if (planId != null) body['planId'] = planId;
   if (type == 'flight' || type == 'train') {
     body['originTimeZone'] = originTimeZone ?? '';
@@ -537,6 +539,7 @@ class PlanProvider extends ChangeNotifier {
     String? originTimeZone,
     String? destinationTimeZone,
     String? roomNumber,
+    int? durationMinutes,
     required String? token,
   }) async {
     try {
@@ -561,6 +564,7 @@ class PlanProvider extends ChangeNotifier {
             destinationTimeZone: destinationTimeZone,
             roomNumber: roomNumber,
             planId: planId,
+            durationMinutes: durationMinutes,
           ),
         ),
       );
@@ -599,6 +603,7 @@ class PlanProvider extends ChangeNotifier {
     String? originTimeZone,
     String? destinationTimeZone,
     String? roomNumber,
+    int? durationMinutes,
     required String planId,
     required String? token,
   }) async {
@@ -623,6 +628,7 @@ class PlanProvider extends ChangeNotifier {
             originTimeZone: originTimeZone,
             destinationTimeZone: destinationTimeZone,
             roomNumber: roomNumber,
+            durationMinutes: durationMinutes,
           ),
         ),
       );

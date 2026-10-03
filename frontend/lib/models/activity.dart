@@ -8,6 +8,11 @@ String? _optionalActivityText(dynamic value) {
   return text.isEmpty ? null : text;
 }
 
+Duration? _storedDurationMinutes(dynamic value) {
+  if (value is! num) return null;
+  return Duration(minutes: value.round());
+}
+
 enum CostType { estimated, actual }
 
 class UrlLink {
@@ -245,9 +250,7 @@ class Activity {
       startTime: json['startTime'] != null
           ? DateTime.parse(json['startTime'])
           : null, // Matches DateTime?
-      duration: json['duration'] != null
-          ? Duration(minutes: json['duration'] as int)
-          : null,
+      duration: _storedDurationMinutes(json['durationMinutes']),
       endTime: json['endTime'] != null ? DateTime.parse(json['endTime']) : null,
       activityNum: json['eventNum'],
       status: json['status'] ?? 'draft',

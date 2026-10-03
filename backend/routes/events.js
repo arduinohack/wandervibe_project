@@ -9,6 +9,16 @@ const { canonicalMembershipRole } = require('../middleware/roleCheck');
 const { applyTypeChange, assertTypeRequirements } = require('../utils/activityTypeFields');
 const { recordActivityRevision } = require('../utils/recordActivityRevision');
 const { syncPlanDates } = require('../utils/syncPlanDates');
+const { resolveActivitySchedule } = require('../utils/activityTimes');
+
+function applySchedule(target, schedule) {
+  if (schedule.startTime) target.startTime = schedule.startTime;
+  else delete target.startTime;
+  if (schedule.endTime) target.endTime = schedule.endTime;
+  else delete target.endTime;
+  if (schedule.durationMinutes == null) delete target.durationMinutes;
+  else target.durationMinutes = schedule.durationMinutes;
+}
 
 async function membershipRole(planId, callerId) {
   const membership = await PlanUser.findOne({ planId, userId: callerId });
@@ -66,10 +76,17 @@ router.post('/', authMiddleware, async (req, res) => {
       return res.status(403).json({ message: 'Only Owner or Collaborator can change activities' });
     }
 
-    const newEvent = new Event({
-      ...req.body,
-      ownerId: callerId,
+    const schedule = await resolveActivitySchedule({
+      isCreate: true,
+      planId,
+      body: req.body,
     });
+    if (schedule.error) {
+      return res.status(400).json({ message: schedule.error });
+    }
+    const payload = { ...req.body, ownerId: callerId };
+    applySchedule(payload, schedule);
+    const newEvent = new Event(payload);
     const savedEvent = await newEvent.save();
     await recordActivityRevision(savedEvent, 'create', callerId);
     await syncPlanDates(savedEvent.planId);
@@ -188,9 +205,25 @@ router.put('/:id', authMiddleware, async (req, res) => {
       return res.status(400).json({ message: requirementError.message });
     }
 
+    const schedule = await resolveActivitySchedule({
+      isCreate: false,
+      planId: event.planId,
+      body,
+      existingStart: event.startTime,
+      existingEnd: event.endTime,
+    });
+    if (schedule.error) {
+      return res.status(400).json({ message: schedule.error });
+    }
+    applySchedule(fields, schedule);
+
     for (const [key, value] of Object.entries(fields)) {
       event.set(key, value);
     }
+    if (!schedule.startTime) event.startTime = undefined;
+    if (!schedule.endTime) event.endTime = undefined;
+    if (schedule.durationMinutes == null) event.durationMinutes = undefined;
+    else event.durationMinutes = schedule.durationMinutes;
     const updatedEvent = await event.save();
     await recordActivityRevision(updatedEvent, 'update', callerId);
     await syncPlanDates(updatedEvent.planId);

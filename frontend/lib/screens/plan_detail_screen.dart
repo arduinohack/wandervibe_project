@@ -21,27 +21,6 @@ const activityTypes = [
   'custom',
 ];
 
-/// UTC `YYYY-MM-DD HH:mm`. Anything else is not a start time.
-DateTime? parseActivityStart(String text) {
-  final match = RegExp(
-    r'^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})$',
-  ).firstMatch(text.trim());
-  if (match == null) return null;
-  final month = int.parse(match.group(2)!);
-  final day = int.parse(match.group(3)!);
-  final hour = int.parse(match.group(4)!);
-  final minute = int.parse(match.group(5)!);
-  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
-  if (hour > 23 || minute > 59) return null;
-  return DateTime.utc(
-    int.parse(match.group(1)!),
-    month,
-    day,
-    hour,
-    minute,
-  );
-}
-
 bool canAddActivity(String? storedRole) {
   final role = storedRole?.trim();
   return role == 'Owner' || role == 'Collaborator';
@@ -49,21 +28,6 @@ bool canAddActivity(String? storedRole) {
 
 bool canEditPlan(String? storedRole) {
   return storedRole?.trim() == 'Owner';
-}
-
-/// UTC calendar date. Empty stays null. Anything else is not a plan date.
-DateTime? parsePlanDate(String text) {
-  final trimmed = text.trim();
-  if (trimmed.isEmpty) return null;
-  final match = RegExp(r'^(\d{4})-(\d{2})-(\d{2})$').firstMatch(trimmed);
-  if (match == null) return null;
-  final year = int.parse(match.group(1)!);
-  final month = int.parse(match.group(2)!);
-  final day = int.parse(match.group(3)!);
-  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
-  final date = DateTime.utc(year, month, day);
-  if (date.month != month || date.day != day) return null;
-  return date;
 }
 
 /// UTC clock time for an activity start. Null stays "not set".
@@ -80,6 +44,129 @@ String formatActivityInput(DateTime? value) {
   String two(int number) => number.toString().padLeft(2, '0');
   final year = utc.year.toString().padLeft(4, '0');
   return '$year-${two(utc.month)}-${two(utc.day)} ${two(utc.hour)}:${two(utc.minute)}';
+}
+
+String _twoDigits(int number) => number.toString().padLeft(2, '0');
+
+String _utcDateLabel(DateTime? value) {
+  if (value == null) return 'Choose date';
+  final utc = value.toUtc();
+  final year = utc.year.toString().padLeft(4, '0');
+  return '$year-${_twoDigits(utc.month)}-${_twoDigits(utc.day)}';
+}
+
+String _utcTimeLabel(DateTime? value) {
+  if (value == null) return 'Choose time';
+  final utc = value.toUtc();
+  return '${_twoDigits(utc.hour)}:${_twoDigits(utc.minute)} UTC';
+}
+
+DateTime _calendarDate(DateTime? value) {
+  final utc = (value ?? DateTime.now()).toUtc();
+  final date = DateTime(utc.year, utc.month, utc.day);
+  final first = DateTime(2000);
+  final last = DateTime(2100);
+  if (date.isBefore(first)) return first;
+  if (date.isAfter(last)) return last;
+  return date;
+}
+
+Future<DateTime?> _pickUtcDate(BuildContext context, DateTime? current) async {
+  final picked = await showDatePicker(
+    context: context,
+    initialDate: _calendarDate(current),
+    firstDate: DateTime(2000),
+    lastDate: DateTime(2100),
+  );
+  if (picked == null) return null;
+  final clock = current?.toUtc();
+  return DateTime.utc(
+    picked.year,
+    picked.month,
+    picked.day,
+    clock?.hour ?? 0,
+    clock?.minute ?? 0,
+  );
+}
+
+Future<DateTime?> _pickUtcTime(BuildContext context, DateTime? current) async {
+  final clock = current?.toUtc();
+  final picked = await showTimePicker(
+    context: context,
+    initialTime: TimeOfDay(hour: clock?.hour ?? 0, minute: clock?.minute ?? 0),
+  );
+  if (picked == null) return null;
+  final day = current?.toUtc() ?? DateTime.now().toUtc();
+  return DateTime.utc(day.year, day.month, day.day, picked.hour, picked.minute);
+}
+
+/// Last itinerary row that has a time. Its end, or its start when the end is empty.
+DateTime? _defaultActivityStart(List<Activity> activities) {
+  for (var index = activities.length - 1; index >= 0; index--) {
+    final activity = activities[index];
+    if (activity.endTime != null) return activity.endTime;
+    if (activity.startTime != null) return activity.startTime;
+  }
+  return null;
+}
+
+int? _wholeMinutes(String text) {
+  final trimmed = text.trim();
+  if (!RegExp(r'^\d+$').hasMatch(trimmed)) return null;
+  return int.tryParse(trimmed);
+}
+
+class _UtcDateTimePicker extends StatelessWidget {
+  final String label;
+  final DateTime? value;
+  final ValueChanged<DateTime> onChanged;
+  final VoidCallback? onClear;
+
+  const _UtcDateTimePicker({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+    this.onClear,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              OutlinedButton(
+                onPressed: () async {
+                  final next = await _pickUtcDate(context, value);
+                  if (next == null || !context.mounted) return;
+                  onChanged(next);
+                },
+                child: Text(_utcDateLabel(value)),
+              ),
+              OutlinedButton(
+                onPressed: () async {
+                  final next = await _pickUtcTime(context, value);
+                  if (next == null || !context.mounted) return;
+                  onChanged(next);
+                },
+                child: Text(_utcTimeLabel(value)),
+              ),
+              if (onClear != null && value != null)
+                TextButton(onPressed: onClear, child: const Text('Clear')),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class PlanDetailScreen extends StatefulWidget {
@@ -136,16 +223,17 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
   }
 
   Future<void> _addActivity() async {
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
     final draft = await showDialog<_ActivityFields>(
       context: context,
-      builder: (context) => const _ActivityFormDialog(
+      builder: (context) => _ActivityFormDialog(
         title: 'Add activity',
         actionLabel: 'Add',
+        initialStart: _defaultActivityStart(planProvider.itineraryActivities),
       ),
     );
     if (draft == null || !mounted) return;
     final userProvider = Provider.of<UserProvider>(context, listen: false);
-    final planProvider = Provider.of<PlanProvider>(context, listen: false);
     final navigator = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
     final status = await planProvider.createActivity(
@@ -161,6 +249,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
       originTimeZone: draft.originTimeZone,
       destinationTimeZone: draft.destinationTimeZone,
       roomNumber: draft.roomNumber,
+      durationMinutes: draft.durationMinutes,
       token: userProvider.token,
     );
     if (!mounted) return;
@@ -392,6 +481,7 @@ class _ActivityFields {
   final String? originTimeZone;
   final String? destinationTimeZone;
   final String? roomNumber;
+  final int? durationMinutes;
 
   const _ActivityFields({
     required this.name,
@@ -405,6 +495,7 @@ class _ActivityFields {
     this.originTimeZone,
     this.destinationTimeZone,
     this.roomNumber,
+    this.durationMinutes,
   });
 }
 
@@ -429,12 +520,14 @@ class _ActivityFormDialog extends StatefulWidget {
   final String actionLabel;
   final Activity? activity;
   final String? planId;
+  final DateTime? initialStart;
 
   const _ActivityFormDialog({
     required this.title,
     required this.actionLabel,
     this.activity,
     this.planId,
+    this.initialStart,
   });
 
   bool get isScreen => activity != null;
@@ -445,8 +538,7 @@ class _ActivityFormDialog extends StatefulWidget {
 
 class _ActivityFormDialogState extends State<_ActivityFormDialog> {
   late final TextEditingController _nameController;
-  late final TextEditingController _startController;
-  late final TextEditingController _endController;
+  late final TextEditingController _durationController;
   late final TextEditingController _locationController;
   late final TextEditingController _detailsController;
   late final TextEditingController _gateController;
@@ -455,19 +547,28 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
   late final TextEditingController _destinationZoneController;
   late final TextEditingController _roomController;
   late String _type;
+  DateTime? _start;
+  DateTime? _end;
   String? _error;
+
+  String _storedDurationText(Activity? activity) {
+    if (activity == null) return '';
+    final stored = activity.duration?.inMinutes;
+    if (stored != null) return stored.toString();
+    final start = activity.startTime;
+    final end = activity.endTime;
+    if (start == null || end == null) return '';
+    return end.difference(start).inMinutes.toString();
+  }
 
   @override
   void initState() {
     super.initState();
     final activity = widget.activity;
     _nameController = TextEditingController(text: activity?.name ?? '');
-    _startController = TextEditingController(
-      text: formatActivityInput(activity?.startTime),
-    );
-    _endController = TextEditingController(
-      text: formatActivityInput(activity?.endTime),
-    );
+    _start = activity?.startTime ?? widget.initialStart;
+    _end = activity?.endTime;
+    _durationController = TextEditingController(text: _storedDurationText(activity));
     _locationController = TextEditingController(text: activity?.location ?? '');
     _detailsController = TextEditingController(text: activity?.details ?? '');
     _gateController = TextEditingController(text: activity?.gate ?? '');
@@ -485,8 +586,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
   @override
   void dispose() {
     _nameController.dispose();
-    _startController.dispose();
-    _endController.dispose();
+    _durationController.dispose();
     _locationController.dispose();
     _detailsController.dispose();
     _gateController.dispose();
@@ -495,6 +595,43 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     _destinationZoneController.dispose();
     _roomController.dispose();
     super.dispose();
+  }
+
+  void _setStart(DateTime value) {
+    final minutes = _wholeMinutes(_durationController.text);
+    setState(() {
+      _start = value;
+      _error = null;
+      if (minutes != null) {
+        _end = value.add(Duration(minutes: minutes));
+      } else if (_end != null) {
+        _durationController.text = _end!.difference(value).inMinutes.toString();
+      }
+    });
+  }
+
+  void _setEnd(DateTime value) {
+    setState(() {
+      _end = value;
+      _error = null;
+      final start = _start;
+      if (start != null) {
+        _durationController.text = value.difference(start).inMinutes.toString();
+      }
+    });
+  }
+
+  void _onDurationChanged(String text) {
+    final minutes = _wholeMinutes(text);
+    final start = _start;
+    if (minutes == null || start == null) {
+      setState(() => _error = null);
+      return;
+    }
+    setState(() {
+      _end = start.add(Duration(minutes: minutes));
+      _error = null;
+    });
   }
 
   bool get _usesZones => _type == 'flight' || _type == 'train';
@@ -506,18 +643,26 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
 
   _ActivityFields? _fields() {
     final name = _nameController.text.trim();
-    final start = parseActivityStart(_startController.text);
-    final end = parseActivityStart(_endController.text);
+    final start = _start;
+    var end = _end;
+    final typedDuration = _durationController.text.trim();
+    var minutes = _wholeMinutes(typedDuration);
+    if (typedDuration.isNotEmpty && minutes == null) {
+      setState(() => _error = 'Enter duration as whole minutes');
+      return null;
+    }
+    if (start != null && minutes != null) {
+      end = start.add(Duration(minutes: minutes));
+    }
     if (name.isEmpty || start == null || end == null) {
-      setState(
-        () => _error = 'Enter a name, start time, and end time as YYYY-MM-DD HH:mm',
-      );
+      setState(() => _error = 'Enter a name, a start, and an end');
       return null;
     }
     if (end.isBefore(start)) {
       setState(() => _error = 'End time must not be before the start time');
       return null;
     }
+    minutes ??= end.difference(start).inMinutes;
     final originZone = _originZoneController.text.trim();
     final destinationZone = _destinationZoneController.text.trim();
     if (_usesZones && (originZone.isEmpty || destinationZone.isEmpty)) {
@@ -538,6 +683,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       originTimeZone: _usesZones ? originZone : null,
       destinationTimeZone: _usesZones ? destinationZone : null,
       roomNumber: _usesRoom ? _roomController.text.trim() : null,
+      durationMinutes: minutes,
     );
   }
 
@@ -579,6 +725,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       originTimeZone: fields.originTimeZone,
       destinationTimeZone: fields.destinationTimeZone,
       roomNumber: fields.roomNumber,
+      durationMinutes: fields.durationMinutes,
       planId: widget.planId ?? widget.activity?.planId ?? '',
       token: userProvider.token,
     );
@@ -650,12 +797,15 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     TextEditingController controller,
     String label, {
     String? hint,
+    ValueChanged<String>? onChanged,
   }) {
     return Padding(
       padding: const EdgeInsets.only(top: 12),
       child: TextField(
         controller: controller,
+        keyboardType: onChanged == null ? null : TextInputType.number,
         decoration: InputDecoration(labelText: label, hintText: hint),
+        onChanged: onChanged,
       ),
     );
   }
@@ -682,15 +832,20 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
             setState(() => _type = value);
           },
         ),
-        _textField(
-          _startController,
-          'Start time',
-          hint: 'YYYY-MM-DD HH:mm',
+        _UtcDateTimePicker(
+          label: 'Start',
+          value: _start,
+          onChanged: _setStart,
+        ),
+        _UtcDateTimePicker(
+          label: 'End',
+          value: _end,
+          onChanged: _setEnd,
         ),
         _textField(
-          _endController,
-          'End time',
-          hint: 'YYYY-MM-DD HH:mm',
+          _durationController,
+          'Duration (minutes)',
+          onChanged: _onDurationChanged,
         ),
         _textField(_locationController, 'Location'),
         _textField(_detailsController, 'Details'),
@@ -768,11 +923,11 @@ class _PlanEditScreen extends StatefulWidget {
 class _PlanEditScreenState extends State<_PlanEditScreen> {
   late final TextEditingController _nameController;
   late final TextEditingController _destinationController;
-  late final TextEditingController _startController;
-  late final TextEditingController _endController;
   late final TextEditingController _timeZoneController;
   late bool _autoStart;
   late bool _autoEnd;
+  DateTime? _start;
+  DateTime? _end;
   String? _error;
 
   @override
@@ -781,12 +936,8 @@ class _PlanEditScreenState extends State<_PlanEditScreen> {
     final plan = widget.plan;
     _nameController = TextEditingController(text: plan.name);
     _destinationController = TextEditingController(text: plan.destination);
-    _startController = TextEditingController(
-      text: plan.startDate == null ? '' : formatPlanDate(plan.startDate),
-    );
-    _endController = TextEditingController(
-      text: plan.endDate == null ? '' : formatPlanDate(plan.endDate),
-    );
+    _start = plan.startDate;
+    _end = plan.endDate;
     _timeZoneController = TextEditingController(text: plan.timeZone);
     _autoStart = plan.autoCalculateStartDate;
     _autoEnd = plan.autoCalculateEndDate;
@@ -796,8 +947,6 @@ class _PlanEditScreenState extends State<_PlanEditScreen> {
   void dispose() {
     _nameController.dispose();
     _destinationController.dispose();
-    _startController.dispose();
-    _endController.dispose();
     _timeZoneController.dispose();
     super.dispose();
   }
@@ -819,21 +968,14 @@ class _PlanEditScreenState extends State<_PlanEditScreen> {
     final name = _nameController.text.trim();
     final destination = _destinationController.text.trim();
     final timeZone = _timeZoneController.text.trim();
-    final startText = _startController.text.trim();
-    final endText = _endController.text.trim();
-    final start = parsePlanDate(startText);
-    final end = parsePlanDate(endText);
+    final start = _start;
+    final end = _end;
     if (name.isEmpty || timeZone.isEmpty) {
       setState(() => _error = 'Enter a name and a time zone');
       return;
     }
     if (widget.plan.type == 'trip' && destination.isEmpty) {
       setState(() => _error = 'Enter a destination');
-      return;
-    }
-    if ((startText.isNotEmpty && start == null) ||
-        (endText.isNotEmpty && end == null)) {
-      setState(() => _error = 'Enter dates as YYYY-MM-DD');
       return;
     }
     if (start != null && end != null && end.isBefore(start)) {
@@ -960,21 +1102,17 @@ class _PlanEditScreenState extends State<_PlanEditScreen> {
             controller: _destinationController,
             decoration: const InputDecoration(labelText: 'Destination'),
           ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _startController,
-            decoration: const InputDecoration(
-              labelText: 'Start date',
-              hintText: 'YYYY-MM-DD',
-            ),
+          _UtcDateTimePicker(
+            label: 'Start',
+            value: _start,
+            onChanged: (value) => setState(() => _start = value),
+            onClear: () => setState(() => _start = null),
           ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _endController,
-            decoration: const InputDecoration(
-              labelText: 'End date',
-              hintText: 'YYYY-MM-DD',
-            ),
+          _UtcDateTimePicker(
+            label: 'End',
+            value: _end,
+            onChanged: (value) => setState(() => _end = value),
+            onClear: () => setState(() => _end = null),
           ),
           const SizedBox(height: 12),
           TextField(

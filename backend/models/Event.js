@@ -13,6 +13,7 @@ const eventSchema = new mongoose.Schema({
   originTimeZone: { type: String },
   destinationTimeZone: { type: String },
   duration: { type: Number, default: 0 },  // Minutes
+  durationMinutes: { type: Number },
   endTime: { type: Date },  // Fixed: Optional (no required)
   planId: { type: String, required: true },
   details: { type: String, default: '' },
