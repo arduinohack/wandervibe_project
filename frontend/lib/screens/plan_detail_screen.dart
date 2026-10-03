@@ -97,6 +97,89 @@ DateTime? _defaultActivityStart(List<Activity> activities) {
   return null;
 }
 
+class _ShownActivityTimes {
+  final DateTime? start;
+  final DateTime? end;
+
+  const _ShownActivityTimes({this.start, this.end});
+}
+
+bool _activityIsFlight(Activity activity) {
+  final label = activity.typeLabel.trim().isEmpty
+      ? activity.type.name
+      : activity.typeLabel.trim();
+  return label.toLowerCase() == 'flight';
+}
+
+String _activityZone(Activity activity, String planZone) {
+  final zone = activity.timeZone.trim();
+  if (zone.isNotEmpty) return zone;
+  final plan = planZone.trim();
+  if (plan.isNotEmpty) return plan;
+  return 'UTC';
+}
+
+String _flightOriginZone(Activity activity, String planZone) {
+  final origin = activity.originTimeZone?.trim() ?? '';
+  if (origin.isNotEmpty) return origin;
+  return _activityZone(activity, planZone);
+}
+
+String _flightDestinationZone(Activity activity, String planZone) {
+  final destination = activity.destinationTimeZone?.trim() ?? '';
+  if (destination.isNotEmpty) return destination;
+  return _activityZone(activity, planZone);
+}
+
+/// Display times for the itinerary chain. Stored times are not rewritten.
+List<_ShownActivityTimes> _shownActivityTimes(List<Activity> activities) {
+  final shown = <_ShownActivityTimes>[];
+  DateTime? anchor;
+  for (final activity in activities) {
+    final storedStart = activity.startTime;
+    final storedEnd = activity.endTime;
+    final minutes = activity.duration?.inMinutes;
+    final DateTime? start;
+    final DateTime? end;
+    if (storedStart == null && minutes == null) {
+      start = anchor;
+      end = storedEnd ?? start;
+    } else {
+      start = storedStart ?? anchor;
+      if (storedEnd != null) {
+        end = storedEnd;
+      } else if (minutes != null && start != null) {
+        end = start.add(Duration(minutes: minutes));
+      } else {
+        end = null;
+      }
+    }
+    shown.add(_ShownActivityTimes(start: start, end: end));
+    anchor = end ?? start;
+  }
+  return shown;
+}
+
+String? _localDayKey(DateTime? instant, String zone) {
+  if (instant == null) return null;
+  final clock = clockInZone(instant, zone);
+  final year = clock.year.toString().padLeft(4, '0');
+  final month = clock.month.toString().padLeft(2, '0');
+  final day = clock.day.toString().padLeft(2, '0');
+  return '$year-$month-$day';
+}
+
+String _durationLabel(Activity activity) {
+  final minutes = activity.duration?.inMinutes;
+  if (minutes != null) return '$minutes min';
+  final start = activity.startTime;
+  final end = activity.endTime;
+  if (start != null && end != null) {
+    return '${end.difference(start).inMinutes} min';
+  }
+  return 'not set';
+}
+
 int? _wholeMinutes(String text) {
   final trimmed = text.trim();
   if (!RegExp(r'^\d+$').hasMatch(trimmed)) return null;
@@ -270,6 +353,12 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     final activityId = activity.id;
     if (activityId == null || activityId.isEmpty) return;
     final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final activities = planProvider.itineraryActivities;
+    final index = activities.indexWhere((item) => item.id == activityId);
+    DateTime? chainStart;
+    if (index > 0 && activity.startTime == null) {
+      chainStart = _shownActivityTimes(activities)[index].start;
+    }
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => _ActivityFormDialog(
@@ -278,9 +367,96 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
           activity: activity,
           planId: widget.plan.id,
           planTimeZone: _shownPlan(planProvider).timeZone,
+          chainStart: chainStart,
         ),
       ),
     );
+  }
+
+  List<Widget> _itinerarySections({
+    required List<Activity> activities,
+    required String planZone,
+    required bool canChange,
+  }) {
+    final times = _shownActivityTimes(activities);
+    final sections = <Widget>[];
+    String? previousDay;
+    var dayNumber = 0;
+    for (var index = 0; index < activities.length; index++) {
+      final activity = activities[index];
+      final shownTimes = times[index];
+      final flight = _activityIsFlight(activity);
+      final dayZone = flight
+          ? _flightOriginZone(activity, planZone)
+          : _activityZone(activity, planZone);
+      final dayKey = _localDayKey(shownTimes.start, dayZone);
+      if (index == 0 || dayKey != previousDay) {
+        dayNumber += 1;
+        final header = dayKey == null ? 'Day $dayNumber' : 'Day $dayNumber · $dayKey';
+        sections.add(
+          Padding(
+            padding: const EdgeInsets.only(top: 8, bottom: 8),
+            child: Text(
+              header,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+          ),
+        );
+        previousDay = dayKey;
+      }
+      final type = activity.typeLabel.isEmpty
+          ? activity.type.name
+          : activity.typeLabel;
+      final activityId = activity.id;
+      final startZone = flight
+          ? _flightOriginZone(activity, planZone)
+          : _activityZone(activity, planZone);
+      sections.add(
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Type: $type'),
+                const SizedBox(height: 4),
+                if (flight) ...[
+                  Text(
+                    'Departure: ${activityStartLabel(shownTimes.start, startZone)}',
+                  ),
+                  Text(
+                    'Arrival: ${activityStartLabel(shownTimes.end, _flightDestinationZone(activity, planZone))}',
+                  ),
+                ] else
+                  Text('Start: ${activityStartLabel(shownTimes.start, startZone)}'),
+                Text('Duration: ${_durationLabel(activity)}'),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        activity.name,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    if (canChange && activityId != null && activityId.isNotEmpty)
+                      IconButton(
+                        tooltip: 'Edit activity',
+                        icon: const Icon(Icons.edit),
+                        onPressed: () => _openActivityEdit(activity),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+    return sections;
   }
 
   Future<void> _openPlanEdit(Plan plan) async {
@@ -413,47 +589,11 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                   ),
                 )
               else
-                ...activities.map((activity) {
-                  final type = activity.typeLabel.isEmpty
-                      ? activity.type.name
-                      : activity.typeLabel;
-                  final activityId = activity.id;
-                  return Card(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  activity.name,
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ),
-                              if (canChange &&
-                                  activityId != null &&
-                                  activityId.isNotEmpty)
-                                IconButton(
-                                  tooltip: 'Edit activity',
-                                  icon: const Icon(Icons.edit),
-                                  onPressed: () => _openActivityEdit(activity),
-                                ),
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Type: $type\nStart: ${activityStartLabel(activity.startTime, activity.timeZone.trim().isEmpty ? shown.timeZone : activity.timeZone)}',
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                }),
+                ..._itinerarySections(
+                  activities: activities,
+                  planZone: shown.timeZone,
+                  canChange: canChange,
+                ),
             ],
           );
         },
@@ -517,6 +657,7 @@ class _ActivityFormDialog extends StatefulWidget {
   final String? planId;
   final String planTimeZone;
   final DateTime? initialStart;
+  final DateTime? chainStart;
 
   const _ActivityFormDialog({
     required this.title,
@@ -525,6 +666,7 @@ class _ActivityFormDialog extends StatefulWidget {
     this.planId,
     this.planTimeZone = '',
     this.initialStart,
+    this.chainStart,
   });
 
   bool get isScreen => activity != null;
@@ -566,8 +708,19 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     super.initState();
     final activity = widget.activity;
     _nameController = TextEditingController(text: activity?.name ?? '');
-    _start = activity?.startTime ?? widget.initialStart;
+    _start = activity?.startTime ?? widget.chainStart ?? widget.initialStart;
     _end = activity?.endTime;
+    if (activity != null &&
+        activity.startTime == null &&
+        activity.duration == null &&
+        activity.endTime == null) {
+      _end = widget.chainStart;
+    } else if (activity != null &&
+        activity.endTime == null &&
+        activity.duration != null &&
+        _start != null) {
+      _end = _start!.add(activity.duration!);
+    }
     _durationController = TextEditingController(text: _storedDurationText(activity));
     _locationController = TextEditingController(text: activity?.location ?? '');
     _detailsController = TextEditingController(text: activity?.details ?? '');
@@ -592,7 +745,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     return 'UTC';
   }
 
-  DateTime _instantFromWall(DateTime wall) {
+  DateTime _instantFromWall(DateTime wall, String zone) {
     final clock = wall.toUtc();
     return instantFromWall(
       year: clock.year,
@@ -600,12 +753,24 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       day: clock.day,
       hour: clock.hour,
       minute: clock.minute,
-      zone: _zone,
+      zone: zone,
     );
   }
 
-  String get _zoneAbbreviation {
-    return zoneAbbreviation(_start ?? _end ?? DateTime.now().toUtc(), _zone);
+  String get _departureZone {
+    if (_type != 'flight') return _zone;
+    final origin = _originZoneController.text.trim();
+    return origin.isEmpty ? _zone : origin;
+  }
+
+  String get _arrivalZone {
+    if (_type != 'flight') return _zone;
+    final destination = _destinationZoneController.text.trim();
+    return destination.isEmpty ? _zone : destination;
+  }
+
+  String _clockSuffix(DateTime? instant, String zone) {
+    return zoneAbbreviation(instant ?? DateTime.now().toUtc(), zone);
   }
 
   @override
@@ -623,7 +788,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
   }
 
   void _setStart(DateTime wall) {
-    final value = _instantFromWall(wall);
+    final value = _instantFromWall(wall, _departureZone);
     final minutes = _wholeMinutes(_durationController.text);
     setState(() {
       _start = value;
@@ -639,7 +804,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
   }
 
   void _setEnd(DateTime wall) {
-    final value = _instantFromWall(wall);
+    final value = _instantFromWall(wall, _arrivalZone);
     setState(() {
       _end = value;
       _endChanged = true;
@@ -690,7 +855,14 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       setState(() => _error = 'End time must not be before the start time');
       return null;
     }
-    minutes ??= end.difference(start).inMinutes;
+    if (minutes == null && typedDuration.isEmpty) {
+      final storedStart = widget.activity?.startTime;
+      final storedEnd = widget.activity?.endTime;
+      final userSetTimes = !widget.isScreen || _startChanged || _endChanged;
+      if (userSetTimes || (storedStart != null && storedEnd != null)) {
+        minutes = end.difference(start).inMinutes;
+      }
+    }
     final originZone = _originZoneController.text.trim();
     final destinationZone = _destinationZoneController.text.trim();
     if (_usesZones && (originZone.isEmpty || destinationZone.isEmpty)) {
@@ -828,13 +1000,14 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     TextEditingController controller,
     String label, {
     String? hint,
+    bool number = false,
     ValueChanged<String>? onChanged,
   }) {
     return Padding(
       padding: const EdgeInsets.only(top: 12),
       child: TextField(
         controller: controller,
-        keyboardType: onChanged == null ? null : TextInputType.number,
+        keyboardType: number ? TextInputType.number : null,
         decoration: InputDecoration(labelText: label, hintText: hint),
         onChanged: onChanged,
       ),
@@ -863,33 +1036,46 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
             setState(() => _type = value);
           },
         ),
-        DropdownButtonFormField<String>(
-          initialValue: _zone,
-          decoration: const InputDecoration(labelText: 'Time zone'),
-          items: [
-            for (final zone in activityZoneOptions(_zone))
-              DropdownMenuItem(value: zone, child: Text(zone)),
-          ],
-          onChanged: (value) {
-            if (value == null) return;
-            setState(() => _zone = value);
-          },
-        ),
+        if (_type == 'flight') ...[
+          _textField(
+            _originZoneController,
+            'Origin time zone',
+            onChanged: (_) => setState(() {}),
+          ),
+          _textField(
+            _destinationZoneController,
+            'Destination time zone',
+            onChanged: (_) => setState(() {}),
+          ),
+        ] else
+          DropdownButtonFormField<String>(
+            initialValue: _zone,
+            decoration: const InputDecoration(labelText: 'Time zone'),
+            items: [
+              for (final zone in activityZoneOptions(_zone))
+                DropdownMenuItem(value: zone, child: Text(zone)),
+            ],
+            onChanged: (value) {
+              if (value == null) return;
+              setState(() => _zone = value);
+            },
+          ),
         _UtcDateTimePicker(
-          label: 'Start',
-          value: wallValue(_start, _zone),
-          clockSuffix: _zoneAbbreviation,
+          label: _type == 'flight' ? 'Departure' : 'Start',
+          value: wallValue(_start, _departureZone),
+          clockSuffix: _clockSuffix(_start, _departureZone),
           onChanged: _setStart,
         ),
         _UtcDateTimePicker(
-          label: 'End',
-          value: wallValue(_end, _zone),
-          clockSuffix: _zoneAbbreviation,
+          label: _type == 'flight' ? 'Arrival' : 'End',
+          value: wallValue(_end, _arrivalZone),
+          clockSuffix: _clockSuffix(_end, _arrivalZone),
           onChanged: _setEnd,
         ),
         _textField(
           _durationController,
           'Duration (minutes)',
+          number: true,
           onChanged: _onDurationChanged,
         ),
         _textField(_locationController, 'Location'),
@@ -898,7 +1084,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
           _textField(_gateController, 'Gate'),
           _textField(_baggageController, 'Baggage claim'),
         ],
-        if (_usesZones) ...[
+        if (_type == 'train') ...[
           _textField(_originZoneController, 'Origin time zone'),
           _textField(_destinationZoneController, 'Destination time zone'),
         ],
