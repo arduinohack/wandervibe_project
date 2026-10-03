@@ -2,6 +2,9 @@ const express = require('express');
 const Plan = require('../models/Plan');
 const PlanUser = require('../models/PlanUser');
 const User = require('../models/User');
+const Invitation = require('../models/Invitation');
+const ActivityRevision = require('../models/ActivityRevision');
+const SupportLog = require('../models/SupportLog');
 const { Event } = require('../models/Event');
 const authMiddleware = require('../middleware/auth.js');  // Add this line for token verification
 const { checkPermission } = require('../utils/permissions');
@@ -483,6 +486,81 @@ router.post('/:planId/import', authMiddleware, async (req, res) => {
   } catch (err) {
     if (res.headersSent) return;
     console.error('Plan import error:', err);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+async function callerPlanRole(plan, callerId) {
+  const membership = await PlanUser.findOne({ planId: plan._id, userId: callerId });
+  let role = canonicalMembershipRole(membership && membership.role);
+  if (!role && String(plan.ownerId) === String(callerId)) role = 'Owner';
+  return role;
+}
+
+function sharedPerson(row, user) {
+  return {
+    userId: String(row.userId),
+    email: (user && user.email) || '',
+    firstName: (user && user.firstName) || '',
+    lastName: (user && user.lastName) || '',
+    role: row.role,
+  };
+}
+
+function sharedInvite(row, user) {
+  return {
+    _id: String(row._id),
+    email: (user && user.email) || '',
+    role: row.role,
+    status: 'pending',
+  };
+}
+
+// DELETE /api/plans/:planId
+// The Owner may delete a plan that is not shared. Another member or a pending invite is 409.
+router.delete('/:planId', authMiddleware, async (req, res) => {
+  const planId = String(req.params.planId || '');
+  try {
+    const plan = await Plan.findById(planId);
+    if (!plan) {
+      return res.status(404).json({ message: 'Plan not found' });
+    }
+
+    const callerId = req.user.userId || req.user.id;
+    const role = await callerPlanRole(plan, callerId);
+    if (role !== 'Owner') {
+      return res.status(403).json({ message: 'Only the Owner can delete a plan' });
+    }
+
+    const [others, pending] = await Promise.all([
+      PlanUser.find({ planId, userId: { $ne: callerId } }).lean(),
+      Invitation.find({ planId, status: 'pending' }).lean(),
+    ]);
+    if (others.length || pending.length) {
+      const userIds = [...new Set(
+        [...others, ...pending].map((row) => row.userId).filter(Boolean),
+      )];
+      const users = userIds.length
+        ? await User.find({ _id: { $in: userIds } }).select('email firstName lastName').lean()
+        : [];
+      const byId = new Map(users.map((user) => [String(user._id), user]));
+      return res.status(409).json({
+        message: 'Plan is still shared with someone else',
+        people: others.map((row) => sharedPerson(row, byId.get(String(row.userId)))),
+        invites: pending.map((row) => sharedInvite(row, byId.get(String(row.userId)))),
+      });
+    }
+
+    await Event.deleteMany({ planId });
+    await ActivityRevision.deleteMany({ planId });
+    await Invitation.deleteMany({ planId });
+    await SupportLog.deleteMany({ planId });
+    await PlanUser.deleteMany({ planId });
+    await Plan.deleteOne({ _id: planId });
+
+    return res.json({ message: 'Plan deleted' });
+  } catch (err) {
+    console.error('Delete plan error:', err);
     return res.status(500).json({ message: 'Server error' });
   }
 });

@@ -79,6 +79,73 @@ String? _roleFromUsersBody(String body, String userId) {
   return null;
 }
 
+class PlanDeleteResult {
+  final int? status;
+  final List<String> sharedWith;
+
+  const PlanDeleteResult({this.status, this.sharedWith = const []});
+}
+
+String _trimmed(dynamic value) {
+  if (value == null) return '';
+  return value.toString().trim();
+}
+
+String _personName(Map item) {
+  final first = _trimmed(item['firstName']);
+  final last = _trimmed(item['lastName']);
+  return [
+    if (first.isNotEmpty) first,
+    if (last.isNotEmpty) last,
+  ].join(' ');
+}
+
+String _personLabel(Map item) {
+  final name = _personName(item);
+  final email = _trimmed(item['email']);
+  final who = name.isNotEmpty ? name : email;
+  if (who.isEmpty) return '';
+  final role = _trimmed(item['role']);
+  return role.isEmpty ? who : '$who ($role)';
+}
+
+String _inviteLabel(Map item) {
+  final email = _trimmed(item['email']);
+  final role = _trimmed(item['role']);
+  if (email.isEmpty && role.isEmpty) return '';
+  if (email.isEmpty) return 'Invited $role';
+  if (role.isEmpty) return '$email (invited)';
+  return '$email (invited $role)';
+}
+
+List<String> _sharedWithLabels(String body) {
+  final dynamic data;
+  try {
+    data = json.decode(body);
+  } catch (e) {
+    return [];
+  }
+  if (data is! Map) return [];
+  final labels = <String>[];
+  final people = data['people'];
+  if (people is List) {
+    for (final item in people) {
+      if (item is! Map) continue;
+      final label = _personLabel(item);
+      if (label.isNotEmpty) labels.add(label);
+    }
+  }
+  final invites = data['invites'];
+  if (invites is List) {
+    for (final item in invites) {
+      if (item is! Map) continue;
+      final label = _inviteLabel(item);
+      if (label.isNotEmpty) labels.add(label);
+    }
+  }
+  return labels;
+}
+
 class PlanProvider extends ChangeNotifier {
   List<Plan> _plans = []; // Private list of plans
   Plan? _currentPlan; // Current selected plan
@@ -472,6 +539,48 @@ class PlanProvider extends ChangeNotifier {
     } catch (e) {
       logger.e('Error updating activity: $e');
       return null;
+    }
+  }
+
+  /// DELETE /api/plans/:planId. On 200 the plan leaves the loaded list.
+  /// On 409 sharedWith names the other people and pending invites.
+  Future<PlanDeleteResult> deletePlan({
+    required String planId,
+    required String? token,
+  }) async {
+    try {
+      if (token == null || token.isEmpty) {
+        return const PlanDeleteResult(status: 401);
+      }
+      final response = await http.delete(
+        Uri.parse('$backendBaseUrl$apiPlans/$planId'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (response.statusCode == 200) {
+        _plans = [
+          for (final plan in _plans)
+            if (plan.id != planId) plan,
+        ];
+        _viewerRoles.remove(planId);
+        if (_currentPlanId == planId) {
+          _itinerary = [];
+          _activities = [];
+          _itineraryError = null;
+          _currentPlanId = null;
+        }
+        notifyListeners();
+        return const PlanDeleteResult(status: 200);
+      }
+      if (response.statusCode == 409) {
+        return PlanDeleteResult(
+          status: 409,
+          sharedWith: _sharedWithLabels(response.body),
+        );
+      }
+      return PlanDeleteResult(status: response.statusCode);
+    } catch (e) {
+      logger.e('Error deleting plan: $e');
+      return const PlanDeleteResult();
     }
   }
 

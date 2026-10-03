@@ -35,6 +35,10 @@ bool canAddActivity(String? storedRole) {
   return role == 'Owner' || role == 'Collaborator';
 }
 
+bool canDeletePlan(String? storedRole) {
+  return storedRole?.trim() == 'Owner';
+}
+
 /// UTC clock time for an activity start. Null stays "not set".
 String formatActivityStart(DateTime? value) {
   if (value == null) return 'not set';
@@ -216,6 +220,74 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     }
   }
 
+  Future<void> _deletePlan() async {
+    final planId = widget.plan.id;
+    if (planId.isEmpty) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete plan'),
+        content: Text('Delete ${widget.plan.name}?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final navigator = Navigator.of(context);
+    final result = await planProvider.deletePlan(
+      planId: planId,
+      token: userProvider.token,
+    );
+    if (!mounted) return;
+    if (result.status == 401) {
+      await _endSession(userProvider, planProvider, navigator);
+      return;
+    }
+    if (result.status == 403) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Not allowed')),
+      );
+      return;
+    }
+    if (result.status == 409) {
+      final shared = result.sharedWith;
+      final detail = shared.isEmpty
+          ? 'This plan is still shared with someone else.'
+          : 'This plan is still shared with:\n${shared.join('\n')}';
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Plan is still shared'),
+          content: Text(detail),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+    if (result.status != 200) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not delete plan')),
+      );
+      return;
+    }
+    navigator.pop();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -290,6 +362,13 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                         'Dates: ${formatPlanDate(widget.plan.startDate)} - ${formatPlanDate(widget.plan.endDate)}',
                       ),
                       Text('State: ${widget.plan.planningState}'),
+                      if (canDeletePlan(storedRole)) ...[
+                        const SizedBox(height: 12),
+                        TextButton(
+                          onPressed: _deletePlan,
+                          child: const Text('Delete plan'),
+                        ),
+                      ],
                     ],
                   ),
                 ),
