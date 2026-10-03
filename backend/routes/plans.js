@@ -354,6 +354,11 @@ async function nextImportName(sourceName, timeZone) {
   return `${sourceName} ${stamp} ${max + 1}`;
 }
 
+function bodyText(body, key) {
+  const value = body && body[key];
+  return typeof value === 'string' ? value.trim() : '';
+}
+
 function readCsvUpload(req, res) {
   return new Promise((resolve, reject) => {
     csvUpload.single('file')(req, res, (err) => {
@@ -414,6 +419,12 @@ router.post('/:planId/import', authMiddleware, async (req, res) => {
     const endIndex = headerIndex(headers, columnMap.endTime);
     const locationIndex = headerIndex(headers, columnMap.location);
     const zone = planZone(source.timeZone);
+    const planName = bodyText(req.body, 'planName');
+    const defaultType = bodyText(req.body, 'defaultType');
+    const typeMapped = typeIndex >= 0;
+    if (!typeMapped && !defaultType) {
+      return res.status(400).json({ message: 'A default type is required when type is not mapped' });
+    }
 
     const activities = [];
     let skipped = 0;
@@ -426,7 +437,7 @@ router.post('/:planId/import', authMiddleware, async (req, res) => {
       const activity = {
         _id: uuidv4(),
         name,
-        type: cell(dataRow, typeIndex) || 'activity',
+        type: typeMapped ? (cell(dataRow, typeIndex) || 'activity') : defaultType,
         location: cell(dataRow, locationIndex),
         planId: '',
         ownerId: callerId,
@@ -443,7 +454,7 @@ router.post('/:planId/import', authMiddleware, async (req, res) => {
     const created = new Plan({
       _id: newPlanId,
       type: source.type,
-      name: await nextImportName(source.name, source.timeZone),
+      name: planName || await nextImportName(source.name, source.timeZone),
       destination: source.destination,
       startDate: source.startDate || null,
       endDate: source.endDate || null,

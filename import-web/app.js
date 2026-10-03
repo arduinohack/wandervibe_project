@@ -1,9 +1,7 @@
-const API_KEY = 'wandervibe.import.api';
 const TOKEN_KEY = 'wandervibe.import.token';
 const USER_KEY = 'wandervibe.import.userId';
 const DEFAULT_API = 'http://localhost:3000';
 
-const apiBaseInput = document.getElementById('api-base');
 const emailInput = document.getElementById('email');
 const passwordInput = document.getElementById('password');
 const loginButton = document.getElementById('login-button');
@@ -11,14 +9,23 @@ const logoutButton = document.getElementById('logout-button');
 const sessionForm = document.getElementById('session-form');
 const importForm = document.getElementById('import-form');
 const planSelect = document.getElementById('plan-select');
+const planNameInput = document.getElementById('plan-name');
 const fileInput = document.getElementById('csv-file');
+const columnMap = document.getElementById('column-map');
+const nameSelect = document.getElementById('col-name');
+const typeSelect = document.getElementById('col-type');
+const defaultTypeLabel = document.getElementById('default-type-label');
+const defaultTypeSelect = document.getElementById('default-type');
+const startSelect = document.getElementById('col-start');
+const endSelect = document.getElementById('col-end');
+const locationSelect = document.getElementById('col-location');
 const message = document.getElementById('message');
 const planList = document.getElementById('plan-list');
 
-apiBaseInput.value = localStorage.getItem(API_KEY) || DEFAULT_API;
-
 function apiBase() {
-  return apiBaseInput.value.trim().replace(/\/+$/, '') || DEFAULT_API;
+  const configured = window.WANDERVIBE_API_BASE;
+  const value = typeof configured === 'string' ? configured.trim() : '';
+  return value.replace(/\/+$/, '') || DEFAULT_API;
 }
 
 function setMessage(text, isError) {
@@ -39,6 +46,14 @@ function canImport(role) {
     || role === 'planner';
 }
 
+function clearColumnChoices() {
+  columnMap.hidden = true;
+  for (const select of [nameSelect, typeSelect, startSelect, endSelect, locationSelect]) {
+    select.replaceChildren();
+  }
+  defaultTypeLabel.hidden = true;
+}
+
 function showSession(loggedIn) {
   loginButton.hidden = loggedIn;
   emailInput.hidden = loggedIn;
@@ -50,6 +65,7 @@ function showSession(loggedIn) {
     importForm.hidden = true;
     planSelect.replaceChildren();
     planList.replaceChildren();
+    clearColumnChoices();
   }
 }
 
@@ -65,6 +81,92 @@ async function readJson(response) {
   } catch (err) {
     return {};
   }
+}
+
+function headerFields(text) {
+  const source = String(text || '').replace(/^\uFEFF/, '');
+  const fields = [];
+  let field = '';
+  let inQuotes = false;
+  for (let i = 0; i < source.length; i += 1) {
+    const ch = source[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (source[i + 1] === '"') {
+          field += '"';
+          i += 1;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        field += ch;
+      }
+      continue;
+    }
+    if (ch === '"') {
+      inQuotes = true;
+      continue;
+    }
+    if (ch === ',') {
+      fields.push(field.trim());
+      field = '';
+      continue;
+    }
+    if (ch === '\n' || ch === '\r') break;
+    field += ch;
+  }
+  if (field.length > 0 || fields.length > 0) fields.push(field.trim());
+  const seen = new Set();
+  const headers = [];
+  for (const item of fields) {
+    if (!item || seen.has(item)) continue;
+    seen.add(item);
+    headers.push(item);
+  }
+  return headers;
+}
+
+function fillColumnSelect(select, headers, blankLabel) {
+  select.replaceChildren();
+  const blank = document.createElement('option');
+  blank.value = '';
+  blank.textContent = blankLabel;
+  select.appendChild(blank);
+  for (const header of headers) {
+    const option = document.createElement('option');
+    option.value = header;
+    option.textContent = header;
+    select.appendChild(option);
+  }
+}
+
+function preselect(select, headers, fieldName) {
+  const match = headers.find((header) => header.toLowerCase() === fieldName.toLowerCase());
+  if (match) select.value = match;
+}
+
+function toggleDefaultType() {
+  defaultTypeLabel.hidden = typeSelect.value !== '';
+}
+
+function showColumns(headers) {
+  fillColumnSelect(nameSelect, headers, 'Choose a column');
+  fillColumnSelect(typeSelect, headers, 'Not mapped');
+  fillColumnSelect(startSelect, headers, 'Not mapped');
+  fillColumnSelect(endSelect, headers, 'Not mapped');
+  fillColumnSelect(locationSelect, headers, 'Not mapped');
+  preselect(nameSelect, headers, 'name');
+  preselect(typeSelect, headers, 'type');
+  preselect(startSelect, headers, 'startTime');
+  preselect(endSelect, headers, 'endTime');
+  preselect(locationSelect, headers, 'location');
+  columnMap.hidden = false;
+  toggleDefaultType();
+}
+
+function isCsvFile(file) {
+  const filename = file.name.toLowerCase();
+  return filename.endsWith('.csv') && !filename.endsWith('.xlsx') && !filename.endsWith('.xls');
 }
 
 async function storedRole(plan, userId) {
@@ -142,7 +244,6 @@ async function loadPlans() {
 
 sessionForm.addEventListener('submit', async (event) => {
   event.preventDefault();
-  localStorage.setItem(API_KEY, apiBase());
   setMessage('Logging in…');
   const response = await fetch(`${apiBase()}/api/auth/login`, {
     method: 'POST',
@@ -170,9 +271,32 @@ logoutButton.addEventListener('click', () => {
   setMessage('');
 });
 
-apiBaseInput.addEventListener('change', () => {
-  localStorage.setItem(API_KEY, apiBase());
+fileInput.addEventListener('change', async () => {
+  clearColumnChoices();
+  const file = fileInput.files && fileInput.files[0];
+  if (!file) return;
+  if (!isCsvFile(file)) {
+    fileInput.value = '';
+    setMessage('Choose a CSV file. Spreadsheet files are not accepted.', true);
+    return;
+  }
+  let text = '';
+  try {
+    text = await file.text();
+  } catch (err) {
+    setMessage('Could not read that file.', true);
+    return;
+  }
+  const headers = headerFields(text);
+  if (!headers.length) {
+    setMessage('That CSV has no header row.', true);
+    return;
+  }
+  showColumns(headers);
+  setMessage('');
 });
+
+typeSelect.addEventListener('change', toggleDefaultType);
 
 importForm.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -182,30 +306,32 @@ importForm.addEventListener('submit', async (event) => {
     setMessage('Choose a plan.', true);
     return;
   }
-  if (!file) {
-    setMessage('Choose a CSV file.', true);
-    return;
-  }
-  const filename = file.name.toLowerCase();
-  if (!filename.endsWith('.csv') || filename.endsWith('.xlsx') || filename.endsWith('.xls')) {
+  if (!file || !isCsvFile(file)) {
     setMessage('Choose a CSV file. Spreadsheet files are not accepted.', true);
     return;
   }
-  const nameColumn = document.getElementById('col-name').value.trim();
-  if (!nameColumn) {
-    setMessage('Enter the name column.', true);
+  if (columnMap.hidden || !nameSelect.value) {
+    setMessage('Choose the name column.', true);
+    return;
+  }
+  const typeMapped = typeSelect.value !== '';
+  if (!typeMapped && !defaultTypeSelect.value) {
+    setMessage('Choose a default type.', true);
     return;
   }
 
+  const map = { name: nameSelect.value };
+  if (typeMapped) map.type = typeSelect.value;
+  if (startSelect.value) map.startTime = startSelect.value;
+  if (endSelect.value) map.endTime = endSelect.value;
+  if (locationSelect.value) map.location = locationSelect.value;
+
   const payload = new FormData();
-  payload.append('map', JSON.stringify({
-    name: nameColumn,
-    type: document.getElementById('col-type').value.trim(),
-    startTime: document.getElementById('col-start').value.trim(),
-    endTime: document.getElementById('col-end').value.trim(),
-    location: document.getElementById('col-location').value.trim(),
-  }));
+  payload.append('map', JSON.stringify(map));
   payload.append('file', file, file.name);
+  const planName = planNameInput.value.trim();
+  if (planName) payload.append('planName', planName);
+  if (!typeMapped) payload.append('defaultType', defaultTypeSelect.value);
 
   setMessage('Importing…');
   const response = await fetch(`${apiBase()}/api/plans/${planId}/import`, {
@@ -228,6 +354,8 @@ importForm.addEventListener('submit', async (event) => {
     return;
   }
   fileInput.value = '';
+  planNameInput.value = '';
+  clearColumnChoices();
   setMessage(`Created ${body.name}. Inserted ${body.inserted}, skipped ${body.skipped}.`);
   await loadPlans();
 });

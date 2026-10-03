@@ -269,6 +269,62 @@ describe('csv plan import', () => {
     expect(await Plan.countDocuments()).toBe(0);
   });
 
+  test('a custom plan name and a default type are used when type is unmapped', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+    });
+    const planRes = await request(app)
+      .post('/api/plans')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({
+        type: 'trip',
+        name: 'Paris',
+        destination: 'Paris',
+        timeZone: 'Europe/Paris',
+      });
+    expect(planRes.status).toBe(201);
+    const planId = planRes.body.plan._id;
+    const csv = [
+      'title,begin,finish,place',
+      'Museum,2026-06-01 15:00,2026-06-01 18:00,Louvre',
+      ',2026-06-01 09:00,2026-06-01 10:00,Skip',
+    ].join('\n');
+    const map = JSON.stringify({
+      name: 'title',
+      startTime: 'begin',
+      endTime: 'finish',
+      location: 'place',
+    });
+
+    const imported = await request(app)
+      .post(`/api/plans/${planId}/import`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .field('map', map)
+      .field('planName', 'Spring trip')
+      .field('defaultType', 'dining')
+      .attach('file', Buffer.from(csv, 'utf8'), 'import.csv');
+
+    expect(imported.status).toBe(201);
+    expect(imported.body.name).toBe('Spring trip');
+    expect(imported.body.inserted).toBe(1);
+    expect(imported.body.skipped).toBe(1);
+    const created = await Plan.findById(imported.body.planId);
+    expect(created.name).toBe('Spring trip');
+    expect(created.ownerId).toBe(ada.userId);
+    const members = await PlanUser.find({ planId: imported.body.planId });
+    expect(members).toHaveLength(1);
+    expect(members[0].userId).toBe(ada.userId);
+    expect(members[0].role).toBe('Owner');
+    const activities = await Event.find({ planId: imported.body.planId });
+    expect(activities).toHaveLength(1);
+    expect(activities[0].name).toBe('Museum');
+    expect(activities[0].type).toBe('dining');
+    expect(activities[0].location).toBe('Louvre');
+    expect(activities[0].startTime.toISOString()).toBe('2026-06-01T13:00:00.000Z');
+  });
+
   test('an xlsx file is rejected', async () => {
     const ada = await registerAndLogin({
       firstName: 'Ada',
