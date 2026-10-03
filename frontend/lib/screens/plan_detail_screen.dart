@@ -7,7 +7,19 @@ import '../providers/plan_provider.dart';
 import '../providers/user_provider.dart';
 import 'login_screen.dart';
 
-const activityTypes = ['tour', 'dining', 'hotel'];
+const activityTypes = [
+  'flight',
+  'train',
+  'car',
+  'dining',
+  'hotel',
+  'tour',
+  'attraction',
+  'cruise',
+  'ceremony',
+  'reception',
+  'custom',
+];
 
 /// UTC `YYYY-MM-DD HH:mm`. Anything else is not a start time.
 DateTime? parseActivityStart(String text) {
@@ -128,9 +140,12 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
   }
 
   Future<void> _addActivity() async {
-    final draft = await showDialog<_ActivityDraft>(
+    final draft = await showDialog<_ActivityFields>(
       context: context,
-      builder: (context) => const _AddActivityDialog(),
+      builder: (context) => const _ActivityFormDialog(
+        title: 'Add activity',
+        actionLabel: 'Add',
+      ),
     );
     if (draft == null || !mounted) return;
     final userProvider = Provider.of<UserProvider>(context, listen: false);
@@ -142,6 +157,14 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
       name: draft.name,
       type: draft.type,
       startTime: draft.start,
+      endTime: draft.end,
+      location: draft.location,
+      details: draft.details,
+      gate: draft.gate,
+      baggageClaim: draft.baggageClaim,
+      originTimeZone: draft.originTimeZone,
+      destinationTimeZone: draft.destinationTimeZone,
+      roomNumber: draft.roomNumber,
       token: userProvider.token,
     );
     if (!mounted) return;
@@ -163,9 +186,13 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
   Future<void> _editActivity(Activity activity) async {
     final activityId = activity.id;
     if (activityId == null || activityId.isEmpty) return;
-    final draft = await showDialog<_ActivityEdit>(
+    final draft = await showDialog<_ActivityFields>(
       context: context,
-      builder: (context) => _EditActivityDialog(activity: activity),
+      builder: (context) => _ActivityFormDialog(
+        title: 'Edit activity',
+        actionLabel: 'Save',
+        activity: activity,
+      ),
     );
     if (draft == null || !mounted) return;
     final userProvider = Provider.of<UserProvider>(context, listen: false);
@@ -178,6 +205,13 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
       type: draft.type,
       startTime: draft.start,
       endTime: draft.end,
+      location: draft.location,
+      details: draft.details,
+      gate: draft.gate,
+      baggageClaim: draft.baggageClaim,
+      originTimeZone: draft.originTimeZone,
+      destinationTimeZone: draft.destinationTimeZone,
+      roomNumber: draft.roomNumber,
       token: userProvider.token,
     );
     if (!mounted) return;
@@ -516,127 +550,76 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
   }
 }
 
-class _ActivityDraft {
-  final String name;
-  final String type;
-  final DateTime start;
-
-  const _ActivityDraft({
-    required this.name,
-    required this.type,
-    required this.start,
-  });
-}
-
-class _AddActivityDialog extends StatefulWidget {
-  const _AddActivityDialog();
-
-  @override
-  State<_AddActivityDialog> createState() => _AddActivityDialogState();
-}
-
-class _AddActivityDialogState extends State<_AddActivityDialog> {
-  final _nameController = TextEditingController();
-  final _startController = TextEditingController();
-  String _type = activityTypes.first;
-  String? _error;
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _startController.dispose();
-    super.dispose();
-  }
-
-  void _submit() {
-    final name = _nameController.text.trim();
-    final start = parseActivityStart(_startController.text);
-    if (name.isEmpty || start == null) {
-      setState(() => _error = 'Enter a name and start time as YYYY-MM-DD HH:mm');
-      return;
-    }
-    Navigator.pop(
-      context,
-      _ActivityDraft(name: name, type: _type, start: start),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Add activity'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: _nameController,
-            decoration: const InputDecoration(labelText: 'Name'),
-          ),
-          const SizedBox(height: 12),
-          DropdownButtonFormField<String>(
-            initialValue: _type,
-            decoration: const InputDecoration(labelText: 'Type'),
-            items: [
-              for (final type in activityTypes)
-                DropdownMenuItem(value: type, child: Text(type)),
-            ],
-            onChanged: (value) {
-              if (value == null) return;
-              setState(() => _type = value);
-            },
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _startController,
-            decoration: const InputDecoration(
-              labelText: 'Start time',
-              hintText: 'YYYY-MM-DD HH:mm',
-            ),
-          ),
-          if (_error != null) ...[
-            const SizedBox(height: 12),
-            Text(_error!, style: const TextStyle(color: Colors.red)),
-          ],
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        TextButton(onPressed: _submit, child: const Text('Add')),
-      ],
-    );
-  }
-}
-
-class _ActivityEdit {
+class _ActivityFields {
   final String name;
   final String type;
   final DateTime start;
   final DateTime end;
+  final String location;
+  final String details;
+  final String? gate;
+  final String? baggageClaim;
+  final String? originTimeZone;
+  final String? destinationTimeZone;
+  final String? roomNumber;
 
-  const _ActivityEdit({
+  const _ActivityFields({
     required this.name,
     required this.type,
     required this.start,
     required this.end,
+    required this.location,
+    required this.details,
+    this.gate,
+    this.baggageClaim,
+    this.originTimeZone,
+    this.destinationTimeZone,
+    this.roomNumber,
   });
 }
 
-class _EditActivityDialog extends StatefulWidget {
-  final Activity activity;
-
-  const _EditActivityDialog({required this.activity});
-
-  @override
-  State<_EditActivityDialog> createState() => _EditActivityDialogState();
+String _storedActivityType(Activity? activity) {
+  if (activity == null) return activityTypes.first;
+  final stored = activity.typeLabel.trim().isEmpty
+      ? activity.type.name
+      : activity.typeLabel.trim();
+  for (final type in activityTypes) {
+    if (type.toLowerCase() == stored.toLowerCase()) return type;
+  }
+  return stored;
 }
 
-class _EditActivityDialogState extends State<_EditActivityDialog> {
+List<String> _activityTypeChoices(String selected) {
+  if (activityTypes.contains(selected)) return activityTypes;
+  return [selected, ...activityTypes];
+}
+
+class _ActivityFormDialog extends StatefulWidget {
+  final String title;
+  final String actionLabel;
+  final Activity? activity;
+
+  const _ActivityFormDialog({
+    required this.title,
+    required this.actionLabel,
+    this.activity,
+  });
+
+  @override
+  State<_ActivityFormDialog> createState() => _ActivityFormDialogState();
+}
+
+class _ActivityFormDialogState extends State<_ActivityFormDialog> {
   late final TextEditingController _nameController;
   late final TextEditingController _startController;
   late final TextEditingController _endController;
+  late final TextEditingController _locationController;
+  late final TextEditingController _detailsController;
+  late final TextEditingController _gateController;
+  late final TextEditingController _baggageController;
+  late final TextEditingController _originZoneController;
+  late final TextEditingController _destinationZoneController;
+  late final TextEditingController _roomController;
   late String _type;
   String? _error;
 
@@ -644,17 +627,25 @@ class _EditActivityDialogState extends State<_EditActivityDialog> {
   void initState() {
     super.initState();
     final activity = widget.activity;
-    _nameController = TextEditingController(text: activity.name);
+    _nameController = TextEditingController(text: activity?.name ?? '');
     _startController = TextEditingController(
-      text: formatActivityInput(activity.startTime),
+      text: formatActivityInput(activity?.startTime),
     );
     _endController = TextEditingController(
-      text: formatActivityInput(activity.endTime),
+      text: formatActivityInput(activity?.endTime),
     );
-    final storedType = activity.typeLabel.isEmpty
-        ? activity.type.name
-        : activity.typeLabel;
-    _type = activityTypes.contains(storedType) ? storedType : activityTypes.first;
+    _locationController = TextEditingController(text: activity?.location ?? '');
+    _detailsController = TextEditingController(text: activity?.details ?? '');
+    _gateController = TextEditingController(text: activity?.gate ?? '');
+    _baggageController = TextEditingController(text: activity?.baggageClaim ?? '');
+    _originZoneController = TextEditingController(
+      text: activity?.originTimeZone ?? '',
+    );
+    _destinationZoneController = TextEditingController(
+      text: activity?.destinationTimeZone ?? '',
+    );
+    _roomController = TextEditingController(text: activity?.roomNumber ?? '');
+    _type = _storedActivityType(activity);
   }
 
   @override
@@ -662,8 +653,22 @@ class _EditActivityDialogState extends State<_EditActivityDialog> {
     _nameController.dispose();
     _startController.dispose();
     _endController.dispose();
+    _locationController.dispose();
+    _detailsController.dispose();
+    _gateController.dispose();
+    _baggageController.dispose();
+    _originZoneController.dispose();
+    _destinationZoneController.dispose();
+    _roomController.dispose();
     super.dispose();
   }
+
+  bool get _usesZones => _type == 'flight' || _type == 'train';
+
+  bool get _usesFlightFields => _type == 'flight';
+
+  bool get _usesRoom =>
+      _type == 'hotel' || _type == 'ceremony' || _type == 'reception';
 
   void _submit() {
     final name = _nameController.text.trim();
@@ -679,64 +684,105 @@ class _EditActivityDialogState extends State<_EditActivityDialog> {
       setState(() => _error = 'End time must not be before the start time');
       return;
     }
+    final originZone = _originZoneController.text.trim();
+    final destinationZone = _destinationZoneController.text.trim();
+    if (_usesZones && (originZone.isEmpty || destinationZone.isEmpty)) {
+      setState(
+        () => _error = 'Enter an origin time zone and a destination time zone',
+      );
+      return;
+    }
     Navigator.pop(
       context,
-      _ActivityEdit(name: name, type: _type, start: start, end: end),
+      _ActivityFields(
+        name: name,
+        type: _type,
+        start: start,
+        end: end,
+        location: _locationController.text.trim(),
+        details: _detailsController.text.trim(),
+        gate: _usesFlightFields ? _gateController.text.trim() : null,
+        baggageClaim: _usesFlightFields ? _baggageController.text.trim() : null,
+        originTimeZone: _usesZones ? originZone : null,
+        destinationTimeZone: _usesZones ? destinationZone : null,
+        roomNumber: _usesRoom ? _roomController.text.trim() : null,
+      ),
+    );
+  }
+
+  Widget _textField(
+    TextEditingController controller,
+    String label, {
+    String? hint,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: TextField(
+        controller: controller,
+        decoration: InputDecoration(labelText: label, hintText: hint),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Edit activity'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: _nameController,
-            decoration: const InputDecoration(labelText: 'Name'),
-          ),
-          const SizedBox(height: 12),
-          DropdownButtonFormField<String>(
-            initialValue: _type,
-            decoration: const InputDecoration(labelText: 'Type'),
-            items: [
-              for (final type in activityTypes)
-                DropdownMenuItem(value: type, child: Text(type)),
-            ],
-            onChanged: (value) {
-              if (value == null) return;
-              setState(() => _type = value);
-            },
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _startController,
-            decoration: const InputDecoration(
-              labelText: 'Start time',
-              hintText: 'YYYY-MM-DD HH:mm',
+      title: Text(widget.title),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _nameController,
+              decoration: const InputDecoration(labelText: 'Name'),
             ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _endController,
-            decoration: const InputDecoration(
-              labelText: 'End time',
-              hintText: 'YYYY-MM-DD HH:mm',
-            ),
-          ),
-          if (_error != null) ...[
             const SizedBox(height: 12),
-            Text(_error!, style: const TextStyle(color: Colors.red)),
+            DropdownButtonFormField<String>(
+              initialValue: _type,
+              decoration: const InputDecoration(labelText: 'Type'),
+              items: [
+                for (final type in _activityTypeChoices(_type))
+                  DropdownMenuItem(value: type, child: Text(type)),
+              ],
+              onChanged: (value) {
+                if (value == null) return;
+                setState(() => _type = value);
+              },
+            ),
+            _textField(
+              _startController,
+              'Start time',
+              hint: 'YYYY-MM-DD HH:mm',
+            ),
+            _textField(
+              _endController,
+              'End time',
+              hint: 'YYYY-MM-DD HH:mm',
+            ),
+            _textField(_locationController, 'Location'),
+            _textField(_detailsController, 'Details'),
+            if (_usesFlightFields) ...[
+              _textField(_gateController, 'Gate'),
+              _textField(_baggageController, 'Baggage claim'),
+            ],
+            if (_usesZones) ...[
+              _textField(_originZoneController, 'Origin time zone'),
+              _textField(_destinationZoneController, 'Destination time zone'),
+            ],
+            if (_usesRoom) _textField(_roomController, 'Room number'),
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(_error!, style: const TextStyle(color: Colors.red)),
+            ],
           ],
-        ],
+        ),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
           child: const Text('Cancel'),
         ),
-        TextButton(onPressed: _submit, child: const Text('Save')),
+        TextButton(onPressed: _submit, child: Text(widget.actionLabel)),
       ],
     );
   }

@@ -2,6 +2,12 @@
 // import 'package:timezone/timezone.dart' as tz; // For time zone handling (add to pubspec.yaml if needed)
 import './activity_type.dart';
 
+String? _optionalActivityText(dynamic value) {
+  if (value == null) return null;
+  final text = value.toString().trim();
+  return text.isEmpty ? null : text;
+}
+
 enum CostType { estimated, actual }
 
 class UrlLink {
@@ -128,6 +134,11 @@ class Activity {
   final List<SubActivity> subActivities;
   final List<UrlLink> urlLinks;
   final String? details;
+  final String? gate;
+  final String? baggageClaim;
+  final String? roomNumber;
+  final String? originTimeZone;
+  final String? destinationTimeZone;
   final String? customType;
   final String? serviceProvider;
   final String? bookingReference;
@@ -152,6 +163,11 @@ class Activity {
     this.subActivities = const [],
     this.urlLinks = const [],
     this.details,
+    this.gate,
+    this.baggageClaim,
+    this.roomNumber,
+    this.originTimeZone,
+    this.destinationTimeZone,
     this.customType,
     this.serviceProvider,
     this.bookingReference,
@@ -243,6 +259,11 @@ class Activity {
           .map((e) => UrlLink.fromJson(e as Map<String, dynamic>))
           .toList(),
       details: json['details'],
+      gate: _optionalActivityText(json['gate']),
+      baggageClaim: _optionalActivityText(json['baggageClaim']),
+      roomNumber: _optionalActivityText(json['roomNumber']),
+      originTimeZone: _optionalActivityText(json['originTimeZone']),
+      destinationTimeZone: _optionalActivityText(json['destinationTimeZone']),
       customType: json['customType'],
       serviceProvider: json['serviceProvider'],
       bookingReference: json['bookingReference'],
@@ -277,6 +298,11 @@ class Activity {
       'subEvents': subActivities.map((e) => e.toJson()).toList(),
       'urlLinks': urlLinks.map((e) => e.toJson()).toList(),
       'details': details ?? '',
+      if (gate != null) 'gate': gate,
+      if (baggageClaim != null) 'baggageClaim': baggageClaim,
+      if (roomNumber != null) 'roomNumber': roomNumber,
+      if (originTimeZone != null) 'originTimeZone': originTimeZone,
+      if (destinationTimeZone != null) 'destinationTimeZone': destinationTimeZone,
       'customType': customType ?? '',
       if (serviceProvider != null) 'serviceProvider': serviceProvider,
       if (bookingReference != null) 'bookingReference': bookingReference,
@@ -304,6 +330,20 @@ class Activity {
         return ActivityType.bus;
       case 'ferry':
         return ActivityType.ferry;
+      case 'dining':
+        return ActivityType.dining;
+      case 'tour':
+        return ActivityType.tour;
+      case 'attraction':
+        return ActivityType.attraction;
+      case 'cruise':
+        return ActivityType.cruise;
+      case 'ceremony':
+        return ActivityType.ceremony;
+      case 'reception':
+        return ActivityType.reception;
+      case 'custom':
+        return ActivityType.custom;
       default:
         return ActivityType.activity;
     }

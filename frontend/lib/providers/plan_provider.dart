@@ -46,6 +46,44 @@ String _activityInstant(DateTime utc) {
   return utc.toUtc().toIso8601String();
 }
 
+/// Shared activity fields plus only the fields the selected type keeps.
+Map<String, dynamic> _activityWriteBody({
+  required String name,
+  required String type,
+  required DateTime startTime,
+  required DateTime endTime,
+  required String location,
+  required String details,
+  String? gate,
+  String? baggageClaim,
+  String? originTimeZone,
+  String? destinationTimeZone,
+  String? roomNumber,
+  String? planId,
+}) {
+  final body = <String, dynamic>{
+    'name': name,
+    'type': type,
+    'startTime': _activityInstant(startTime),
+    'endTime': _activityInstant(endTime),
+    'location': location,
+    'details': details,
+  };
+  if (planId != null) body['planId'] = planId;
+  if (type == 'flight' || type == 'train') {
+    body['originTimeZone'] = originTimeZone ?? '';
+    body['destinationTimeZone'] = destinationTimeZone ?? '';
+  }
+  if (type == 'flight') {
+    body['gate'] = gate ?? '';
+    body['baggageClaim'] = baggageClaim ?? '';
+  }
+  if (type == 'hotel' || type == 'ceremony' || type == 'reception') {
+    body['roomNumber'] = roomNumber ?? '';
+  }
+  return body;
+}
+
 int _byStartTime(Activity a, Activity b) {
   final aStart = a.startTime;
   final bStart = b.startTime;
@@ -455,33 +493,47 @@ class PlanProvider extends ChangeNotifier {
     }
   }
 
-  /// POST /api/activities with name, type, planId, startTime, and endTime.
-  /// End is three hours after the collected start.
+  /// POST /api/activities. The body keeps shared fields and the selected type's fields.
   /// On 201 the returned activity is inserted in start-time order.
   Future<int?> createActivity({
     required String planId,
     required String name,
     required String type,
     required DateTime startTime,
+    required DateTime endTime,
+    required String location,
+    required String details,
+    String? gate,
+    String? baggageClaim,
+    String? originTimeZone,
+    String? destinationTimeZone,
+    String? roomNumber,
     required String? token,
   }) async {
     try {
       if (token == null || token.isEmpty) return 401;
-      final start = startTime.toUtc();
-      final end = start.add(const Duration(hours: 3));
       final response = await http.post(
         Uri.parse((backendBaseUrl) + apiActivities),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
         },
-        body: json.encode({
-          'name': name,
-          'type': type,
-          'planId': planId,
-          'startTime': _activityInstant(start),
-          'endTime': _activityInstant(end),
-        }),
+        body: json.encode(
+          _activityWriteBody(
+            name: name,
+            type: type,
+            startTime: startTime,
+            endTime: endTime,
+            location: location,
+            details: details,
+            gate: gate,
+            baggageClaim: baggageClaim,
+            originTimeZone: originTimeZone,
+            destinationTimeZone: destinationTimeZone,
+            roomNumber: roomNumber,
+            planId: planId,
+          ),
+        ),
       );
       if (response.statusCode == 401 || response.statusCode == 403) {
         return response.statusCode;
@@ -502,7 +554,7 @@ class PlanProvider extends ChangeNotifier {
     }
   }
 
-  /// PUT /api/activities/:id with name, type, startTime, and endTime.
+  /// PUT /api/activities/:id. The body keeps shared fields and the selected type's fields.
   /// On 200 the returned activity replaces that row in start-time order.
   Future<int?> updateActivity({
     required String activityId,
@@ -510,6 +562,13 @@ class PlanProvider extends ChangeNotifier {
     required String type,
     required DateTime startTime,
     required DateTime endTime,
+    required String location,
+    required String details,
+    String? gate,
+    String? baggageClaim,
+    String? originTimeZone,
+    String? destinationTimeZone,
+    String? roomNumber,
     required String? token,
   }) async {
     try {
@@ -520,12 +579,21 @@ class PlanProvider extends ChangeNotifier {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
         },
-        body: json.encode({
-          'name': name,
-          'type': type,
-          'startTime': _activityInstant(startTime),
-          'endTime': _activityInstant(endTime),
-        }),
+        body: json.encode(
+          _activityWriteBody(
+            name: name,
+            type: type,
+            startTime: startTime,
+            endTime: endTime,
+            location: location,
+            details: details,
+            gate: gate,
+            baggageClaim: baggageClaim,
+            originTimeZone: originTimeZone,
+            destinationTimeZone: destinationTimeZone,
+            roomNumber: roomNumber,
+          ),
+        ),
       );
       if (response.statusCode == 401 || response.statusCode == 403) {
         return response.statusCode;
