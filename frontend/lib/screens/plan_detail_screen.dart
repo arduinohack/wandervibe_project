@@ -47,10 +47,6 @@ bool canAddActivity(String? storedRole) {
   return role == 'Owner' || role == 'Collaborator';
 }
 
-bool canDeletePlan(String? storedRole) {
-  return storedRole?.trim() == 'Owner';
-}
-
 bool canEditPlan(String? storedRole) {
   return storedRole?.trim() == 'Owner';
 }
@@ -183,210 +179,44 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     }
   }
 
-  Future<void> _editActivity(Activity activity) async {
+  Plan _shownPlan(PlanProvider planProvider) {
+    for (final plan in planProvider.plans) {
+      if (plan.id == widget.plan.id) return plan;
+    }
+    return _plan;
+  }
+
+  Future<void> _openActivityEdit(Activity activity) async {
     final activityId = activity.id;
     if (activityId == null || activityId.isEmpty) return;
-    final draft = await showDialog<_ActivityFields>(
-      context: context,
-      builder: (context) => _ActivityFormDialog(
-        title: 'Edit activity',
-        actionLabel: 'Save',
-        activity: activity,
-      ),
-    );
-    if (draft == null || !mounted) return;
-    final userProvider = Provider.of<UserProvider>(context, listen: false);
-    final planProvider = Provider.of<PlanProvider>(context, listen: false);
-    final navigator = Navigator.of(context);
-    final messenger = ScaffoldMessenger.of(context);
-    final status = await planProvider.updateActivity(
-      activityId: activityId,
-      name: draft.name,
-      type: draft.type,
-      startTime: draft.start,
-      endTime: draft.end,
-      location: draft.location,
-      details: draft.details,
-      gate: draft.gate,
-      baggageClaim: draft.baggageClaim,
-      originTimeZone: draft.originTimeZone,
-      destinationTimeZone: draft.destinationTimeZone,
-      roomNumber: draft.roomNumber,
-      token: userProvider.token,
-    );
-    if (!mounted) return;
-    if (status == 401) {
-      await _endSession(userProvider, planProvider, navigator);
-      return;
-    }
-    if (status == 403) {
-      messenger.showSnackBar(const SnackBar(content: Text('Not allowed')));
-      return;
-    }
-    if (status != 200) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Could not update activity')),
-      );
-    }
-  }
-
-  Future<void> _deleteActivity(Activity activity) async {
-    final activityId = activity.id;
-    if (activityId == null || activityId.isEmpty) return;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete activity'),
-        content: Text('Delete ${activity.name}?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-    final userProvider = Provider.of<UserProvider>(context, listen: false);
-    final planProvider = Provider.of<PlanProvider>(context, listen: false);
-    final navigator = Navigator.of(context);
-    final messenger = ScaffoldMessenger.of(context);
-    final status = await planProvider.deleteActivity(
-      activityId: activityId,
-      token: userProvider.token,
-    );
-    if (!mounted) return;
-    if (status == 401) {
-      await _endSession(userProvider, planProvider, navigator);
-      return;
-    }
-    if (status == 403) {
-      messenger.showSnackBar(const SnackBar(content: Text('Not allowed')));
-      return;
-    }
-    if (status != 200) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Could not delete activity')),
-      );
-    }
-  }
-
-  Future<void> _editPlan() async {
-    final draft = await showDialog<_PlanEdit>(
-      context: context,
-      builder: (context) => _EditPlanDialog(plan: _plan),
-    );
-    if (draft == null || !mounted) return;
-    final userProvider = Provider.of<UserProvider>(context, listen: false);
-    final planProvider = Provider.of<PlanProvider>(context, listen: false);
-    final navigator = Navigator.of(context);
-    final messenger = ScaffoldMessenger.of(context);
-    final result = await planProvider.updatePlan(
-      planId: _plan.id,
-      name: draft.name,
-      destination: draft.destination,
-      startDate: draft.startDate,
-      endDate: draft.endDate,
-      timeZone: draft.timeZone,
-      token: userProvider.token,
-    );
-    if (!mounted) return;
-    if (result.status == 401) {
-      await _endSession(userProvider, planProvider, navigator);
-      return;
-    }
-    if (result.status == 403) {
-      messenger.showSnackBar(const SnackBar(content: Text('Not allowed')));
-      return;
-    }
-    final updated = result.plan;
-    if (result.status != 200 || updated == null) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Could not update plan')),
-      );
-      return;
-    }
-    setState(() => _plan = updated);
-  }
-
-  Future<void> _deletePlan() async {
-    final planId = widget.plan.id;
-    if (planId.isEmpty) return;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete plan'),
-        content: Text('Delete ${widget.plan.name}?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-    final userProvider = Provider.of<UserProvider>(context, listen: false);
-    final planProvider = Provider.of<PlanProvider>(context, listen: false);
-    final navigator = Navigator.of(context);
-    final result = await planProvider.deletePlan(
-      planId: planId,
-      token: userProvider.token,
-    );
-    if (!mounted) return;
-    if (result.status == 401) {
-      await _endSession(userProvider, planProvider, navigator);
-      return;
-    }
-    if (result.status == 403) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Not allowed')),
-      );
-      return;
-    }
-    if (result.status == 409) {
-      final shared = result.sharedWith;
-      final detail = shared.isEmpty
-          ? 'This plan is still shared with someone else.'
-          : 'This plan is still shared with:\n${shared.join('\n')}';
-      await showDialog<void>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Plan is still shared'),
-          content: Text(detail),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('OK'),
-            ),
-          ],
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => _ActivityFormDialog(
+          title: 'Edit activity',
+          actionLabel: 'Save',
+          activity: activity,
+          planId: widget.plan.id,
         ),
-      );
-      return;
-    }
-    if (result.status != 200) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not delete plan')),
-      );
-      return;
-    }
-    navigator.pop();
+      ),
+    );
+  }
+
+  Future<void> _openPlanEdit(Plan plan) async {
+    final removed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (context) => _PlanEditScreen(plan: plan),
+      ),
+    );
+    if (removed == true && mounted) Navigator.of(context).pop();
   }
 
   @override
   Widget build(BuildContext context) {
+    final shownPlan = _shownPlan(Provider.of<PlanProvider>(context));
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          _plan.name,
+          shownPlan.name,
           overflow: TextOverflow.ellipsis,
           maxLines: 1,
         ),
@@ -425,9 +255,10 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
             widget.plan.id,
             Provider.of<UserProvider>(context, listen: false).currentUserId,
           );
+          final shown = _shownPlan(planProvider);
           final roleText = storedRole == null
               ? null
-              : planRoleLabel(_plan.type, storedRole);
+              : planRoleLabel(shown.type, storedRole);
           final activities = planProvider.itineraryActivities;
           final canChange = canAddActivity(storedRole);
 
@@ -440,38 +271,36 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        _plan.name,
-                        style: const TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                        ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              shown.name,
+                              style: const TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          if (canEditPlan(storedRole))
+                            IconButton(
+                              tooltip: 'Edit plan',
+                              icon: const Icon(Icons.edit),
+                              onPressed: () => _openPlanEdit(shown),
+                            ),
+                        ],
                       ),
                       const SizedBox(height: 8),
-                      Text('Destination: ${_plan.destination}'),
+                      Text('Destination: ${shown.destination}'),
                       if (roleText != null) Text('Role: $roleText'),
-                      Text('Budget: \$${_plan.budget}'),
+                      Text('Budget: \$${shown.budget}'),
                       Text(
-                        'Dates: ${formatPlanDate(_plan.startDate)} - ${formatPlanDate(_plan.endDate)}',
+                        'Dates: ${formatPlanDate(shown.startDate)} - ${formatPlanDate(shown.endDate)}',
                       ),
                       Text(
-                        'Time zone: ${_plan.timeZone.isEmpty ? 'not set' : _plan.timeZone}',
+                        'Time zone: ${shown.timeZone.isEmpty ? 'not set' : shown.timeZone}',
                       ),
-                      Text('State: ${_plan.planningState}'),
-                      if (canEditPlan(storedRole)) ...[
-                        const SizedBox(height: 12),
-                        TextButton(
-                          onPressed: _editPlan,
-                          child: const Text('Edit plan'),
-                        ),
-                      ],
-                      if (canDeletePlan(storedRole)) ...[
-                        const SizedBox(height: 12),
-                        TextButton(
-                          onPressed: _deletePlan,
-                          child: const Text('Delete plan'),
-                        ),
-                      ],
+                      Text('State: ${shown.planningState}'),
                     ],
                   ),
                 ),
@@ -513,30 +342,31 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            activity.name,
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w500,
-                            ),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  activity.name,
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                              if (canChange &&
+                                  activityId != null &&
+                                  activityId.isNotEmpty)
+                                IconButton(
+                                  tooltip: 'Edit activity',
+                                  icon: const Icon(Icons.edit),
+                                  onPressed: () => _openActivityEdit(activity),
+                                ),
+                            ],
                           ),
                           const SizedBox(height: 4),
                           Text(
                             'Type: $type\nStart: ${formatActivityStart(activity.startTime)}',
                           ),
-                          if (canChange && activityId != null && activityId.isNotEmpty)
-                            Row(
-                              children: [
-                                TextButton(
-                                  onPressed: () => _editActivity(activity),
-                                  child: const Text('Edit'),
-                                ),
-                                TextButton(
-                                  onPressed: () => _deleteActivity(activity),
-                                  child: const Text('Delete'),
-                                ),
-                              ],
-                            ),
                         ],
                       ),
                     ),
@@ -598,12 +428,16 @@ class _ActivityFormDialog extends StatefulWidget {
   final String title;
   final String actionLabel;
   final Activity? activity;
+  final String? planId;
 
   const _ActivityFormDialog({
     required this.title,
     required this.actionLabel,
     this.activity,
+    this.planId,
   });
+
+  bool get isScreen => activity != null;
 
   @override
   State<_ActivityFormDialog> createState() => _ActivityFormDialogState();
@@ -670,7 +504,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
   bool get _usesRoom =>
       _type == 'hotel' || _type == 'ceremony' || _type == 'reception';
 
-  void _submit() {
+  _ActivityFields? _fields() {
     final name = _nameController.text.trim();
     final start = parseActivityStart(_startController.text);
     final end = parseActivityStart(_endController.text);
@@ -678,11 +512,11 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       setState(
         () => _error = 'Enter a name, start time, and end time as YYYY-MM-DD HH:mm',
       );
-      return;
+      return null;
     }
     if (end.isBefore(start)) {
       setState(() => _error = 'End time must not be before the start time');
-      return;
+      return null;
     }
     final originZone = _originZoneController.text.trim();
     final destinationZone = _destinationZoneController.text.trim();
@@ -690,24 +524,126 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       setState(
         () => _error = 'Enter an origin time zone and a destination time zone',
       );
+      return null;
+    }
+    return _ActivityFields(
+      name: name,
+      type: _type,
+      start: start,
+      end: end,
+      location: _locationController.text.trim(),
+      details: _detailsController.text.trim(),
+      gate: _usesFlightFields ? _gateController.text.trim() : null,
+      baggageClaim: _usesFlightFields ? _baggageController.text.trim() : null,
+      originTimeZone: _usesZones ? originZone : null,
+      destinationTimeZone: _usesZones ? destinationZone : null,
+      roomNumber: _usesRoom ? _roomController.text.trim() : null,
+    );
+  }
+
+  Future<void> _endSession() async {
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final navigator = Navigator.of(context);
+    planProvider.clearPlans();
+    await userProvider.logout();
+    if (!mounted) return;
+    navigator.pushAndRemoveUntil(
+      MaterialPageRoute(builder: (context) => const LoginScreen()),
+      (route) => false,
+    );
+  }
+
+  Future<void> _submit() async {
+    final fields = _fields();
+    if (fields == null) return;
+    if (!widget.isScreen) {
+      Navigator.pop(context, fields);
       return;
     }
-    Navigator.pop(
-      context,
-      _ActivityFields(
-        name: name,
-        type: _type,
-        start: start,
-        end: end,
-        location: _locationController.text.trim(),
-        details: _detailsController.text.trim(),
-        gate: _usesFlightFields ? _gateController.text.trim() : null,
-        baggageClaim: _usesFlightFields ? _baggageController.text.trim() : null,
-        originTimeZone: _usesZones ? originZone : null,
-        destinationTimeZone: _usesZones ? destinationZone : null,
-        roomNumber: _usesRoom ? _roomController.text.trim() : null,
+    final activityId = widget.activity?.id;
+    if (activityId == null || activityId.isEmpty) return;
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final messenger = ScaffoldMessenger.of(context);
+    final status = await planProvider.updateActivity(
+      activityId: activityId,
+      name: fields.name,
+      type: fields.type,
+      startTime: fields.start,
+      endTime: fields.end,
+      location: fields.location,
+      details: fields.details,
+      gate: fields.gate,
+      baggageClaim: fields.baggageClaim,
+      originTimeZone: fields.originTimeZone,
+      destinationTimeZone: fields.destinationTimeZone,
+      roomNumber: fields.roomNumber,
+      planId: widget.planId ?? widget.activity?.planId ?? '',
+      token: userProvider.token,
+    );
+    if (!mounted) return;
+    if (status == 401) {
+      await _endSession();
+      return;
+    }
+    if (status == 403) {
+      messenger.showSnackBar(const SnackBar(content: Text('Not allowed')));
+      return;
+    }
+    if (status != 200) {
+      setState(() => _error = 'Could not update activity');
+      return;
+    }
+    Navigator.pop(context);
+  }
+
+  Future<void> _delete() async {
+    final activity = widget.activity;
+    final activityId = activity?.id;
+    if (activity == null || activityId == null || activityId.isEmpty) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete activity'),
+        content: Text('Delete ${activity.name}?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
       ),
     );
+    if (confirmed != true || !mounted) return;
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final messenger = ScaffoldMessenger.of(context);
+    final status = await planProvider.deleteActivity(
+      activityId: activityId,
+      planId: widget.planId ?? activity.planId,
+      token: userProvider.token,
+    );
+    if (!mounted) return;
+    if (status == 401) {
+      await _endSession();
+      return;
+    }
+    if (status == 403) {
+      messenger.showSnackBar(const SnackBar(content: Text('Not allowed')));
+      return;
+    }
+    if (status != 200) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Could not delete activity')),
+      );
+      return;
+    }
+    Navigator.pop(context);
   }
 
   Widget _textField(
@@ -724,59 +660,91 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     );
   }
 
+  Widget _fieldsColumn() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TextField(
+          controller: _nameController,
+          decoration: const InputDecoration(labelText: 'Name'),
+        ),
+        const SizedBox(height: 12),
+        DropdownButtonFormField<String>(
+          initialValue: _type,
+          decoration: const InputDecoration(labelText: 'Type'),
+          items: [
+            for (final type in _activityTypeChoices(_type))
+              DropdownMenuItem(value: type, child: Text(type)),
+          ],
+          onChanged: (value) {
+            if (value == null) return;
+            setState(() => _type = value);
+          },
+        ),
+        _textField(
+          _startController,
+          'Start time',
+          hint: 'YYYY-MM-DD HH:mm',
+        ),
+        _textField(
+          _endController,
+          'End time',
+          hint: 'YYYY-MM-DD HH:mm',
+        ),
+        _textField(_locationController, 'Location'),
+        _textField(_detailsController, 'Details'),
+        if (_usesFlightFields) ...[
+          _textField(_gateController, 'Gate'),
+          _textField(_baggageController, 'Baggage claim'),
+        ],
+        if (_usesZones) ...[
+          _textField(_originZoneController, 'Origin time zone'),
+          _textField(_destinationZoneController, 'Destination time zone'),
+        ],
+        if (_usesRoom) _textField(_roomController, 'Room number'),
+        if (_error != null) ...[
+          const SizedBox(height: 12),
+          Text(_error!, style: const TextStyle(color: Colors.red)),
+        ],
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(widget.title),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: _nameController,
-              decoration: const InputDecoration(labelText: 'Name'),
+    if (widget.isScreen) {
+      return Scaffold(
+        appBar: AppBar(
+          title: Text(widget.title),
+          backgroundColor: Colors.blue,
+          actions: [
+            IconButton(
+              tooltip: 'Delete activity',
+              icon: const Icon(Icons.delete),
+              onPressed: _delete,
             ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              initialValue: _type,
-              decoration: const InputDecoration(labelText: 'Type'),
-              items: [
-                for (final type in _activityTypeChoices(_type))
-                  DropdownMenuItem(value: type, child: Text(type)),
-              ],
-              onChanged: (value) {
-                if (value == null) return;
-                setState(() => _type = value);
-              },
-            ),
-            _textField(
-              _startController,
-              'Start time',
-              hint: 'YYYY-MM-DD HH:mm',
-            ),
-            _textField(
-              _endController,
-              'End time',
-              hint: 'YYYY-MM-DD HH:mm',
-            ),
-            _textField(_locationController, 'Location'),
-            _textField(_detailsController, 'Details'),
-            if (_usesFlightFields) ...[
-              _textField(_gateController, 'Gate'),
-              _textField(_baggageController, 'Baggage claim'),
-            ],
-            if (_usesZones) ...[
-              _textField(_originZoneController, 'Origin time zone'),
-              _textField(_destinationZoneController, 'Destination time zone'),
-            ],
-            if (_usesRoom) _textField(_roomController, 'Room number'),
-            if (_error != null) ...[
-              const SizedBox(height: 12),
-              Text(_error!, style: const TextStyle(color: Colors.red)),
-            ],
           ],
         ),
-      ),
+        body: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            _fieldsColumn(),
+            const SizedBox(height: 24),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: _submit,
+                child: Text(widget.actionLabel),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    return AlertDialog(
+      title: Text(widget.title),
+      content: SingleChildScrollView(child: _fieldsColumn()),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
@@ -788,37 +756,23 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
   }
 }
 
-class _PlanEdit {
-  final String name;
-  final String destination;
-  final DateTime? startDate;
-  final DateTime? endDate;
-  final String timeZone;
-
-  const _PlanEdit({
-    required this.name,
-    required this.destination,
-    required this.startDate,
-    required this.endDate,
-    required this.timeZone,
-  });
-}
-
-class _EditPlanDialog extends StatefulWidget {
+class _PlanEditScreen extends StatefulWidget {
   final Plan plan;
 
-  const _EditPlanDialog({required this.plan});
+  const _PlanEditScreen({required this.plan});
 
   @override
-  State<_EditPlanDialog> createState() => _EditPlanDialogState();
+  State<_PlanEditScreen> createState() => _PlanEditScreenState();
 }
 
-class _EditPlanDialogState extends State<_EditPlanDialog> {
+class _PlanEditScreenState extends State<_PlanEditScreen> {
   late final TextEditingController _nameController;
   late final TextEditingController _destinationController;
   late final TextEditingController _startController;
   late final TextEditingController _endController;
   late final TextEditingController _timeZoneController;
+  late bool _autoStart;
+  late bool _autoEnd;
   String? _error;
 
   @override
@@ -834,6 +788,8 @@ class _EditPlanDialogState extends State<_EditPlanDialog> {
       text: plan.endDate == null ? '' : formatPlanDate(plan.endDate),
     );
     _timeZoneController = TextEditingController(text: plan.timeZone);
+    _autoStart = plan.autoCalculateStartDate;
+    _autoEnd = plan.autoCalculateEndDate;
   }
 
   @override
@@ -846,7 +802,20 @@ class _EditPlanDialogState extends State<_EditPlanDialog> {
     super.dispose();
   }
 
-  void _submit() {
+  Future<void> _endSession() async {
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final navigator = Navigator.of(context);
+    planProvider.clearPlans();
+    await userProvider.logout();
+    if (!mounted) return;
+    navigator.pushAndRemoveUntil(
+      MaterialPageRoute(builder: (context) => const LoginScreen()),
+      (route) => false,
+    );
+  }
+
+  Future<void> _submit() async {
     final name = _nameController.text.trim();
     final destination = _destinationController.text.trim();
     final timeZone = _timeZoneController.text.trim();
@@ -871,70 +840,173 @@ class _EditPlanDialogState extends State<_EditPlanDialog> {
       setState(() => _error = 'End date must not be before the start date');
       return;
     }
-    Navigator.pop(
-      context,
-      _PlanEdit(
-        name: name,
-        destination: destination,
-        startDate: start,
-        endDate: end,
-        timeZone: timeZone,
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final messenger = ScaffoldMessenger.of(context);
+    final result = await planProvider.updatePlan(
+      planId: widget.plan.id,
+      name: name,
+      destination: destination,
+      startDate: start,
+      endDate: end,
+      timeZone: timeZone,
+      autoCalculateStartDate: _autoStart,
+      autoCalculateEndDate: _autoEnd,
+      token: userProvider.token,
+    );
+    if (!mounted) return;
+    if (result.status == 401) {
+      await _endSession();
+      return;
+    }
+    if (result.status == 403) {
+      messenger.showSnackBar(const SnackBar(content: Text('Not allowed')));
+      return;
+    }
+    if (result.status != 200 || result.plan == null) {
+      setState(() => _error = 'Could not update plan');
+      return;
+    }
+    Navigator.pop(context);
+  }
+
+  Future<void> _delete() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete plan'),
+        content: Text('Delete ${widget.plan.name}?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
       ),
     );
+    if (confirmed != true || !mounted) return;
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final messenger = ScaffoldMessenger.of(context);
+    final result = await planProvider.deletePlan(
+      planId: widget.plan.id,
+      token: userProvider.token,
+    );
+    if (!mounted) return;
+    if (result.status == 401) {
+      await _endSession();
+      return;
+    }
+    if (result.status == 403) {
+      messenger.showSnackBar(const SnackBar(content: Text('Not allowed')));
+      return;
+    }
+    if (result.status == 409) {
+      final shared = result.sharedWith;
+      final detail = shared.isEmpty
+          ? 'This plan is still shared with someone else.'
+          : 'This plan is still shared with:\n${shared.join('\n')}';
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Plan is still shared'),
+          content: Text(detail),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+    if (result.status != 200) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Could not delete plan')),
+      );
+      return;
+    }
+    Navigator.pop(context, true);
   }
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Edit plan'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: _nameController,
-              decoration: const InputDecoration(labelText: 'Name'),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _destinationController,
-              decoration: const InputDecoration(labelText: 'Destination'),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _startController,
-              decoration: const InputDecoration(
-                labelText: 'Start date',
-                hintText: 'YYYY-MM-DD',
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _endController,
-              decoration: const InputDecoration(
-                labelText: 'End date',
-                hintText: 'YYYY-MM-DD',
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _timeZoneController,
-              decoration: const InputDecoration(labelText: 'Time zone'),
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: 12),
-              Text(_error!, style: const TextStyle(color: Colors.red)),
-            ],
-          ],
-        ),
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Edit plan'),
+        backgroundColor: Colors.blue,
+        actions: [
+          IconButton(
+            tooltip: 'Delete plan',
+            icon: const Icon(Icons.delete),
+            onPressed: _delete,
+          ),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        TextButton(onPressed: _submit, child: const Text('Save')),
-      ],
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          TextField(
+            controller: _nameController,
+            decoration: const InputDecoration(labelText: 'Name'),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _destinationController,
+            decoration: const InputDecoration(labelText: 'Destination'),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _startController,
+            decoration: const InputDecoration(
+              labelText: 'Start date',
+              hintText: 'YYYY-MM-DD',
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _endController,
+            decoration: const InputDecoration(
+              labelText: 'End date',
+              hintText: 'YYYY-MM-DD',
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _timeZoneController,
+            decoration: const InputDecoration(labelText: 'Time zone'),
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Auto-calculate start date'),
+            value: _autoStart,
+            onChanged: (value) => setState(() => _autoStart = value),
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Auto-calculate end date'),
+            value: _autoEnd,
+            onChanged: (value) => setState(() => _autoEnd = value),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 12),
+            Text(_error!, style: const TextStyle(color: Colors.red)),
+          ],
+          const SizedBox(height: 24),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: _submit,
+              child: const Text('Save'),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

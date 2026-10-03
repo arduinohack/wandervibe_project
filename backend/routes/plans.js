@@ -524,6 +524,12 @@ function textField(body, key) {
   return { present: true, value: value.trim() };
 }
 
+function boolField(body, key) {
+  if (!Object.prototype.hasOwnProperty.call(body, key)) return { present: false };
+  if (typeof body[key] !== 'boolean') return { present: true, invalid: true };
+  return { present: true, value: body[key] };
+}
+
 function dateField(body, key) {
   if (!Object.prototype.hasOwnProperty.call(body, key)) return { present: false };
   const value = body[key];
@@ -575,11 +581,22 @@ router.put('/:planId', authMiddleware, async (req, res) => {
       return res.status(400).json({ message: 'Time zone must be text' });
     }
 
+    const autoStart = boolField(body, 'autoCalculateStartDate');
+    const autoEnd = boolField(body, 'autoCalculateEndDate');
+    if (autoStart.invalid) {
+      return res.status(400).json({ message: 'Auto-calculate start must be true or false' });
+    }
+    if (autoEnd.invalid) {
+      return res.status(400).json({ message: 'Auto-calculate end must be true or false' });
+    }
+
     if (name.present) plan.name = name.value;
     if (destination.present) plan.destination = destination.value;
     if (startDate.present) plan.startDate = startDate.value;
     if (endDate.present) plan.endDate = endDate.value;
     if (timeZone.present) plan.timeZone = timeZone.value;
+    if (autoStart.present) plan.autoCalculateStartDate = autoStart.value;
+    if (autoEnd.present) plan.autoCalculateEndDate = autoEnd.value;
 
     await plan.save();
     return res.json({ plan });

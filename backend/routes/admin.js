@@ -8,6 +8,7 @@ const ActivityRevision = require('../models/ActivityRevision');
 const SupportLog = require('../models/SupportLog');
 const { logSupport } = require('../utils/logSupport');
 const { recordActivityRevision } = require('../utils/recordActivityRevision');
+const { syncPlanDates } = require('../utils/syncPlanDates');
 
 const router = express.Router();
 
@@ -267,8 +268,10 @@ router.delete('/activities/:activityId', async (req, res) => {
       return res.status(404).json({ message: 'Activity not found' });
     }
     const callerId = String((req.user && (req.user.userId || req.user.id)) || '');
+    const planId = activity.planId;
     await Event.findByIdAndDelete(activityId);
     await recordActivityRevision(activity, 'delete', callerId);
+    await syncPlanDates(planId);
     res.json({ message: 'Activity deleted' });
   } catch (err) {
     console.error(`Admin delete activity failed: ${err.message}`);

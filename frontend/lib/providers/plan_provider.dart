@@ -493,6 +493,35 @@ class PlanProvider extends ChangeNotifier {
     }
   }
 
+  /// Reloads one plan from GET /api/plans without the list spinner.
+  Future<void> _reloadPlan(String planId, String token) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$backendBaseUrl$apiPlans'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (response.statusCode != 200) return;
+      final data = json.decode(response.body);
+      final list = data is Map ? data['plans'] : null;
+      if (list is! List) return;
+      Plan? match;
+      for (final item in list) {
+        if (item is! Map) continue;
+        final plan = Plan.fromJson(Map<String, dynamic>.from(item));
+        if (plan.id == planId) match = plan;
+      }
+      if (match == null) return;
+      final updated = match;
+      _plans = [
+        for (final plan in _plans)
+          if (plan.id == planId) updated else plan,
+      ];
+      notifyListeners();
+    } catch (e) {
+      logger.e('Error reloading plan: $e');
+    }
+  }
+
   /// POST /api/activities. The body keeps shared fields and the selected type's fields.
   /// On 201 the returned activity is inserted in start-time order.
   Future<int?> createActivity({
@@ -547,6 +576,7 @@ class PlanProvider extends ChangeNotifier {
       _itinerary = next;
       _activities = List<Activity>.from(next);
       notifyListeners();
+      await _reloadPlan(planId, token);
       return 201;
     } catch (e) {
       logger.e('Error creating activity: $e');
@@ -569,6 +599,7 @@ class PlanProvider extends ChangeNotifier {
     String? originTimeZone,
     String? destinationTimeZone,
     String? roomNumber,
+    required String planId,
     required String? token,
   }) async {
     try {
@@ -601,15 +632,17 @@ class PlanProvider extends ChangeNotifier {
       if (response.statusCode != 200) return response.statusCode;
 
       final dynamic data = json.decode(response.body);
-      if (data is! Map) return 200;
-      final updated = Activity.fromJson(_itineraryActivityJson(data));
-      final next = [
-        for (final activity in _itinerary)
-          if (activity.id == activityId) updated else activity,
-      ]..sort(_byStartTime);
-      _itinerary = next;
-      _activities = List<Activity>.from(next);
-      notifyListeners();
+      if (data is Map) {
+        final updated = Activity.fromJson(_itineraryActivityJson(data));
+        final next = [
+          for (final activity in _itinerary)
+            if (activity.id == activityId) updated else activity,
+        ]..sort(_byStartTime);
+        _itinerary = next;
+        _activities = List<Activity>.from(next);
+        notifyListeners();
+      }
+      if (planId.isNotEmpty) await _reloadPlan(planId, token);
       return 200;
     } catch (e) {
       logger.e('Error updating activity: $e');
@@ -617,8 +650,8 @@ class PlanProvider extends ChangeNotifier {
     }
   }
 
-  /// PUT /api/plans/:planId with name, destination, dates, and time zone.
-  /// On 200 that plan in the loaded list is replaced. Type and ownerId are not sent.
+  /// PUT /api/plans/:planId with name, destination, dates, time zone, and the
+  /// auto-calculate flags. On 200 that plan in the loaded list is replaced.
   Future<PlanUpdateResult> updatePlan({
     required String planId,
     required String name,
@@ -626,6 +659,8 @@ class PlanProvider extends ChangeNotifier {
     required DateTime? startDate,
     required DateTime? endDate,
     required String timeZone,
+    required bool autoCalculateStartDate,
+    required bool autoCalculateEndDate,
     required String? token,
   }) async {
     try {
@@ -644,6 +679,8 @@ class PlanProvider extends ChangeNotifier {
           'startDate': startDate?.toUtc().toIso8601String(),
           'endDate': endDate?.toUtc().toIso8601String(),
           'timeZone': timeZone,
+          'autoCalculateStartDate': autoCalculateStartDate,
+          'autoCalculateEndDate': autoCalculateEndDate,
         }),
       );
       if (response.statusCode != 200) {
@@ -710,6 +747,7 @@ class PlanProvider extends ChangeNotifier {
   /// DELETE /api/activities/:id. On 200 that row leaves the itinerary.
   Future<int?> deleteActivity({
     required String activityId,
+    required String planId,
     required String? token,
   }) async {
     try {
@@ -728,6 +766,7 @@ class PlanProvider extends ChangeNotifier {
       ];
       _activities = List<Activity>.from(_itinerary);
       notifyListeners();
+      if (planId.isNotEmpty) await _reloadPlan(planId, token);
       return 200;
     } catch (e) {
       logger.e('Error deleting activity: $e');

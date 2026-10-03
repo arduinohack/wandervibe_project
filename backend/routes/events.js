@@ -8,6 +8,7 @@ const authMiddleware = require('../middleware/auth');
 const { canonicalMembershipRole } = require('../middleware/roleCheck');
 const { applyTypeChange, assertTypeRequirements } = require('../utils/activityTypeFields');
 const { recordActivityRevision } = require('../utils/recordActivityRevision');
+const { syncPlanDates } = require('../utils/syncPlanDates');
 
 async function membershipRole(planId, callerId) {
   const membership = await PlanUser.findOne({ planId, userId: callerId });
@@ -71,6 +72,7 @@ router.post('/', authMiddleware, async (req, res) => {
     });
     const savedEvent = await newEvent.save();
     await recordActivityRevision(savedEvent, 'create', callerId);
+    await syncPlanDates(savedEvent.planId);
     res.status(201).json(savedEvent);
   } catch (error) {
     res.status(400).json({ message: error.message });
@@ -160,6 +162,7 @@ router.post('/:id/restore', authMiddleware, async (req, res) => {
 
     // Same activity id, including a reinsert after delete: action update.
     await recordActivityRevision(saved, 'update', callerId);
+    await syncPlanDates(planId);
     res.json(saved);
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
@@ -190,6 +193,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
     }
     const updatedEvent = await event.save();
     await recordActivityRevision(updatedEvent, 'update', callerId);
+    await syncPlanDates(updatedEvent.planId);
     res.json(updatedEvent);
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
@@ -207,8 +211,10 @@ router.delete('/:id', authMiddleware, async (req, res) => {
       return res.status(403).json({ message: 'Only Owner or Collaborator can change activities' });
     }
 
+    const planId = event.planId;
     await Event.findByIdAndDelete(req.params.id);
     await recordActivityRevision(event, 'delete', callerId);
+    await syncPlanDates(planId);
     res.json({ message: 'Event deleted successfully' });
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
