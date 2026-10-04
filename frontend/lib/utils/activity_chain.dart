@@ -18,30 +18,28 @@ class ActivityChainTime {
 }
 
 /// Times for [activities] in their current order.
-/// The first start stays. Each later start is the previous end, or the
-/// previous start when that end is missing. When durationMinutes is set, the
-/// end is the new start plus those minutes. Otherwise the end is the new start.
+/// A start that is already set stays, and so does that activity's end.
+/// A cleared start uses the previous activity's end, or its start when that
+/// end is missing. The first activity's cleared start stays empty.
 List<ActivityChainTime> chainActivityTimes(List<ActivityChainInput> activities) {
   final chained = <ActivityChainTime>[];
   for (var index = 0; index < activities.length; index++) {
     final activity = activities[index];
-    final DateTime? start;
+    if (activity.start != null) {
+      chained.add(ActivityChainTime(start: activity.start, end: activity.end));
+      continue;
+    }
     if (index == 0) {
-      start = activity.start;
-    } else {
-      final previous = chained[index - 1];
-      start = previous.end ?? previous.start;
+      chained.add(ActivityChainTime(start: null, end: activity.end));
+      continue;
     }
-    final DateTime? end;
-    final minutes = activity.durationMinutes;
-    if (start == null) {
-      end = null;
-    } else if (minutes != null) {
-      end = start.add(Duration(minutes: minutes));
-    } else {
-      end = start;
-    }
-    chained.add(ActivityChainTime(start: start, end: end));
+    final previous = chained[index - 1];
+    chained.add(
+      ActivityChainTime(
+        start: previous.end ?? previous.start,
+        end: activity.end,
+      ),
+    );
   }
   return chained;
 }
