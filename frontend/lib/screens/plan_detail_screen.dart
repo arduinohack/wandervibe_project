@@ -267,7 +267,6 @@ class _UtcDateTimePicker extends StatelessWidget {
   final DateTime? value;
   final ValueChanged<DateTime> onChanged;
   final VoidCallback? onClear;
-  final String clockSuffix;
   final String? zone;
   final ValueChanged<String>? onZoneChanged;
 
@@ -276,15 +275,20 @@ class _UtcDateTimePicker extends StatelessWidget {
     required this.value,
     required this.onChanged,
     this.onClear,
-    this.clockSuffix = 'UTC',
     this.zone,
     this.onZoneChanged,
   });
 
   @override
   Widget build(BuildContext context) {
+    final instant = value;
     final selectedZone = zone;
     final changeZone = onZoneChanged;
+    final display = selectedZone == null ? instant : wallValue(instant, selectedZone);
+    final abbreviation = selectedZone == null || instant == null
+        ? null
+        : zoneAbbreviation(instant, selectedZone);
+    final timeSuffix = selectedZone == null ? 'UTC' : '';
     return Padding(
       padding: const EdgeInsets.only(top: 12),
       child: Column(
@@ -299,21 +303,22 @@ class _UtcDateTimePicker extends StatelessWidget {
             children: [
               OutlinedButton(
                 onPressed: () async {
-                  final next = await _pickUtcDate(context, value);
+                  final next = await _pickUtcDate(context, display);
                   if (next == null || !context.mounted) return;
                   onChanged(next);
                 },
-                child: Text(_utcDateLabel(value)),
+                child: Text(_utcDateLabel(display)),
               ),
               OutlinedButton(
                 onPressed: () async {
-                  final next = await _pickUtcTime(context, value);
+                  final next = await _pickUtcTime(context, display);
                   if (next == null || !context.mounted) return;
                   onChanged(next);
                 },
-                child: Text(_clockLabel(value, clockSuffix)),
+                child: Text(_clockLabel(display, timeSuffix)),
               ),
-              if (onClear != null && value != null)
+              if (abbreviation != null) Text(abbreviation),
+              if (onClear != null && instant != null)
                 TextButton(onPressed: onClear, child: const Text('Clear')),
             ],
           ),
@@ -975,10 +980,6 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     );
   }
 
-  String _clockSuffix(DateTime? instant, String zone) {
-    return zoneAbbreviation(instant ?? DateTime.now().toUtc(), zone);
-  }
-
   @override
   void dispose() {
     _nameController.dispose();
@@ -991,52 +992,20 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     super.dispose();
   }
 
-  void _applyDurationAfterStart() {
-    final minutes = _wholeMinutes(_durationController.text);
-    final start = _start;
-    if (minutes != null && start != null) {
-      _end = start.add(Duration(minutes: minutes));
-      _endChanged = true;
-    } else if (start != null && _end != null) {
-      _durationController.text = _end!.difference(start).inMinutes.toString();
-    }
-  }
-
   void _onStartZone(String zone) {
     if (zone == _startZone) return;
-    final startWall = _start == null ? null : wallValue(_start, _startZone);
-    final endWall = _end == null ? null : wallValue(_end, _endZone);
-    final followEnd = !_endZoneCustom;
     setState(() {
       _startZone = zone;
-      if (followEnd) _endZone = zone;
-      if (startWall != null) {
-        _start = _instantFromWall(startWall, zone);
-        _startChanged = true;
-      }
-      if (followEnd && endWall != null) {
-        _end = _instantFromWall(endWall, zone);
-        _endChanged = true;
-      }
-      _applyDurationAfterStart();
+      if (!_endZoneCustom) _endZone = zone;
       _error = null;
     });
   }
 
   void _onEndZone(String zone) {
     if (zone == _endZone) return;
-    final endWall = _end == null ? null : wallValue(_end, _endZone);
     setState(() {
       _endZone = zone;
       _endZoneCustom = true;
-      if (endWall != null) {
-        _end = _instantFromWall(endWall, zone);
-        _endChanged = true;
-        final start = _start;
-        if (start != null) {
-          _durationController.text = _end!.difference(start).inMinutes.toString();
-        }
-      }
       _error = null;
     });
   }
@@ -1282,16 +1251,14 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
         ),
         _UtcDateTimePicker(
           label: _type == 'flight' ? 'Departure' : 'Start',
-          value: wallValue(_start, _startZone),
-          clockSuffix: _clockSuffix(_start, _startZone),
+          value: _start,
           zone: _startZone,
           onZoneChanged: _onStartZone,
           onChanged: _setStart,
         ),
         _UtcDateTimePicker(
           label: _type == 'flight' ? 'Arrival' : 'End',
-          value: wallValue(_end, _endZone),
-          clockSuffix: _clockSuffix(_end, _endZone),
+          value: _end,
           zone: _endZone,
           onZoneChanged: _onEndZone,
           onChanged: _setEnd,
