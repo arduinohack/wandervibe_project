@@ -395,4 +395,61 @@ describe('activity start, end, and duration', () => {
     expect(fromStart.status).toBe(200);
     expect(iso(fromStart.body.startTime)).toBe('2026-07-01T16:00:00.000Z');
   });
+
+  test('an insert below stores the target end as the new start', async () => {
+    const token = await registerAndLogin('insert-below@example.com');
+    const planId = await createPlan(token);
+
+    const flight = await request(app)
+      .post('/api/activities')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        name: 'Flight',
+        type: 'dining',
+        planId,
+        startTime: '2026-07-03T09:00:00.000Z',
+        endTime: '2026-07-03T11:00:00.000Z',
+      });
+    expect(flight.status).toBe(201);
+
+    const dinner = await request(app)
+      .post('/api/activities')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        name: 'Dinner',
+        type: 'dining',
+        planId,
+        startTime: '2026-07-03T08:00:00.000Z',
+        endTime: '2026-07-03T08:30:00.000Z',
+      });
+    expect(dinner.status).toBe(201);
+
+    const lunch = await request(app)
+      .post('/api/activities')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        name: 'Lunch',
+        type: 'dining',
+        planId,
+        insertAfter: flight.body._id,
+        durationMinutes: 30,
+      });
+
+    expect(lunch.status).toBe(201);
+    expect(iso(lunch.body.startTime)).toBe('2026-07-03T11:00:00.000Z');
+    expect(iso(lunch.body.endTime)).toBe('2026-07-03T11:30:00.000Z');
+    expect(lunch.body.durationMinutes).toBe(30);
+
+    const itinerary = await request(app)
+      .get(`/api/plans/${planId}/itinerary`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(itinerary.status).toBe(200);
+    expect(itinerary.body.events.map((event) => event.name)).toEqual([
+      'Flight',
+      'Lunch',
+      'Dinner',
+    ]);
+    expect(iso(itinerary.body.events[2].startTime)).toBe('2026-07-03T08:00:00.000Z');
+    expect(iso(itinerary.body.events[0].endTime)).toBe('2026-07-03T11:00:00.000Z');
+  });
 });

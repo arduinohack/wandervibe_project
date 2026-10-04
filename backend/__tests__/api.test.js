@@ -729,7 +729,7 @@ describe('invitation inbox', () => {
 });
 
 describe('itinerary', () => {
-  test('orders events by startTime and numbers the first event as day 1', async () => {
+  test('numbers days from the stored itinerary order', async () => {
     const ada = await registerAndLogin({
       firstName: 'Ada',
       lastName: 'Lovelace',
@@ -743,18 +743,6 @@ describe('itinerary', () => {
       .send({ type: 'trip', name: 'Paris', destination: 'Paris', timeZone: 'UTC' });
     const planId = planRes.body.plan._id;
 
-    const later = await request(app)
-      .post('/api/activities')
-      .set('Authorization', `Bearer ${ada.token}`)
-      .send({
-        name: 'Later dinner',
-        type: 'dining',
-        planId,
-        startTime: '2026-06-02T15:00:00.000Z',
-        endTime: '2026-06-02T18:00:00.000Z',
-      });
-    expect(later.status).toBe(201);
-
     const earlier = await request(app)
       .post('/api/activities')
       .set('Authorization', `Bearer ${ada.token}`)
@@ -766,6 +754,18 @@ describe('itinerary', () => {
         endTime: '2026-06-01T18:00:00.000Z',
       });
     expect(earlier.status).toBe(201);
+
+    const later = await request(app)
+      .post('/api/activities')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({
+        name: 'Later dinner',
+        type: 'dining',
+        planId,
+        startTime: '2026-06-02T15:00:00.000Z',
+        endTime: '2026-06-02T18:00:00.000Z',
+      });
+    expect(later.status).toBe(201);
 
     const res = await request(app)
       .get(`/api/plans/${planId}/itinerary`)

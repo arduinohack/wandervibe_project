@@ -408,15 +408,24 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     );
   }
 
-  Future<void> _addActivity() async {
+  Future<void> _addActivity({
+    String? insertAfter,
+    String? insertBefore,
+    int? insertIndex,
+    DateTime? initialStart,
+    bool useDefaultStart = true,
+  }) async {
     final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final openingStart = useDefaultStart
+        ? _defaultActivityStart(planProvider.itineraryActivities)
+        : initialStart;
     final draft = await showDialog<_ActivityFields>(
       context: context,
       builder: (context) => _ActivityFormDialog(
         title: 'Add activity',
         actionLabel: 'Add',
         planTimeZone: _shownPlan(planProvider).timeZone,
-        initialStart: _defaultActivityStart(planProvider.itineraryActivities),
+        initialStart: openingStart,
       ),
     );
     if (draft == null || !mounted) return;
@@ -438,6 +447,9 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
       baggageClaim: draft.baggageClaim,
       roomNumber: draft.roomNumber,
       durationMinutes: draft.durationMinutes,
+      insertAfter: insertAfter,
+      insertBefore: insertBefore,
+      insertIndex: insertIndex,
       token: userProvider.token,
     );
     if (!mounted) return;
@@ -563,6 +575,31 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     }
   }
 
+  Future<void> _resortByStartTime() async {
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final status = await planProvider.resortItineraryByStartTime(
+      planId: widget.plan.id,
+      token: userProvider.token,
+    );
+    if (!mounted) return;
+    if (status == 401) {
+      await _endSession(userProvider, planProvider, navigator);
+      return;
+    }
+    if (status == 403) {
+      messenger.showSnackBar(const SnackBar(content: Text('Not allowed')));
+      return;
+    }
+    if (status != 200) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Could not re-sort activities')),
+      );
+    }
+  }
+
   Widget _activityBlock({
     required Key blockKey,
     required Activity activity,
@@ -633,6 +670,31 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                       ),
                   ],
                 ),
+                if (canChange &&
+                    dragIndex != null &&
+                    activityId != null &&
+                    activityId.isNotEmpty)
+                  Row(
+                    children: [
+                      TextButton(
+                        onPressed: () => _addActivity(
+                          insertBefore: activityId,
+                          insertIndex: dragIndex,
+                          useDefaultStart: false,
+                        ),
+                        child: const Text('Insert above'),
+                      ),
+                      TextButton(
+                        onPressed: () => _addActivity(
+                          insertAfter: activityId,
+                          insertIndex: dragIndex + 1,
+                          initialStart: activity.endTime ?? activity.startTime,
+                          useDefaultStart: false,
+                        ),
+                        child: const Text('Insert below'),
+                      ),
+                    ],
+                  ),
               ],
             ),
           ),
@@ -724,6 +786,11 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                               ),
                             ),
                           ),
+                          if (canChange)
+                            TextButton(
+                              onPressed: _resortByStartTime,
+                              child: const Text('Re-sort'),
+                            ),
                           if (canEditPlan(storedRole))
                             IconButton(
                               tooltip: 'Edit plan',
@@ -758,7 +825,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                   ),
                   if (canChange)
                     TextButton(
-                      onPressed: _addActivity,
+                      onPressed: () => _addActivity(),
                       child: const Text('Add activity'),
                     ),
                 ],

@@ -9,7 +9,7 @@ const { canonicalMembershipRole } = require('../middleware/roleCheck');
 const { applyTypeChange, assertTypeRequirements } = require('../utils/activityTypeFields');
 const { recordActivityRevision } = require('../utils/recordActivityRevision');
 const { syncPlanDates } = require('../utils/syncPlanDates');
-const { resolveActivitySchedule, resolveActivityZones } = require('../utils/activityTimes');
+const { resolveActivitySchedule, resolveActivityZones, compareStoredOrder } = require('../utils/activityTimes');
 
 function applySchedule(target, schedule) {
   if (schedule.startTime) target.startTime = schedule.startTime;
@@ -38,6 +38,45 @@ async function callerMayEditActivities(planId, callerId) {
 async function callerMayReadHistory(planId, callerId) {
   const role = await membershipRole(planId, callerId);
   return role === 'Owner' || role === 'Collaborator' || role === 'Guest';
+}
+
+function textId(body, key) {
+  const value = body && body[key];
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function startMissing(body) {
+  if (!body || !Object.prototype.hasOwnProperty.call(body, 'startTime')) return true;
+  const value = body.startTime;
+  if (value == null) return true;
+  if (typeof value === 'string' && value.trim() === '') return true;
+  return false;
+}
+
+async function rowsInStoredOrder(planId) {
+  const rows = await Event.find({ planId }).select('_id eventNum startTime endTime').lean();
+  rows.sort(compareStoredOrder);
+  return rows;
+}
+
+async function eventNumForInsert(planId, insertAfterId, insertBeforeId) {
+  const rows = await rowsInStoredOrder(planId);
+  if (!insertAfterId && !insertBeforeId) {
+    if (!rows.length) return { eventNum: 0 };
+    const max = rows.reduce((highest, row) => Math.max(highest, Number(row.eventNum) || 0), 0);
+    return { eventNum: max + 1 };
+  }
+  const targetId = insertAfterId || insertBeforeId;
+  const target = rows.find((row) => String(row._id) === String(targetId));
+  if (!target) return { error: 'Activity not found', status: 404 };
+  const eventNum = insertAfterId
+    ? (Number(target.eventNum) || 0) + 1
+    : (Number(target.eventNum) || 0);
+  return { eventNum, target };
+}
+
+async function shiftEventNums(planId, eventNum) {
+  await Event.updateMany({ planId, eventNum: { $gte: eventNum } }, { $inc: { eventNum: 1 } });
 }
 
 function revisionPayload(revision) {
@@ -76,16 +115,36 @@ router.post('/', authMiddleware, async (req, res) => {
       return res.status(403).json({ message: 'Only Owner or Collaborator can change activities' });
     }
 
+    const insertAfterId = textId(req.body, 'insertAfter');
+    const insertBeforeId = textId(req.body, 'insertBefore');
+    if (insertAfterId && insertBeforeId) {
+      return res.status(400).json({ message: 'insertAfter and insertBefore cannot both be set' });
+    }
+    const placement = await eventNumForInsert(planId, insertAfterId, insertBeforeId);
+    if (placement.error) {
+      return res.status(placement.status || 400).json({ message: placement.error });
+    }
+    const missingStart = startMissing(req.body);
+    let source = req.body;
+    if (insertAfterId && missingStart) {
+      const anchor = placement.target && (placement.target.endTime || placement.target.startTime);
+      if (anchor) source = { ...req.body, startTime: new Date(anchor).toISOString() };
+    }
     const schedule = await resolveActivitySchedule({
       isCreate: true,
       planId,
-      body: req.body,
+      body: source,
+      keepEmptyStart: Boolean(insertBeforeId) && missingStart,
     });
     if (schedule.error) {
       return res.status(400).json({ message: schedule.error });
     }
-    const payload = { ...req.body, ownerId: callerId };
+    const payload = { ...source, ownerId: callerId };
+    delete payload.insertAfter;
+    delete payload.insertBefore;
     applySchedule(payload, schedule);
+    if (insertAfterId || insertBeforeId) await shiftEventNums(planId, placement.eventNum);
+    payload.eventNum = placement.eventNum;
     const zones = await resolveActivityZones({
       isCreate: true,
       planId,
@@ -101,6 +160,42 @@ router.post('/', authMiddleware, async (req, res) => {
     res.status(201).json(savedEvent);
   } catch (error) {
     res.status(400).json({ message: error.message });
+  }
+});
+
+// Declared before /:id so PUT /:id cannot swallow the order update.
+router.put('/order', authMiddleware, async (req, res) => {
+  try {
+    const planId = textId(req.body, 'planId');
+    const activityIds = req.body && req.body.activityIds;
+    if (!planId) return res.status(400).json({ message: 'planId is required' });
+    if (!Array.isArray(activityIds)) {
+      return res.status(400).json({ message: 'activityIds is required' });
+    }
+    const callerId = req.user.userId || req.user.id;
+    const allowed = await callerMayEditActivities(planId, callerId);
+    if (!allowed) {
+      return res.status(403).json({ message: 'Only Owner or Collaborator can change activities' });
+    }
+    const rows = await Event.find({ planId }).select('_id').lean();
+    if (activityIds.length !== rows.length || new Set(activityIds.map(String)).size !== activityIds.length) {
+      return res.status(400).json({ message: 'activityIds must list each activity once' });
+    }
+    const known = new Set(rows.map((row) => String(row._id)));
+    for (const id of activityIds) {
+      if (!known.has(String(id))) {
+        return res.status(400).json({ message: 'activityIds must list each activity once' });
+      }
+    }
+    for (let index = 0; index < activityIds.length; index += 1) {
+      await Event.updateOne(
+        { _id: activityIds[index], planId },
+        { $set: { eventNum: index } },
+      );
+    }
+    res.json({ activityIds });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
   }
 });
 

@@ -6,6 +6,7 @@ const Invitation = require('../models/Invitation');
 const ActivityRevision = require('../models/ActivityRevision');
 const SupportLog = require('../models/SupportLog');
 const { Event } = require('../models/Event');
+const { compareStoredOrder } = require('../utils/activityTimes');
 const authMiddleware = require('../middleware/auth.js');  // Add this line for token verification
 const { checkPermission } = require('../utils/permissions');
 const { canonicalMembershipRole } = require('../middleware/roleCheck');
@@ -302,8 +303,9 @@ router.get('/:planId/itinerary', authMiddleware, async (req, res) => {
       return res.status(404).json({ msg: 'Plan not found' });
     }
 
-    // Fetch and sort events by startTime
-    let events = await Event.find({ $or: [{ planId: planId }, { eventPlanId: planId }] }).sort({ startTime: 1 });
+    // Stored itinerary order. Equal eventNum values fall back to start time.
+    let events = await Event.find({ $or: [{ planId: planId }, { eventPlanId: planId }] });
+    events.sort(compareStoredOrder);
     events = events.map(event => ({
       ...event.toObject(),
       relevantTimeZone: event.type === 'flight'

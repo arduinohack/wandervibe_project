@@ -65,6 +65,8 @@ Map<String, dynamic> _activityWriteBody({
   bool? writeStartTime,
   bool? writeEndTime,
   bool? writeDuration,
+  String? insertAfter,
+  String? insertBefore,
 }) {
   final body = <String, dynamic>{
     'name': name,
@@ -92,6 +94,12 @@ Map<String, dynamic> _activityWriteBody({
   }
   if (type == 'hotel' || type == 'ceremony' || type == 'reception') {
     body['roomNumber'] = roomNumber ?? '';
+  }
+  if (insertAfter != null && insertAfter.isNotEmpty) {
+    body['insertAfter'] = insertAfter;
+  }
+  if (insertBefore != null && insertBefore.isNotEmpty) {
+    body['insertBefore'] = insertBefore;
   }
   return body;
 }
@@ -302,9 +310,8 @@ class PlanProvider extends ChangeNotifier {
         if (item is! Map) continue;
         parsed.add(Activity.fromJson(_itineraryActivityJson(item)));
       }
-      final sorted = _sortedByStartTime(parsed);
-      _itinerary = sorted;
-      _activities = sorted;
+      _itinerary = parsed;
+      _activities = List<Activity>.from(parsed);
       _itineraryError = null;
       logger.i('Fetched ${_itinerary.length} activities for plan $planId');
       return 200;
@@ -327,11 +334,69 @@ class PlanProvider extends ChangeNotifier {
   List<Activity> get itineraryActivities => _itinerary;
 
   /// Shows [activities] in start-time order. Does not call the API.
+  /// Drag uses this so the moved row sits after its target once its start is later.
   void replaceItineraryActivities(List<Activity> activities) {
     final next = _sortedByStartTime(activities);
     _itinerary = next;
     _activities = List<Activity>.from(next);
     notifyListeners();
+  }
+
+  /// Shows [activities] in the given order. Does not change start or end times.
+  void showItinerary(List<Activity> activities) {
+    _itinerary = List<Activity>.from(activities);
+    _activities = List<Activity>.from(activities);
+    notifyListeners();
+  }
+
+  /// PUT /api/activities/order. Stores [activityIds] as the itinerary order.
+  /// Does not send or change start or end times.
+  Future<int?> saveItineraryOrder({
+    required String planId,
+    required List<String> activityIds,
+    required String? token,
+  }) async {
+    try {
+      if (token == null || token.isEmpty) return 401;
+      final response = await http.put(
+        Uri.parse('$backendBaseUrl$apiActivities/order'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode({
+          'planId': planId,
+          'activityIds': activityIds,
+        }),
+      );
+      return response.statusCode;
+    } catch (e) {
+      logger.e('Error saving itinerary order: $e');
+      return null;
+    }
+  }
+
+  /// Orders the loaded itinerary by start time and stores that order.
+  /// An activity with no start stays last. Start and end instants stay as they are.
+  Future<int?> resortItineraryByStartTime({
+    required String planId,
+    required String? token,
+  }) async {
+    final ordered = _sortedByStartTime(_itinerary);
+    if (ordered.isEmpty) return 200;
+    final activityIds = <String>[];
+    for (final activity in ordered) {
+      final id = activity.id;
+      if (id == null || id.isEmpty) return null;
+      activityIds.add(id);
+    }
+    final status = await saveItineraryOrder(
+      planId: planId,
+      activityIds: activityIds,
+      token: token,
+    );
+    if (status == 200) showItinerary(ordered);
+    return status;
   }
   String? get itineraryError => _itineraryError;
 
@@ -556,7 +621,7 @@ class PlanProvider extends ChangeNotifier {
   }
 
   /// POST /api/activities. The body keeps shared fields and the selected type's fields.
-  /// On 201 the returned activity is inserted in start-time order.
+  /// On 201 the returned activity is inserted at [insertIndex], or appended when that is omitted.
   Future<int?> createActivity({
     required String planId,
     required String name,
@@ -572,6 +637,9 @@ class PlanProvider extends ChangeNotifier {
     String? baggageClaim,
     String? roomNumber,
     int? durationMinutes,
+    String? insertAfter,
+    String? insertBefore,
+    int? insertIndex,
     required String? token,
   }) async {
     try {
@@ -598,6 +666,8 @@ class PlanProvider extends ChangeNotifier {
             roomNumber: roomNumber,
             planId: planId,
             durationMinutes: durationMinutes,
+            insertAfter: insertAfter,
+            insertBefore: insertBefore,
           ),
         ),
       );
@@ -609,7 +679,12 @@ class PlanProvider extends ChangeNotifier {
       final dynamic data = json.decode(response.body);
       if (data is! Map) return 201;
       final created = Activity.fromJson(_itineraryActivityJson(data));
-      final next = _sortedByStartTime([..._itinerary, created]);
+      final next = List<Activity>.from(_itinerary);
+      if (insertIndex == null || insertIndex < 0 || insertIndex > next.length) {
+        next.add(created);
+      } else {
+        next.insert(insertIndex, created);
+      }
       _itinerary = next;
       _activities = List<Activity>.from(next);
       notifyListeners();
@@ -622,7 +697,7 @@ class PlanProvider extends ChangeNotifier {
   }
 
   /// PUT /api/activities/:id. The body keeps shared fields and the selected type's fields.
-  /// On 200 the returned activity replaces that row in start-time order.
+  /// On 200 the returned activity replaces that row and the list keeps its order.
   Future<int?> updateActivity({
     required String activityId,
     required String name,
@@ -681,10 +756,10 @@ class PlanProvider extends ChangeNotifier {
       final dynamic data = json.decode(response.body);
       if (data is Map) {
         final updated = Activity.fromJson(_itineraryActivityJson(data));
-        final next = _sortedByStartTime([
+        final next = [
           for (final activity in _itinerary)
             if (activity.id == activityId) updated else activity,
-        ]);
+        ];
         _itinerary = next;
         _activities = List<Activity>.from(next);
         notifyListeners();

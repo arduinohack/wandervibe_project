@@ -44,6 +44,14 @@ function compareItinerary(a, b) {
   return aStart.getTime() - bStart.getTime();
 }
 
+function compareStoredOrder(a, b) {
+  const byNum = (Number(a.eventNum) || 0) - (Number(b.eventNum) || 0);
+  if (byNum !== 0) return byNum;
+  const byStart = compareItinerary(a, b);
+  if (byStart !== 0) return byStart;
+  return String(a._id).localeCompare(String(b._id));
+}
+
 async function previousActivityInstant(planId) {
   const rows = await Event.find({ planId }).select('startTime endTime').lean();
   rows.sort(compareItinerary);
@@ -56,12 +64,12 @@ async function previousActivityInstant(planId) {
   return null;
 }
 
-// The activity just before excludeId in start order. Its end, or its start
-// when the end is missing. The first activity has none.
+// The row just before excludeId in stored itinerary order. Its end, or its
+// start when the end is missing. The first row has none.
 async function previousActivityChainStart(planId, excludeId) {
   if (!planId || excludeId == null) return null;
-  const rows = await Event.find({ planId }).select('_id startTime endTime').lean();
-  rows.sort(compareItinerary);
+  const rows = await Event.find({ planId }).select('_id eventNum startTime endTime').lean();
+  rows.sort(compareStoredOrder);
   const index = rows.findIndex((row) => String(row._id) === String(excludeId));
   if (index <= 0) return null;
   const previous = rows[index - 1];
@@ -75,6 +83,7 @@ async function resolveActivitySchedule({
   existingStart,
   existingEnd,
   excludeId,
+  keepEmptyStart,
 }) {
   const source = body && typeof body === 'object' ? body : {};
   const duration = hasOwn(source, 'durationMinutes')
@@ -95,7 +104,7 @@ async function resolveActivitySchedule({
     start = instant(existingStart);
   }
 
-  if (isCreate && !start && planId) {
+  if (isCreate && !start && planId && !keepEmptyStart) {
     start = await previousActivityInstant(planId);
   } else if (!isCreate && startExplicitlyEmpty && planId) {
     start = await previousActivityChainStart(planId, excludeId);
@@ -173,4 +182,5 @@ module.exports = {
   resolveActivitySchedule,
   defaultActivityTimeZone,
   resolveActivityZones,
+  compareStoredOrder,
 };
