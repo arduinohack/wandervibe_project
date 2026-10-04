@@ -13,6 +13,9 @@ class PlanPdfRow {
   final String name;
   final String details;
 
+  /// False opens [dayHeader] with no activity row.
+  final bool includeRow;
+
   const PlanPdfRow({
     required this.dayHeader,
     required this.type,
@@ -21,6 +24,7 @@ class PlanPdfRow {
     required this.end,
     required this.name,
     required this.details,
+    this.includeRow = true,
   });
 }
 
@@ -35,7 +39,47 @@ String planPdfFilename(String planName) {
   return '$base.pdf';
 }
 
-/// PDF of the plan header and the rows in the order given.
+class _PdfDay {
+  final String header;
+  final List<PlanPdfRow> activities;
+
+  _PdfDay(this.header, this.activities);
+}
+
+const _dayColumns = ['Type', 'Start', 'Duration', 'End', 'Name', 'Details'];
+
+List<_PdfDay> _daysInOrder(List<PlanPdfRow> rows) {
+  final days = <_PdfDay>[];
+  for (final row in rows) {
+    final header = row.dayHeader;
+    if (header != null) {
+      days.add(_PdfDay(header, row.includeRow ? [row] : []));
+    } else if (row.includeRow) {
+      if (days.isEmpty) days.add(_PdfDay('', []));
+      days.last.activities.add(row);
+    }
+  }
+  return days;
+}
+
+pw.Widget _dayTable(List<PlanPdfRow> activities) {
+  return pw.TableHelper.fromTextArray(
+    headers: _dayColumns,
+    data: [
+      for (final row in activities)
+        [row.type, row.start, row.duration, row.end, row.name, row.details],
+    ],
+    border: pw.TableBorder.all(width: 0.4),
+    headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+    cellAlignment: pw.Alignment.topLeft,
+    headerAlignment: pw.Alignment.topLeft,
+    cellPadding: const pw.EdgeInsets.all(4),
+    defaultColumnWidth: const pw.FlexColumnWidth(),
+  );
+}
+
+/// PDF of the plan header and one table for each day, in the order given.
+/// A day header with no activity rows is still drawn, with an empty table.
 Future<Uint8List> buildPlanPdf({
   required String name,
   required String destination,
@@ -44,6 +88,7 @@ Future<Uint8List> buildPlanPdf({
   required List<PlanPdfRow> rows,
 }) async {
   final document = pw.Document();
+  final days = _daysInOrder(rows);
   document.addPage(
     pw.MultiPage(
       pageFormat: PdfPageFormat.a4,
@@ -59,14 +104,13 @@ Future<Uint8List> buildPlanPdf({
           pw.Text('End: $end'),
           pw.SizedBox(height: 16),
         ];
-        for (final row in rows) {
-          final header = row.dayHeader;
-          if (header != null) {
+        for (final day in days) {
+          if (day.header.isNotEmpty) {
             blocks
               ..add(pw.SizedBox(height: 12))
               ..add(
                 pw.Text(
-                  header,
+                  day.header,
                   style: pw.TextStyle(
                     fontSize: 16,
                     fontWeight: pw.FontWeight.bold,
@@ -75,19 +119,7 @@ Future<Uint8List> buildPlanPdf({
               )
               ..add(pw.SizedBox(height: 6));
           }
-          blocks
-            ..add(pw.Text('Type: ${row.type}'))
-            ..add(pw.Text('Start: ${row.start}'))
-            ..add(pw.Text('Duration: ${row.duration}'))
-            ..add(pw.Text('End: ${row.end}'))
-            ..add(
-              pw.Text(
-                row.name,
-                style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-              ),
-            )
-            ..add(pw.Text('Details: ${row.details}'))
-            ..add(pw.SizedBox(height: 8));
+          blocks.add(_dayTable(day.activities));
         }
         return blocks;
       },
