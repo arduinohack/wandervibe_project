@@ -235,6 +235,7 @@ Activity _activityWithTimes(Activity activity, DateTime? start, DateTime? end) {
     planId: activity.planId,
     name: activity.name,
     location: activity.location,
+    googlePlaceId: activity.googlePlaceId,
     type: activity.type,
     typeLabel: activity.typeLabel,
     cost: activity.cost,
@@ -475,6 +476,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
       startTimeZone: draft.startTimeZone,
       endTimeZone: draft.endTimeZone,
       location: draft.location,
+      googlePlaceId: draft.googlePlaceId,
       details: draft.details,
       gate: draft.gate,
       baggageClaim: draft.baggageClaim,
@@ -581,6 +583,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
         startTimeZone: _activityStartZone(moved, planZone),
         endTimeZone: _activityEndZone(moved, planZone),
         location: moved.location ?? '',
+        googlePlaceId: moved.googlePlaceId,
         details: moved.details ?? '',
         gate: moved.gate,
         baggageClaim: moved.baggageClaim,
@@ -981,6 +984,7 @@ class _ActivityFields {
   final String startTimeZone;
   final String endTimeZone;
   final String location;
+  final String googlePlaceId;
   final String details;
   final String? gate;
   final String? baggageClaim;
@@ -999,6 +1003,7 @@ class _ActivityFields {
     required this.startTimeZone,
     required this.endTimeZone,
     required this.location,
+    required this.googlePlaceId,
     required this.details,
     this.gate,
     this.baggageClaim,
@@ -1057,6 +1062,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
   late final TextEditingController _nameController;
   late final TextEditingController _durationController;
   late final TextEditingController _locationController;
+  late final TextEditingController _googlePlaceIdController;
   late final TextEditingController _detailsController;
   late final TextEditingController _gateController;
   late final TextEditingController _baggageController;
@@ -1101,6 +1107,9 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     }
     _durationController = TextEditingController(text: _storedDurationText(activity));
     _locationController = TextEditingController(text: activity?.location ?? '');
+    _googlePlaceIdController = TextEditingController(
+      text: activity?.googlePlaceId ?? '',
+    );
     _detailsController = TextEditingController(text: activity?.details ?? '');
     _gateController = TextEditingController(text: activity?.gate ?? '');
     _baggageController = TextEditingController(text: activity?.baggageClaim ?? '');
@@ -1157,6 +1166,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     _nameController.dispose();
     _durationController.dispose();
     _locationController.dispose();
+    _googlePlaceIdController.dispose();
     _detailsController.dispose();
     _gateController.dispose();
     _baggageController.dispose();
@@ -1288,6 +1298,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       startTimeZone: _startZone,
       endTimeZone: _endZone,
       location: _locationController.text.trim(),
+      googlePlaceId: _googlePlaceIdController.text.trim(),
       details: _detailsController.text.trim(),
       gate: _usesFlightFields ? _gateController.text.trim() : null,
       baggageClaim: _usesFlightFields ? _baggageController.text.trim() : null,
@@ -1334,6 +1345,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       startTimeZone: fields.startTimeZone,
       endTimeZone: fields.endTimeZone,
       location: fields.location,
+      googlePlaceId: fields.googlePlaceId,
       details: fields.details,
       gate: fields.gate,
       baggageClaim: fields.baggageClaim,
@@ -1472,6 +1484,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
           onChanged: _onDurationChanged,
         ),
         _textField(_locationController, 'Location'),
+        _textField(_googlePlaceIdController, 'Google Place ID'),
         _textField(_detailsController, 'Details'),
         if (_usesFlightFields) ...[
           _textField(_gateController, 'Gate'),

@@ -26,6 +26,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
   // Controllers for text fields
   late TextEditingController _nameController;
   late TextEditingController _locationController;
+  late TextEditingController _googlePlaceIdController;
   late TextEditingController _costController;
   late TextEditingController _detailsController;
   late TextEditingController _customTypeController;
@@ -61,6 +62,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
     // Initialize controllers
     _nameController = TextEditingController();
     _locationController = TextEditingController();
+    _googlePlaceIdController = TextEditingController();
     _costController = TextEditingController();
     _detailsController = TextEditingController();
     _customTypeController = TextEditingController();
@@ -76,6 +78,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
       _nameController.text = e.name;
       _type = e.type;
       _locationController.text = e.location ?? '';
+      _googlePlaceIdController.text = e.googlePlaceId;
       _costController.text = e.cost?.toString() ?? '';
       _detailsController.text = e.details ?? '';
       _customTypeController.text = e.customType ?? '';
@@ -159,6 +162,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
   void dispose() {
     _nameController.dispose();
     _locationController.dispose();
+    _googlePlaceIdController.dispose();
     _costController.dispose();
     _detailsController.dispose();
     _customTypeController.dispose();
@@ -205,6 +209,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
       location: _locationController.text.isEmpty
           ? null
           : _locationController.text,
+      googlePlaceId: _googlePlaceIdController.text.trim(),
       type: _type ?? ActivityType.activity,
       customType: _customTypeController.text.isEmpty
           ? null
@@ -425,6 +430,11 @@ class _ActivityScreenState extends State<ActivityScreen> {
               TextFormField(
                 controller: _locationController,
                 decoration: const InputDecoration(labelText: 'Location'),
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _googlePlaceIdController,
+                decoration: const InputDecoration(labelText: 'Google Place ID'),
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<ActivityType>(

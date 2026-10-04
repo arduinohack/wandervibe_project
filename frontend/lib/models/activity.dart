@@ -8,6 +8,11 @@ String? _optionalActivityText(dynamic value) {
   return text.isEmpty ? null : text;
 }
 
+String _storedPlaceId(dynamic value) {
+  if (value == null) return '';
+  return value.toString().trim();
+}
+
 Duration? _storedDurationMinutes(dynamic value) {
   if (value is! num) return null;
   return Duration(minutes: value.round());
@@ -126,6 +131,7 @@ class Activity {
   final String planId;
   final String name;
   final String? location;
+  final String googlePlaceId;
   final ActivityType type;
   final String typeLabel;
   final double? cost;
@@ -158,6 +164,7 @@ class Activity {
     required this.planId,
     required this.name,
     this.location,
+    this.googlePlaceId = '',
     this.type = ActivityType.activity,
     this.typeLabel = '',
     this.cost,
@@ -249,6 +256,7 @@ class Activity {
       planId: json['planId'] ?? '',
       name: json['name'] ?? 'Unnamed Activity',
       location: json['location'],
+      googlePlaceId: _storedPlaceId(json['googlePlaceId']),
       type: _typeFromString(json['type'] ?? 'activity'),
       typeLabel: json['type'] == null ? '' : json['type'].toString(),
       cost: (json['cost'] as num?)?.toDouble(),
@@ -302,6 +310,7 @@ class Activity {
       'planId': planId,
       'name': name,
       'location': location ?? '',
+      'googlePlaceId': googlePlaceId,
       'type': type.toString().split('.').last,
       'cost': cost ?? 0.0,
       'costType': costType?.toString().split('.').last ?? 'estimated',
