@@ -93,13 +93,13 @@ String zoneAbbreviation(DateTime instant, String zone) {
   return clockInZone(instant, zone).abbreviation;
 }
 
-/// Wall-clock start in the activity zone, with that zone's abbreviation.
-String activityStartLabel(DateTime? instant, String zone) {
+/// Wall clock in [zone] as m/d HH:mm. A missing instant is "not set".
+String itineraryClockLabel(DateTime? instant, String zone) {
   if (instant == null) return 'not set';
   final clock = clockInZone(instant, zone);
-  String two(int number) => number.toString().padLeft(2, '0');
-  final year = clock.year.toString().padLeft(4, '0');
-  return '$year-${two(clock.month)}-${two(clock.day)} ${two(clock.hour)}:${two(clock.minute)} ${clock.abbreviation}';
+  final hour = clock.hour.toString().padLeft(2, '0');
+  final minute = clock.minute.toString().padLeft(2, '0');
+  return '${clock.month}/${clock.day} $hour:$minute';
 }
 
 List<String> activityZoneOptions(String selected) {

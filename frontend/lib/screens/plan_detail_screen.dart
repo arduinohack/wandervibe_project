@@ -111,13 +111,6 @@ class _ShownActivityTimes {
   const _ShownActivityTimes({this.start, this.end});
 }
 
-bool _activityIsFlight(Activity activity) {
-  final label = activity.typeLabel.trim().isEmpty
-      ? activity.type.name
-      : activity.typeLabel.trim();
-  return label.toLowerCase() == 'flight';
-}
-
 String _activityStartZone(Activity activity, String planZone) {
   final start = activity.startTimeZone.trim();
   if (start.isNotEmpty) return start;
@@ -413,6 +406,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     String? insertBefore,
     int? insertIndex,
     DateTime? initialStart,
+    String? initialZone,
     bool useDefaultStart = true,
   }) async {
     final planProvider = Provider.of<PlanProvider>(context, listen: false);
@@ -426,6 +420,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
         actionLabel: 'Add',
         planTimeZone: _shownPlan(planProvider).timeZone,
         initialStart: openingStart,
+        initialZone: initialZone,
       ),
     );
     if (draft == null || !mounted) return;
@@ -609,11 +604,11 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     required bool canChange,
     int? dragIndex,
   }) {
-    final flight = _activityIsFlight(activity);
     final type = activity.typeLabel.isEmpty ? activity.type.name : activity.typeLabel;
     final activityId = activity.id;
     final startZone = _activityStartZone(activity, planZone);
     final endZone = _activityEndZone(activity, planZone);
+    final details = activity.details?.trim() ?? '';
     return Column(
       key: blockKey,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -632,17 +627,6 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Type: $type'),
-                const SizedBox(height: 4),
-                if (flight) ...[
-                  Text('Departure: ${activityStartLabel(times.start, startZone)}'),
-                  Text('Arrival: ${activityStartLabel(times.end, endZone)}'),
-                ] else ...[
-                  Text('Start: ${activityStartLabel(times.start, startZone)}'),
-                  Text('End: ${activityStartLabel(times.end, endZone)}'),
-                ],
-                Text('Duration: ${_durationLabel(activity)}'),
-                const SizedBox(height: 4),
                 Row(
                   children: [
                     if (dragIndex != null)
@@ -670,6 +654,12 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                       ),
                   ],
                 ),
+                const SizedBox(height: 4),
+                Text('Type: $type'),
+                Text('Start: ${itineraryClockLabel(times.start, startZone)}'),
+                Text('Duration: ${_durationLabel(activity)}'),
+                Text('End: ${itineraryClockLabel(times.end, endZone)}'),
+                Text('Details: ${details.isEmpty ? 'not set' : details}'),
                 if (canChange &&
                     dragIndex != null &&
                     activityId != null &&
@@ -680,6 +670,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                         onPressed: () => _addActivity(
                           insertBefore: activityId,
                           insertIndex: dragIndex,
+                          initialZone: startZone,
                           useDefaultStart: false,
                         ),
                         child: const Text('Insert above'),
@@ -689,6 +680,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                           insertAfter: activityId,
                           insertIndex: dragIndex + 1,
                           initialStart: activity.endTime ?? activity.startTime,
+                          initialZone: endZone,
                           useDefaultStart: false,
                         ),
                         child: const Text('Insert below'),
@@ -946,6 +938,7 @@ class _ActivityFormDialog extends StatefulWidget {
   final String planTimeZone;
   final DateTime? initialStart;
   final DateTime? chainStart;
+  final String? initialZone;
 
   const _ActivityFormDialog({
     required this.title,
@@ -955,6 +948,7 @@ class _ActivityFormDialog extends StatefulWidget {
     this.planTimeZone = '',
     this.initialStart,
     this.chainStart,
+    this.initialZone,
   });
 
   bool get isScreen => activity != null;
@@ -1036,6 +1030,8 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       final stored = activity.timeZone.trim();
       if (stored.isNotEmpty) return stored;
     }
+    final copied = widget.initialZone?.trim() ?? '';
+    if (copied.isNotEmpty) return copied;
     return _planOrUtc();
   }
 
