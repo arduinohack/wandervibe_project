@@ -285,10 +285,11 @@ class _UtcDateTimePicker extends StatelessWidget {
     final selectedZone = zone;
     final changeZone = onZoneChanged;
     final display = selectedZone == null ? instant : wallValue(instant, selectedZone);
-    final abbreviation = selectedZone == null || instant == null
-        ? null
-        : zoneAbbreviation(instant, selectedZone);
     final timeSuffix = selectedZone == null ? 'UTC' : '';
+    final zoneAnchor = instant ?? DateTime.now().toUtc();
+    final zoneChoices = selectedZone == null
+        ? const <String>[]
+        : activityZoneOptions(selectedZone);
     return Padding(
       padding: const EdgeInsets.only(top: 12),
       child: Column(
@@ -317,7 +318,6 @@ class _UtcDateTimePicker extends StatelessWidget {
                 },
                 child: Text(_clockLabel(display, timeSuffix)),
               ),
-              if (abbreviation != null) Text(abbreviation),
               if (onClear != null && instant != null)
                 TextButton(onPressed: onClear, child: const Text('Clear')),
             ],
@@ -329,8 +329,18 @@ class _UtcDateTimePicker extends StatelessWidget {
               initialValue: selectedZone,
               isExpanded: true,
               decoration: const InputDecoration(labelText: 'Time zone'),
+              selectedItemBuilder: (context) => [
+                for (final choice in zoneChoices)
+                  Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: Text(
+                      zoneAbbreviation(zoneAnchor, choice),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+              ],
               items: [
-                for (final choice in activityZoneOptions(selectedZone))
+                for (final choice in zoneChoices)
                   DropdownMenuItem(value: choice, child: Text(choice)),
               ],
               onChanged: (next) {
