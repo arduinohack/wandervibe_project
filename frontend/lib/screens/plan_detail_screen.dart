@@ -470,13 +470,8 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     final activities = planProvider.itineraryActivities;
     final index = activities.indexWhere((item) => item.id == activityId);
     DateTime? chainStart;
-    DateTime? previousInstant;
-    if (index > 0) {
-      final previous = activities[index - 1];
-      previousInstant = previous.endTime ?? previous.startTime;
-      if (activity.startTime == null) {
-        chainStart = _shownActivityTimes(activities)[index].start;
-      }
+    if (index > 0 && activity.startTime == null) {
+      chainStart = _shownActivityTimes(activities)[index].start;
     }
     await Navigator.of(context).push(
       MaterialPageRoute(
@@ -487,7 +482,6 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
           planId: widget.plan.id,
           planTimeZone: _shownPlan(planProvider).timeZone,
           chainStart: chainStart,
-          previousInstant: previousInstant,
         ),
       ),
     );
@@ -888,7 +882,6 @@ class _ActivityFormDialog extends StatefulWidget {
   final String planTimeZone;
   final DateTime? initialStart;
   final DateTime? chainStart;
-  final DateTime? previousInstant;
 
   const _ActivityFormDialog({
     required this.title,
@@ -898,7 +891,6 @@ class _ActivityFormDialog extends StatefulWidget {
     this.planTimeZone = '',
     this.initialStart,
     this.chainStart,
-    this.previousInstant,
   });
 
   bool get isScreen => activity != null;
@@ -1064,15 +1056,10 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
   }
 
   void _clearStart() {
-    final chained = widget.previousInstant;
     setState(() {
-      _start = chained;
+      _start = null;
       _startChanged = true;
       _error = null;
-      final end = _end;
-      if (chained != null && end != null && !end.isBefore(chained)) {
-        _durationController.text = end.difference(chained).inMinutes.toString();
-      }
     });
   }
 
