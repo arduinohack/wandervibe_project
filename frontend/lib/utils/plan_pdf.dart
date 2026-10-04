@@ -48,6 +48,11 @@ class _PdfDay {
 
 const _dayColumns = ['Type', 'Start', 'Duration', 'End', 'Name', 'Details'];
 
+String _tableCell(String value) {
+  if (value.trim() == 'not set') return '';
+  return value;
+}
+
 List<_PdfDay> _daysInOrder(List<PlanPdfRow> rows) {
   final days = <_PdfDay>[];
   for (final row in rows) {
@@ -67,10 +72,18 @@ pw.Widget _dayTable(List<PlanPdfRow> activities) {
     headers: _dayColumns,
     data: [
       for (final row in activities)
-        [row.type, row.start, row.duration, row.end, row.name, row.details],
+        [
+          _tableCell(row.type),
+          _tableCell(row.start),
+          _tableCell(row.duration),
+          _tableCell(row.end),
+          _tableCell(row.name),
+          _tableCell(row.details),
+        ],
     ],
     border: pw.TableBorder.all(width: 0.4),
-    headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+    headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10),
+    cellStyle: const pw.TextStyle(fontSize: 10),
     cellAlignment: pw.Alignment.topLeft,
     headerAlignment: pw.Alignment.topLeft,
     cellPadding: const pw.EdgeInsets.all(4),
@@ -96,12 +109,15 @@ Future<Uint8List> buildPlanPdf({
         final blocks = <pw.Widget>[
           pw.Text(
             name,
-            style: pw.TextStyle(fontSize: 22, fontWeight: pw.FontWeight.bold),
+            style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
           ),
           pw.SizedBox(height: 8),
-          pw.Text('Destination: $destination'),
-          pw.Text('Start: $start'),
-          pw.Text('End: $end'),
+          pw.Text(
+            'Destination: $destination',
+            style: const pw.TextStyle(fontSize: 10),
+          ),
+          pw.Text('Start: $start', style: const pw.TextStyle(fontSize: 10)),
+          pw.Text('End: $end', style: const pw.TextStyle(fontSize: 10)),
           pw.SizedBox(height: 16),
         ];
         for (final day in days) {
@@ -112,7 +128,7 @@ Future<Uint8List> buildPlanPdf({
                 pw.Text(
                   day.header,
                   style: pw.TextStyle(
-                    fontSize: 16,
+                    fontSize: 14,
                     fontWeight: pw.FontWeight.bold,
                   ),
                 ),
