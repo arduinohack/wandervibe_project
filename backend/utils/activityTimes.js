@@ -56,12 +56,25 @@ async function previousActivityInstant(planId) {
   return null;
 }
 
+// The activity just before excludeId in start order. Its end, or its start
+// when the end is missing. The first activity has none.
+async function previousActivityChainStart(planId, excludeId) {
+  if (!planId || excludeId == null) return null;
+  const rows = await Event.find({ planId }).select('_id startTime endTime').lean();
+  rows.sort(compareItinerary);
+  const index = rows.findIndex((row) => String(row._id) === String(excludeId));
+  if (index <= 0) return null;
+  const previous = rows[index - 1];
+  return instant(previous.endTime) || instant(previous.startTime);
+}
+
 async function resolveActivitySchedule({
   isCreate,
   planId,
   body,
   existingStart,
   existingEnd,
+  excludeId,
 }) {
   const source = body && typeof body === 'object' ? body : {};
   const duration = hasOwn(source, 'durationMinutes')
@@ -72,16 +85,20 @@ async function resolveActivitySchedule({
   }
 
   let start = null;
+  let startExplicitlyEmpty = false;
   if (hasOwn(source, 'startTime')) {
     const parsed = parseInstant(source.startTime);
     if (parsed.invalid) return { error: 'Start time is not a valid date' };
     start = parsed.date || null;
+    startExplicitlyEmpty = start == null;
   } else if (!isCreate) {
     start = instant(existingStart);
   }
 
   if (isCreate && !start && planId) {
     start = await previousActivityInstant(planId);
+  } else if (!isCreate && startExplicitlyEmpty && planId) {
+    start = await previousActivityChainStart(planId, excludeId);
   }
 
   let minutes = duration.empty ? null : duration.minutes;

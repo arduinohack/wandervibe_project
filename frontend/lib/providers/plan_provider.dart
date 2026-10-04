@@ -62,6 +62,9 @@ Map<String, dynamic> _activityWriteBody({
   String? roomNumber,
   String? planId,
   int? durationMinutes,
+  bool? writeStartTime,
+  bool? writeEndTime,
+  bool? writeDuration,
 }) {
   final body = <String, dynamic>{
     'name': name,
@@ -72,9 +75,16 @@ Map<String, dynamic> _activityWriteBody({
     'startTimeZone': startTimeZone,
     'endTimeZone': endTimeZone,
   };
-  if (startTime != null) body['startTime'] = _activityInstant(startTime);
-  if (endTime != null) body['endTime'] = _activityInstant(endTime);
-  if (durationMinutes != null) body['durationMinutes'] = durationMinutes;
+  final sendStart = writeStartTime ?? startTime != null;
+  final sendEnd = writeEndTime ?? endTime != null;
+  final sendDuration = writeDuration ?? durationMinutes != null;
+  if (sendStart) {
+    body['startTime'] = startTime == null ? null : _activityInstant(startTime);
+  }
+  if (sendEnd) {
+    body['endTime'] = endTime == null ? null : _activityInstant(endTime);
+  }
+  if (sendDuration) body['durationMinutes'] = durationMinutes;
   if (planId != null) body['planId'] = planId;
   if (type == 'flight') {
     body['gate'] = gate ?? '';
@@ -628,6 +638,9 @@ class PlanProvider extends ChangeNotifier {
     String? baggageClaim,
     String? roomNumber,
     int? durationMinutes,
+    bool? writeStartTime,
+    bool? writeEndTime,
+    bool? writeDuration,
     required String planId,
     required String? token,
   }) async {
@@ -654,6 +667,9 @@ class PlanProvider extends ChangeNotifier {
             baggageClaim: baggageClaim,
             roomNumber: roomNumber,
             durationMinutes: durationMinutes,
+            writeStartTime: writeStartTime,
+            writeEndTime: writeEndTime,
+            writeDuration: writeDuration,
           ),
         ),
       );

@@ -301,4 +301,98 @@ describe('activity start, end, and duration', () => {
     expect(legacy.body.endTimeZone).toBe('Europe/Paris');
     expect(legacy.body.durationMinutes).toBe(360);
   });
+
+  test('a cleared start is stored as null and a later start uses the previous end', async () => {
+    const token = await registerAndLogin('clear-start@example.com');
+    const planId = await createPlan(token);
+
+    const first = await request(app)
+      .post('/api/activities')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        name: 'Museum',
+        type: 'tour',
+        planId,
+        startTime: '2026-07-01T09:00:00.000Z',
+        endTime: '2026-07-01T11:00:00.000Z',
+      });
+    expect(first.status).toBe(201);
+
+    const second = await request(app)
+      .post('/api/activities')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        name: 'Lunch',
+        type: 'dining',
+        planId,
+        startTime: '2026-07-01T13:00:00.000Z',
+        endTime: '2026-07-01T14:00:00.000Z',
+      });
+    expect(second.status).toBe(201);
+
+    const chained = await request(app)
+      .put(`/api/activities/${second.body._id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ startTime: null });
+    expect(chained.status).toBe(200);
+    expect(iso(chained.body.startTime)).toBe('2026-07-01T11:00:00.000Z');
+    expect(iso(chained.body.endTime)).toBe('2026-07-01T14:00:00.000Z');
+
+    const cleared = await request(app)
+      .put(`/api/activities/${first.body._id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ startTime: null });
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.startTime ?? null).toBeNull();
+    expect(iso(cleared.body.endTime)).toBe('2026-07-01T11:00:00.000Z');
+    const storedFirst = await Event.findById(first.body._id).lean();
+    expect(storedFirst.startTime ?? null).toBeNull();
+
+    const clearedEnd = await request(app)
+      .put(`/api/activities/${second.body._id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ endTime: null, durationMinutes: null });
+    expect(clearedEnd.status).toBe(200);
+    expect(clearedEnd.body.endTime ?? null).toBeNull();
+    expect(clearedEnd.body.durationMinutes ?? null).toBeNull();
+    expect(iso(clearedEnd.body.startTime)).toBe('2026-07-01T11:00:00.000Z');
+
+    const kept = await request(app)
+      .put(`/api/activities/${second.body._id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Supper' });
+    expect(kept.status).toBe(200);
+    expect(kept.body.endTime ?? null).toBeNull();
+    expect(iso(kept.body.startTime)).toBe('2026-07-01T11:00:00.000Z');
+
+    const walk = await request(app)
+      .post('/api/activities')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        name: 'Walk',
+        type: 'tour',
+        planId,
+        startTime: '2026-07-01T16:00:00.000Z',
+      });
+    expect(walk.status).toBe(201);
+
+    const dinner = await request(app)
+      .post('/api/activities')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        name: 'Dinner',
+        type: 'dining',
+        planId,
+        startTime: '2026-07-01T18:00:00.000Z',
+        endTime: '2026-07-01T19:00:00.000Z',
+      });
+    expect(dinner.status).toBe(201);
+
+    const fromStart = await request(app)
+      .put(`/api/activities/${dinner.body._id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ startTime: null });
+    expect(fromStart.status).toBe(200);
+    expect(iso(fromStart.body.startTime)).toBe('2026-07-01T16:00:00.000Z');
+  });
 });

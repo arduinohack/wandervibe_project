@@ -470,8 +470,13 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     final activities = planProvider.itineraryActivities;
     final index = activities.indexWhere((item) => item.id == activityId);
     DateTime? chainStart;
-    if (index > 0 && activity.startTime == null) {
-      chainStart = _shownActivityTimes(activities)[index].start;
+    DateTime? previousInstant;
+    if (index > 0) {
+      final previous = activities[index - 1];
+      previousInstant = previous.endTime ?? previous.startTime;
+      if (activity.startTime == null) {
+        chainStart = _shownActivityTimes(activities)[index].start;
+      }
     }
     await Navigator.of(context).push(
       MaterialPageRoute(
@@ -482,6 +487,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
           planId: widget.plan.id,
           planTimeZone: _shownPlan(planProvider).timeZone,
           chainStart: chainStart,
+          previousInstant: previousInstant,
         ),
       ),
     );
@@ -834,6 +840,9 @@ class _ActivityFields {
   final String? baggageClaim;
   final String? roomNumber;
   final int? durationMinutes;
+  final bool writeStart;
+  final bool writeEnd;
+  final bool writeDuration;
 
   const _ActivityFields({
     required this.name,
@@ -849,6 +858,9 @@ class _ActivityFields {
     this.baggageClaim,
     this.roomNumber,
     this.durationMinutes,
+    this.writeStart = false,
+    this.writeEnd = false,
+    this.writeDuration = false,
   });
 }
 
@@ -876,6 +888,7 @@ class _ActivityFormDialog extends StatefulWidget {
   final String planTimeZone;
   final DateTime? initialStart;
   final DateTime? chainStart;
+  final DateTime? previousInstant;
 
   const _ActivityFormDialog({
     required this.title,
@@ -885,6 +898,7 @@ class _ActivityFormDialog extends StatefulWidget {
     this.planTimeZone = '',
     this.initialStart,
     this.chainStart,
+    this.previousInstant,
   });
 
   bool get isScreen => activity != null;
@@ -1049,6 +1063,28 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     });
   }
 
+  void _clearStart() {
+    final chained = widget.previousInstant;
+    setState(() {
+      _start = chained;
+      _startChanged = true;
+      _error = null;
+      final end = _end;
+      if (chained != null && end != null && !end.isBefore(chained)) {
+        _durationController.text = end.difference(chained).inMinutes.toString();
+      }
+    });
+  }
+
+  void _clearEnd() {
+    setState(() {
+      _end = null;
+      _endChanged = true;
+      _durationController.clear();
+      _error = null;
+    });
+  }
+
   void _onDurationChanged(String text) {
     final minutes = _wholeMinutes(text);
     final start = _start;
@@ -1078,23 +1114,28 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       setState(() => _error = 'Enter duration as whole minutes');
       return null;
     }
-    if (name.isEmpty || start == null || end == null) {
+    final editing = widget.isScreen;
+    if (name.isEmpty || (!editing && (start == null || end == null))) {
       setState(() => _error = 'Enter a name, a start, and an end');
       return null;
     }
-    if (end.isBefore(start)) {
+    if (start != null && end != null && end.isBefore(start)) {
       setState(() => _error = 'End time must not be before the start time');
       return null;
     }
-    if (minutes == null && typedDuration.isEmpty) {
+    if (minutes == null && typedDuration.isEmpty && start != null && end != null) {
       final storedStart = widget.activity?.startTime;
       final storedEnd = widget.activity?.endTime;
-      final userSetTimes = !widget.isScreen || _startChanged || _endChanged;
+      final userSetTimes = !editing || _startChanged || _endChanged;
       if (userSetTimes || (storedStart != null && storedEnd != null)) {
         minutes = end.difference(start).inMinutes;
       }
     }
-    final editing = widget.isScreen;
+    var writeDuration = minutes != null;
+    if (editing && _endChanged && end == null) {
+      minutes = null;
+      writeDuration = true;
+    }
     return _ActivityFields(
       name: name,
       type: _type,
@@ -1109,6 +1150,9 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       baggageClaim: _usesFlightFields ? _baggageController.text.trim() : null,
       roomNumber: _usesRoom ? _roomController.text.trim() : null,
       durationMinutes: minutes,
+      writeStart: !editing || _startChanged,
+      writeEnd: !editing || _endChanged,
+      writeDuration: writeDuration,
     );
   }
 
@@ -1152,6 +1196,9 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       baggageClaim: fields.baggageClaim,
       roomNumber: fields.roomNumber,
       durationMinutes: fields.durationMinutes,
+      writeStartTime: fields.writeStart,
+      writeEndTime: fields.writeEnd,
+      writeDuration: fields.writeDuration,
       planId: widget.planId ?? widget.activity?.planId ?? '',
       token: userProvider.token,
     );
@@ -1265,6 +1312,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
           zone: _startZone,
           onZoneChanged: _onStartZone,
           onChanged: _setStart,
+          onClear: widget.isScreen ? _clearStart : null,
         ),
         _UtcDateTimePicker(
           label: _type == 'flight' ? 'Arrival' : 'End',
@@ -1272,6 +1320,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
           zone: _endZone,
           onZoneChanged: _onEndZone,
           onChanged: _setEnd,
+          onClear: widget.isScreen ? _clearEnd : null,
         ),
         _textField(
           _durationController,

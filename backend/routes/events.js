@@ -228,6 +228,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
       body,
       existingStart: event.startTime,
       existingEnd: event.endTime,
+      excludeId: event._id,
     });
     if (schedule.error) {
       return res.status(400).json({ message: schedule.error });
@@ -237,9 +238,11 @@ router.put('/:id', authMiddleware, async (req, res) => {
     for (const [key, value] of Object.entries(fields)) {
       event.set(key, value);
     }
-    if (!schedule.startTime) event.startTime = undefined;
-    if (!schedule.endTime) event.endTime = undefined;
-    if (schedule.durationMinutes == null) event.durationMinutes = undefined;
+    if (schedule.startTime) event.startTime = schedule.startTime;
+    else event.set('startTime', null);
+    if (schedule.endTime) event.endTime = schedule.endTime;
+    else event.set('endTime', null);
+    if (schedule.durationMinutes == null) event.set('durationMinutes', null);
     else event.durationMinutes = schedule.durationMinutes;
     const updatedEvent = await event.save();
     await recordActivityRevision(updatedEvent, 'update', callerId);
