@@ -175,6 +175,8 @@ describe('activity start, end, and duration', () => {
     expect(created.status).toBe(201);
     expect(created.body.type).toBe('hotel');
     expect(created.body.timeZone).toBe('America/New_York');
+    expect(created.body.startTimeZone).toBe('America/New_York');
+    expect(created.body.endTimeZone).toBe('America/New_York');
     expect(created.body.originTimeZone || '').toBe('');
     expect(created.body.destinationTimeZone || '').toBe('');
   });
@@ -229,5 +231,74 @@ describe('activity start, end, and duration', () => {
     const storedLater = await Event.findById(later.body._id);
     expect(iso(storedLater.startTime)).toBe('2026-07-05T23:00:00.000Z');
     expect(iso(storedLater.endTime)).toBe('2026-07-06T01:00:00.000Z');
+  });
+
+  test('an end zone that differs from the start zone stores the UTC gap', async () => {
+    const token = await registerAndLogin('split-zone@example.com');
+    const planId = await createPlan(token);
+
+    // 18:00 EDT to 08:00 CEST is 8 hours of UTC, not a 14-hour wall subtraction.
+    const created = await request(app)
+      .post('/api/activities')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        name: 'AA 100',
+        type: 'flight',
+        planId,
+        startTime: '2026-07-04T22:00:00.000Z',
+        endTime: '2026-07-05T06:00:00.000Z',
+        startTimeZone: 'America/New_York',
+        endTimeZone: 'Europe/Paris',
+      });
+
+    expect(created.status).toBe(201);
+    expect(created.body.startTimeZone).toBe('America/New_York');
+    expect(created.body.endTimeZone).toBe('Europe/Paris');
+    expect(created.body.timeZone).toBe('America/New_York');
+    expect(iso(created.body.startTime)).toBe('2026-07-04T22:00:00.000Z');
+    expect(iso(created.body.endTime)).toBe('2026-07-05T06:00:00.000Z');
+    expect(created.body.durationMinutes).toBe(480);
+
+    const kept = await request(app)
+      .put(`/api/activities/${created.body._id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'AA 200' });
+    expect(kept.status).toBe(200);
+    expect(kept.body.startTimeZone).toBe('America/New_York');
+    expect(kept.body.endTimeZone).toBe('Europe/Paris');
+    expect(kept.body.durationMinutes).toBe(480);
+
+    const followed = await request(app)
+      .post('/api/activities')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        name: 'Regional',
+        type: 'train',
+        planId,
+        startTime: '2026-07-06T12:00:00.000Z',
+        endTime: '2026-07-06T14:00:00.000Z',
+        startTimeZone: 'America/Chicago',
+      });
+    expect(followed.status).toBe(201);
+    expect(followed.body.startTimeZone).toBe('America/Chicago');
+    expect(followed.body.endTimeZone).toBe('America/Chicago');
+    expect(followed.body.durationMinutes).toBe(120);
+
+    const legacy = await request(app)
+      .post('/api/activities')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        name: 'AA 300',
+        type: 'flight',
+        planId,
+        startTime: '2026-07-07T15:00:00.000Z',
+        endTime: '2026-07-07T21:00:00.000Z',
+        originTimeZone: 'America/New_York',
+        destinationTimeZone: 'Europe/Paris',
+      });
+    expect(legacy.status).toBe(201);
+    expect(legacy.body.startTimeZone).toBe('America/New_York');
+    expect(legacy.body.endTimeZone).toBe('Europe/Paris');
+    expect(legacy.body.durationMinutes).toBe(360);
   });
 });

@@ -9,7 +9,9 @@ const eventSchema = new mongoose.Schema({
   type: { type: String, required: true },  // 'flight', 'hotel', etc.
   cost: { type: Number, default: 0 },
   startTime: { type: Date },
-  timeZone: { type: String, default: '' }, // Time zone of time in this event
+  timeZone: { type: String, default: '' }, // Kept equal to startTimeZone for older readers
+  startTimeZone: { type: String, default: '' },
+  endTimeZone: { type: String, default: '' },
   originTimeZone: { type: String },
   destinationTimeZone: { type: String },
   duration: { type: Number, default: 0 },  // Minutes

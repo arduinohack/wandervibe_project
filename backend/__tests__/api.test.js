@@ -1291,6 +1291,16 @@ describe('activity history', () => {
       });
     expect(created.status).toBe(201);
 
+    await Event.updateOne({ _id: created.body._id }, {
+      $set: {
+        startTimeZone: '',
+        endTimeZone: '',
+        originTimeZone: '',
+        destinationTimeZone: '',
+        timeZone: '',
+      },
+    });
+
     const denied = await request(app)
       .put(`/api/activities/${created.body._id}`)
       .set('Authorization', `Bearer ${ada.token}`)
@@ -1804,23 +1814,48 @@ describe('activity restore', () => {
         endTime: '2026-06-01T18:00:00.000Z',
       });
     expect(created.status).toBe(201);
+    expect(created.body.startTimeZone).toBe('UTC');
+    expect(created.body.endTimeZone).toBe('UTC');
     const eventId = created.body._id;
     const createRevisionId = (await historyOf(eventId, ada.token))[0]._id;
     const before = await ActivityRevision.countDocuments({ eventId });
+
+    await Event.updateOne({ _id: eventId }, {
+      $set: {
+        startTimeZone: '',
+        endTimeZone: '',
+        originTimeZone: '',
+        destinationTimeZone: '',
+        timeZone: '',
+      },
+    });
 
     const denied = await request(app)
       .put(`/api/activities/${eventId}`)
       .set('Authorization', `Bearer ${ada.token}`)
       .send({ name: 'AA 200' });
     expect(denied.status).toBe(400);
+    expect(denied.body.message).toMatch(/startTimeZone/);
     expect((await Event.findById(eventId)).name).toBe('AA 100');
+
+    const revision = await ActivityRevision.findById(createRevisionId);
+    revision.snapshot = {
+      ...revision.snapshot,
+      startTimeZone: '',
+      endTimeZone: '',
+      originTimeZone: '',
+      destinationTimeZone: '',
+      timeZone: '',
+    };
+    revision.markModified('snapshot');
+    await revision.save();
 
     const restored = await request(app)
       .post(`/api/activities/${eventId}/restore`)
       .set('Authorization', `Bearer ${ada.token}`)
       .send({ revisionId: createRevisionId, originTimeZone: 'UTC', destinationTimeZone: 'UTC' });
     expect(restored.status).toBe(400);
-    expect(restored.body.message).toMatch(/originTimeZone/);
+    expect(restored.body.message).toMatch(/startTimeZone/);
     expect((await Event.findById(eventId)).name).toBe('AA 100');
     expect((await Event.findById(eventId)).type).toBe('flight');
     expect(await ActivityRevision.countDocuments({ eventId })).toBe(before);

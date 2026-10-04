@@ -15,6 +15,8 @@ const SHARED_FIELDS = [
   'eventNum',
   'extras',
   'timeZone',
+  'startTimeZone',
+  'endTimeZone',
 ];
 
 // Field → activity types that keep it. Schema default is '' only for customType.
@@ -93,13 +95,19 @@ function applyTypeChange(existingActivity, newType, body) {
   return result;
 }
 
+function zonePresent(value) {
+  return typeof value === 'string' && value.trim() !== '';
+}
+
 function assertTypeRequirements(type, fields) {
   const normalized = normalizeType(type);
   if (normalized !== 'flight' && normalized !== 'train') return null;
 
   const source = fields || {};
-  if (!source.originTimeZone || !source.destinationTimeZone) {
-    return new Error('originTimeZone and destinationTimeZone are required');
+  const start = zonePresent(source.startTimeZone) || zonePresent(source.originTimeZone);
+  const end = zonePresent(source.endTimeZone) || zonePresent(source.destinationTimeZone);
+  if (!start || !end) {
+    return new Error('startTimeZone and endTimeZone are required');
   }
   return null;
 }

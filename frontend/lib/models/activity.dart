@@ -145,6 +145,8 @@ class Activity {
   final String? originTimeZone;
   final String? destinationTimeZone;
   final String timeZone;
+  final String startTimeZone;
+  final String endTimeZone;
   final String? customType;
   final String? serviceProvider;
   final String? bookingReference;
@@ -175,6 +177,8 @@ class Activity {
     this.originTimeZone,
     this.destinationTimeZone,
     this.timeZone = '',
+    this.startTimeZone = '',
+    this.endTimeZone = '',
     this.customType,
     this.serviceProvider,
     this.bookingReference,
@@ -270,6 +274,12 @@ class Activity {
       originTimeZone: _optionalActivityText(json['originTimeZone']),
       destinationTimeZone: _optionalActivityText(json['destinationTimeZone']),
       timeZone: json['timeZone'] == null ? '' : json['timeZone'].toString(),
+      startTimeZone: json['startTimeZone'] == null
+          ? ''
+          : json['startTimeZone'].toString().trim(),
+      endTimeZone: json['endTimeZone'] == null
+          ? ''
+          : json['endTimeZone'].toString().trim(),
       customType: json['customType'],
       serviceProvider: json['serviceProvider'],
       bookingReference: json['bookingReference'],
@@ -310,6 +320,8 @@ class Activity {
       if (originTimeZone != null) 'originTimeZone': originTimeZone,
       if (destinationTimeZone != null) 'destinationTimeZone': destinationTimeZone,
       'timeZone': timeZone,
+      'startTimeZone': startTimeZone,
+      'endTimeZone': endTimeZone,
       'customType': customType ?? '',
       if (serviceProvider != null) 'serviceProvider': serviceProvider,
       if (bookingReference != null) 'bookingReference': bookingReference,
@@ -329,6 +341,7 @@ class Activity {
         return ActivityType.train;
       case 'carrental':
         return ActivityType.carRental;
+      case 'car_service':
       case 'carservice':
         return ActivityType.carService;
       case 'drive':

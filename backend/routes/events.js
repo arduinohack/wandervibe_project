@@ -9,7 +9,7 @@ const { canonicalMembershipRole } = require('../middleware/roleCheck');
 const { applyTypeChange, assertTypeRequirements } = require('../utils/activityTypeFields');
 const { recordActivityRevision } = require('../utils/recordActivityRevision');
 const { syncPlanDates } = require('../utils/syncPlanDates');
-const { resolveActivitySchedule, defaultActivityTimeZone } = require('../utils/activityTimes');
+const { resolveActivitySchedule, resolveActivityZones } = require('../utils/activityTimes');
 
 function applySchedule(target, schedule) {
   if (schedule.startTime) target.startTime = schedule.startTime;
@@ -86,7 +86,14 @@ router.post('/', authMiddleware, async (req, res) => {
     }
     const payload = { ...req.body, ownerId: callerId };
     applySchedule(payload, schedule);
-    payload.timeZone = await defaultActivityTimeZone(req.body, planId);
+    const zones = await resolveActivityZones({
+      isCreate: true,
+      planId,
+      body: req.body,
+    });
+    payload.startTimeZone = zones.startTimeZone;
+    payload.endTimeZone = zones.endTimeZone;
+    payload.timeZone = zones.timeZone;
     const newEvent = new Event(payload);
     const savedEvent = await newEvent.save();
     await recordActivityRevision(savedEvent, 'create', callerId);
@@ -201,6 +208,15 @@ router.put('/:id', authMiddleware, async (req, res) => {
     const body = req.body || {};
     const nextType = Object.prototype.hasOwnProperty.call(body, 'type') ? body.type : event.type;
     const fields = applyTypeChange(event.toObject(), nextType, body);
+    const zones = await resolveActivityZones({
+      isCreate: false,
+      planId: event.planId,
+      body,
+      existing: event.toObject(),
+    });
+    fields.startTimeZone = zones.startTimeZone;
+    fields.endTimeZone = zones.endTimeZone;
+    fields.timeZone = zones.timeZone;
     const requirementError = assertTypeRequirements(fields.type, fields);
     if (requirementError) {
       return res.status(400).json({ message: requirementError.message });

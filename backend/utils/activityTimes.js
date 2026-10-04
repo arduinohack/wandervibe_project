@@ -111,4 +111,49 @@ async function defaultActivityTimeZone(body, planId) {
   return plan && typeof plan.timeZone === 'string' ? plan.timeZone.trim() : '';
 }
 
-module.exports = { resolveActivitySchedule, defaultActivityTimeZone };
+function zoneText(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function ownZone(source, key) {
+  if (!hasOwn(source, key)) return '';
+  return zoneText(source[key]);
+}
+
+// startTimeZone is the clock. endTimeZone stays independent when it is already
+// stored. A blank end zone on create becomes the start zone. Legacy
+// originTimeZone and destinationTimeZone fill the new fields when those are empty.
+async function resolveActivityZones({ isCreate, planId, body, existing }) {
+  const source = body && typeof body === 'object' ? body : {};
+  const stored = existing && typeof existing === 'object' ? existing : {};
+
+  let start = ownZone(source, 'startTimeZone');
+  if (!start) start = ownZone(source, 'originTimeZone');
+  if (!start && !isCreate) {
+    start = zoneText(stored.startTimeZone) || zoneText(stored.originTimeZone);
+  }
+  if (!start) start = ownZone(source, 'timeZone');
+  if (!start && !isCreate) start = zoneText(stored.timeZone);
+  if (!start && isCreate) {
+    start = await defaultActivityTimeZone({ timeZone: '' }, planId);
+  }
+
+  let end = ownZone(source, 'endTimeZone');
+  if (!end) end = ownZone(source, 'destinationTimeZone');
+  if (!end && !isCreate) {
+    end = zoneText(stored.endTimeZone) || zoneText(stored.destinationTimeZone);
+  }
+  if (!end) end = start;
+
+  return {
+    startTimeZone: start,
+    endTimeZone: end,
+    timeZone: start,
+  };
+}
+
+module.exports = {
+  resolveActivitySchedule,
+  defaultActivityTimeZone,
+  resolveActivityZones,
+};

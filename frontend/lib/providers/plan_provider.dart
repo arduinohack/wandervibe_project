@@ -55,10 +55,10 @@ Map<String, dynamic> _activityWriteBody({
   required String location,
   required String details,
   required String timeZone,
+  required String startTimeZone,
+  required String endTimeZone,
   String? gate,
   String? baggageClaim,
-  String? originTimeZone,
-  String? destinationTimeZone,
   String? roomNumber,
   String? planId,
   int? durationMinutes,
@@ -69,15 +69,13 @@ Map<String, dynamic> _activityWriteBody({
     'location': location,
     'details': details,
     'timeZone': timeZone,
+    'startTimeZone': startTimeZone,
+    'endTimeZone': endTimeZone,
   };
   if (startTime != null) body['startTime'] = _activityInstant(startTime);
   if (endTime != null) body['endTime'] = _activityInstant(endTime);
   if (durationMinutes != null) body['durationMinutes'] = durationMinutes;
   if (planId != null) body['planId'] = planId;
-  if (type == 'flight' || type == 'train') {
-    body['originTimeZone'] = originTimeZone ?? '';
-    body['destinationTimeZone'] = destinationTimeZone ?? '';
-  }
   if (type == 'flight') {
     body['gate'] = gate ?? '';
     body['baggageClaim'] = baggageClaim ?? '';
@@ -556,12 +554,12 @@ class PlanProvider extends ChangeNotifier {
     required DateTime startTime,
     required DateTime endTime,
     required String timeZone,
+    required String startTimeZone,
+    required String endTimeZone,
     required String location,
     required String details,
     String? gate,
     String? baggageClaim,
-    String? originTimeZone,
-    String? destinationTimeZone,
     String? roomNumber,
     int? durationMinutes,
     required String? token,
@@ -581,12 +579,12 @@ class PlanProvider extends ChangeNotifier {
             startTime: startTime,
             endTime: endTime,
             timeZone: timeZone,
+            startTimeZone: startTimeZone,
+            endTimeZone: endTimeZone,
             location: location,
             details: details,
             gate: gate,
             baggageClaim: baggageClaim,
-            originTimeZone: originTimeZone,
-            destinationTimeZone: destinationTimeZone,
             roomNumber: roomNumber,
             planId: planId,
             durationMinutes: durationMinutes,
@@ -622,12 +620,12 @@ class PlanProvider extends ChangeNotifier {
     DateTime? startTime,
     DateTime? endTime,
     required String timeZone,
+    required String startTimeZone,
+    required String endTimeZone,
     required String location,
     required String details,
     String? gate,
     String? baggageClaim,
-    String? originTimeZone,
-    String? destinationTimeZone,
     String? roomNumber,
     int? durationMinutes,
     required String planId,
@@ -648,12 +646,12 @@ class PlanProvider extends ChangeNotifier {
             startTime: startTime,
             endTime: endTime,
             timeZone: timeZone,
+            startTimeZone: startTimeZone,
+            endTimeZone: endTimeZone,
             location: location,
             details: details,
             gate: gate,
             baggageClaim: baggageClaim,
-            originTimeZone: originTimeZone,
-            destinationTimeZone: destinationTimeZone,
             roomNumber: roomNumber,
             durationMinutes: durationMinutes,
           ),

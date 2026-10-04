@@ -51,7 +51,7 @@ describe('activityTypeFields', () => {
     expect(result.name).toBe('Inn');
     expect(result.location).toBe('Paris');
     expect(assertTypeRequirements('flight', result)).toBeTruthy();
-    expect(assertTypeRequirements('flight', result).message).toMatch(/originTimeZone/);
+    expect(assertTypeRequirements('flight', result).message).toMatch(/startTimeZone/);
 
     const withZones = applyTypeChange(hotel, 'flight', {
       originTimeZone: 'Europe/Paris',
@@ -111,7 +111,22 @@ describe('activityTypeFields', () => {
 
   test('train requires both time zones and other types do not', () => {
     expect(assertTypeRequirements('train', { originTimeZone: 'UTC' })).toBeTruthy();
+    expect(assertTypeRequirements('train', {
+      originTimeZone: 'UTC',
+      destinationTimeZone: 'Europe/Paris',
+    })).toBeNull();
+    expect(assertTypeRequirements('train', {
+      startTimeZone: 'UTC',
+      endTimeZone: 'Europe/Paris',
+    })).toBeNull();
+    expect(assertTypeRequirements('flight', {
+      startTimeZone: 'America/New_York',
+      endTimeZone: 'Europe/Paris',
+    })).toBeNull();
     expect(assertTypeRequirements('dining', {})).toBeNull();
     expect(assertTypeRequirements('hotel', {})).toBeNull();
+    expect(assertTypeRequirements('car_service', {})).toBeNull();
+    expect(specificFieldsFor('car_service')).not.toContain('roomNumber');
+    expect(specificFieldsFor('car_service')).not.toContain('originTimeZone');
   });
 });
