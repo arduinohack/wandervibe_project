@@ -196,6 +196,28 @@ String _detailsLabel(Activity activity) {
   return details;
 }
 
+class _PlusArrowIcon extends StatelessWidget {
+  final bool up;
+
+  const _PlusArrowIcon({required this.up});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = IconTheme.of(context).color;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.add, size: 18, color: color),
+        Icon(
+          up ? Icons.arrow_upward : Icons.arrow_downward,
+          size: 18,
+          color: color,
+        ),
+      ],
+    );
+  }
+}
+
 bool _sameInstant(DateTime? left, DateTime? right) {
   if (left == null || right == null) return left == null && right == null;
   return left.toUtc().isAtSameMomentAs(right.toUtc());
@@ -702,42 +724,33 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                     Expanded(
                       child: Text(
                         activity.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
                     ),
-                    if (canChange && activityId != null && activityId.isNotEmpty)
+                    if (canChange &&
+                        dragIndex != null &&
+                        activityId != null &&
+                        activityId.isNotEmpty) ...[
                       IconButton(
-                        tooltip: 'Edit activity',
-                        icon: const Icon(Icons.edit),
-                        onPressed: () => _openActivityEdit(activity),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text('Type: $type'),
-                Text('Start: ${itineraryClockLabel(times.start, startZone)}'),
-                Text('Duration: ${_durationLabel(activity)}'),
-                Text('End: ${itineraryClockLabel(times.end, endZone)}'),
-                Text('Details: $details'),
-                if (canChange &&
-                    dragIndex != null &&
-                    activityId != null &&
-                    activityId.isNotEmpty)
-                  Row(
-                    children: [
-                      TextButton(
+                        tooltip: 'Insert above',
+                        visualDensity: VisualDensity.compact,
+                        icon: const _PlusArrowIcon(up: true),
                         onPressed: () => _addActivity(
                           insertBefore: activityId,
                           insertIndex: dragIndex,
                           initialZone: startZone,
                           useDefaultStart: false,
                         ),
-                        child: const Text('Insert above'),
                       ),
-                      TextButton(
+                      IconButton(
+                        tooltip: 'Insert below',
+                        visualDensity: VisualDensity.compact,
+                        icon: const _PlusArrowIcon(up: false),
                         onPressed: () => _addActivity(
                           insertAfter: activityId,
                           insertIndex: dragIndex + 1,
@@ -745,10 +758,27 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                           initialZone: endZone,
                           useDefaultStart: false,
                         ),
-                        child: const Text('Insert below'),
+                      ),
+                      IconButton(
+                        tooltip: 'Edit activity',
+                        visualDensity: VisualDensity.compact,
+                        icon: const Icon(Icons.edit),
+                        onPressed: () => _openActivityEdit(activity),
                       ),
                     ],
-                  ),
+                  ],
+                ),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    Text('Type: $type'),
+                    Text('Start: ${_pdfClock(times.start, startZone)}'),
+                    Text('Duration: ${_durationLabel(activity)}'),
+                    Text('End: ${_pdfClock(times.end, endZone)}'),
+                    Text('Details: $details'),
+                  ],
+                ),
               ],
             ),
           ),
