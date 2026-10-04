@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
 import '../models/activity.dart';
 import '../models/plan.dart';
@@ -7,6 +8,7 @@ import '../providers/plan_provider.dart';
 import '../providers/user_provider.dart';
 import '../utils/activity_chain.dart';
 import '../utils/activity_time.dart';
+import '../utils/plan_pdf.dart';
 import 'login_screen.dart';
 
 const activityTypes = [
@@ -169,6 +171,14 @@ String? _localDayKey(DateTime? instant, String zone) {
   return '$year-$month-$day';
 }
 
+String _pdfClock(DateTime? instant, String zone) {
+  if (instant == null) return 'not set';
+  final abbreviation = zoneAbbreviation(instant, zone).trim();
+  final clock = itineraryClockLabel(instant, zone);
+  if (abbreviation.isEmpty) return clock;
+  return '$clock $abbreviation';
+}
+
 String _durationLabel(Activity activity) {
   final minutes = activity.duration?.inMinutes;
   if (minutes != null) return '$minutes min';
@@ -178,6 +188,12 @@ String _durationLabel(Activity activity) {
     return '${end.difference(start).inMinutes} min';
   }
   return 'not set';
+}
+
+String _detailsLabel(Activity activity) {
+  final details = activity.details?.trim() ?? '';
+  if (details.isEmpty) return 'not set';
+  return details;
 }
 
 bool _sameInstant(DateTime? left, DateTime? right) {
@@ -570,6 +586,52 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     }
   }
 
+  Future<void> _printPlan(Plan plan) async {
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final messenger = ScaffoldMessenger.of(context);
+    final activities = planProvider.itineraryActivities;
+    final shownTimes = _shownActivityTimes(activities);
+    final dayHeaders = _dayHeaders(activities, shownTimes, plan.timeZone);
+    final rows = <PlanPdfRow>[
+      for (var index = 0; index < activities.length; index++)
+        PlanPdfRow(
+          dayHeader: dayHeaders[index],
+          type: activities[index].typeLabel.isEmpty
+              ? activities[index].type.name
+              : activities[index].typeLabel,
+          start: _pdfClock(
+            shownTimes[index].start,
+            _activityStartZone(activities[index], plan.timeZone),
+          ),
+          duration: _durationLabel(activities[index]),
+          end: _pdfClock(
+            shownTimes[index].end,
+            _activityEndZone(activities[index], plan.timeZone),
+          ),
+          name: activities[index].name,
+          details: _detailsLabel(activities[index]),
+        ),
+    ];
+    try {
+      final bytes = await buildPlanPdf(
+        name: plan.name,
+        destination: plan.destination,
+        start: formatPlanDate(plan.startDate),
+        end: formatPlanDate(plan.endDate),
+        rows: rows,
+      );
+      await Printing.sharePdf(
+        bytes: bytes,
+        filename: planPdfFilename(plan.name),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Could not print plan')),
+      );
+    }
+  }
+
   Future<void> _resortByStartTime() async {
     final planProvider = Provider.of<PlanProvider>(context, listen: false);
     final userProvider = Provider.of<UserProvider>(context, listen: false);
@@ -608,7 +670,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     final activityId = activity.id;
     final startZone = _activityStartZone(activity, planZone);
     final endZone = _activityEndZone(activity, planZone);
-    final details = activity.details?.trim() ?? '';
+    final details = _detailsLabel(activity);
     return Column(
       key: blockKey,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -659,7 +721,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                 Text('Start: ${itineraryClockLabel(times.start, startZone)}'),
                 Text('Duration: ${_durationLabel(activity)}'),
                 Text('End: ${itineraryClockLabel(times.end, endZone)}'),
-                Text('Details: ${details.isEmpty ? 'not set' : details}'),
+                Text('Details: $details'),
                 if (canChange &&
                     dragIndex != null &&
                     activityId != null &&
@@ -777,6 +839,10 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
+                          ),
+                          TextButton(
+                            onPressed: () => _printPlan(shown),
+                            child: const Text('Print'),
                           ),
                           if (canChange)
                             TextButton(
