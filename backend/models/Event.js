@@ -6,6 +6,13 @@ const eventSchema = new mongoose.Schema({
   _id: { type: String, default: uuidv4 },  // Auto-generate UUID string (or omit for ObjectId)
   name: { type: String, required: true },
   location: { type: String, default: '' },  // Fixed: Optional with default
+  googlePlaceId: {
+    type: String,
+    set(value) {
+      if (value == null) return '';
+      return String(value).trim();
+    },
+  },
   type: { type: String, required: true },  // 'flight', 'hotel', etc.
   cost: { type: Number, default: 0 },
   startTime: { type: Date },

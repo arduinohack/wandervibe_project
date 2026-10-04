@@ -3,6 +3,7 @@ const SHARED_FIELDS = [
   'startTime',
   'endTime',
   'location',
+  'googlePlaceId',
   'details',
   'cost',
   'costType',
