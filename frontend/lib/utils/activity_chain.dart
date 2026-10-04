@@ -1,15 +1,3 @@
-class ActivityChainInput {
-  final DateTime? start;
-  final DateTime? end;
-  final int? durationMinutes;
-
-  const ActivityChainInput({
-    required this.start,
-    required this.end,
-    required this.durationMinutes,
-  });
-}
-
 class ActivityChainTime {
   final DateTime? start;
   final DateTime? end;
@@ -17,29 +5,19 @@ class ActivityChainTime {
   const ActivityChainTime({required this.start, required this.end});
 }
 
-/// Times for [activities] in their current order.
-/// A start that is already set stays, and so does that activity's end.
-/// A cleared start uses the previous activity's end, or its start when that
-/// end is missing. The first activity's cleared start stays empty.
-List<ActivityChainTime> chainActivityTimes(List<ActivityChainInput> activities) {
-  final chained = <ActivityChainTime>[];
-  for (var index = 0; index < activities.length; index++) {
-    final activity = activities[index];
-    if (activity.start != null) {
-      chained.add(ActivityChainTime(start: activity.start, end: activity.end));
-      continue;
-    }
-    if (index == 0) {
-      chained.add(ActivityChainTime(start: null, end: activity.end));
-      continue;
-    }
-    final previous = chained[index - 1];
-    chained.add(
-      ActivityChainTime(
-        start: previous.end ?? previous.start,
-        end: activity.end,
-      ),
-    );
-  }
-  return chained;
+/// Times for one activity dropped after a target.
+/// The start is the target's end, or the target's start when that end is
+/// missing. A duration sets the end to the new start plus those minutes.
+/// Otherwise the end is the new start. A target with no time returns null.
+ActivityChainTime? timesAfterTarget({
+  required DateTime? targetStart,
+  required DateTime? targetEnd,
+  required int? durationMinutes,
+}) {
+  final start = targetEnd ?? targetStart;
+  if (start == null) return null;
+  final end = durationMinutes == null
+      ? start
+      : start.add(Duration(minutes: durationMinutes));
+  return ActivityChainTime(start: start, end: end);
 }

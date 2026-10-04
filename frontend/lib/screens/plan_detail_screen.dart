@@ -500,66 +500,63 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     if (oldIndex < 0 || oldIndex >= ordered.length || newIndex < 0 || newIndex >= ordered.length) {
       return;
     }
+    if (newIndex == 0) return;
     final moved = ordered.removeAt(oldIndex);
     ordered.insert(newIndex, moved);
-    final chained = chainActivityTimes([
-      for (final activity in ordered)
-        ActivityChainInput(
-          start: activity.startTime,
-          end: activity.endTime,
-          durationMinutes: activity.duration?.inMinutes,
-        ),
-    ]);
+    final target = ordered[newIndex - 1];
+    final times = timesAfterTarget(
+      targetStart: target.startTime,
+      targetEnd: target.endTime,
+      durationMinutes: moved.duration?.inMinutes,
+    );
+    if (times == null || times.start == null) return;
+    if (_sameInstant(moved.startTime, times.start) &&
+        _sameInstant(moved.endTime, times.end)) {
+      return;
+    }
+    final activityId = moved.id;
+    if (activityId == null || activityId.isEmpty) return;
     planProvider.replaceItineraryActivities([
       for (var index = 0; index < ordered.length; index++)
-        _activityWithTimes(ordered[index], chained[index].start, chained[index].end),
+        if (index == newIndex)
+          _activityWithTimes(moved, times.start, times.end)
+        else
+          ordered[index],
     ]);
     _applyingOrder = true;
     final planZone = _shownPlan(planProvider).timeZone;
     try {
-      for (var index = 0; index < ordered.length; index++) {
-        final activity = ordered[index];
-        final times = chained[index];
-        if (_sameInstant(activity.startTime, times.start) &&
-            _sameInstant(activity.endTime, times.end)) {
-          continue;
-        }
-        final activityId = activity.id;
-        if (activityId == null || activityId.isEmpty || times.start == null) continue;
-        final startZone = _activityStartZone(activity, planZone);
-        final status = await planProvider.updateActivity(
-          activityId: activityId,
-          name: activity.name,
-          type: _activityTypeName(activity),
-          startTime: times.start,
-          endTime: times.end,
-          timeZone: startZone,
-          startTimeZone: startZone,
-          endTimeZone: _activityEndZone(activity, planZone),
-          location: activity.location ?? '',
-          details: activity.details ?? '',
-          gate: activity.gate,
-          baggageClaim: activity.baggageClaim,
-          roomNumber: activity.roomNumber,
-          durationMinutes: activity.duration?.inMinutes,
-          planId: widget.plan.id,
-          token: userProvider.token,
+      final status = await planProvider.updateActivity(
+        activityId: activityId,
+        name: moved.name,
+        type: _activityTypeName(moved),
+        startTime: times.start,
+        endTime: times.end,
+        timeZone: _activityStartZone(moved, planZone),
+        startTimeZone: _activityStartZone(moved, planZone),
+        endTimeZone: _activityEndZone(moved, planZone),
+        location: moved.location ?? '',
+        details: moved.details ?? '',
+        gate: moved.gate,
+        baggageClaim: moved.baggageClaim,
+        roomNumber: moved.roomNumber,
+        durationMinutes: moved.duration?.inMinutes,
+        planId: widget.plan.id,
+        token: userProvider.token,
+      );
+      if (!mounted) return;
+      if (status == 401) {
+        await _endSession(userProvider, planProvider, navigator);
+        return;
+      }
+      if (status == 403) {
+        messenger.showSnackBar(const SnackBar(content: Text('Not allowed')));
+        return;
+      }
+      if (status != 200) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Could not update activity')),
         );
-        if (!mounted) return;
-        if (status == 401) {
-          await _endSession(userProvider, planProvider, navigator);
-          return;
-        }
-        if (status == 403) {
-          messenger.showSnackBar(const SnackBar(content: Text('Not allowed')));
-          return;
-        }
-        if (status != 200) {
-          messenger.showSnackBar(
-            const SnackBar(content: Text('Could not update activity')),
-          );
-          return;
-        }
       }
     } finally {
       _applyingOrder = false;
