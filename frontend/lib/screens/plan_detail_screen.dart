@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -943,8 +944,10 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                       const SizedBox(height: 8),
                       Text('Destination: ${shown.destination}'),
                       if (roleText != null) Text('Role: $roleText'),
-                      Text('Budget: \$${shown.budget}'),
-                      Text('Actual cost: \$${_planActualCost(activities)}'),
+                      Text('Budget: ${formatPlanMoney(shown.budget)}'),
+                      Text(
+                        'Activity costs: ${formatPlanMoney(_planActualCost(activities))}',
+                      ),
                       Text(
                         'Dates: ${formatPlanDate(shown.startDate)} - ${formatPlanDate(shown.endDate)}',
                       ),
@@ -1024,6 +1027,14 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
       ),
     );
   }
+}
+
+String formatPlanMoney(num amount) {
+  return NumberFormat.currency(
+    locale: 'en_US',
+    symbol: r'$',
+    decimalDigits: 2,
+  ).format(amount);
 }
 
 double _planActualCost(List<Activity> activities) {
