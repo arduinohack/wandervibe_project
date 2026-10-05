@@ -944,6 +944,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                       Text('Destination: ${shown.destination}'),
                       if (roleText != null) Text('Role: $roleText'),
                       Text('Budget: \$${shown.budget}'),
+                      Text('Actual cost: \$${_planActualCost(activities)}'),
                       Text(
                         'Dates: ${formatPlanDate(shown.startDate)} - ${formatPlanDate(shown.endDate)}',
                       ),
@@ -1023,6 +1024,15 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
       ),
     );
   }
+}
+
+double _planActualCost(List<Activity> activities) {
+  var total = 0.0;
+  for (final activity in activities) {
+    final cost = activity.cost;
+    if (cost != null) total += cost;
+  }
+  return total;
 }
 
 String _costBoxText(double? cost) {
