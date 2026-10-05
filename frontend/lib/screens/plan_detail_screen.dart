@@ -499,6 +499,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
       location: draft.location,
       googlePlaceId: draft.googlePlaceId,
       details: draft.details,
+      bookingReference: draft.bookingReference,
       cost: draft.cost,
       costType: draft.costType,
       gate: draft.gate,
@@ -608,6 +609,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
         location: moved.location ?? '',
         googlePlaceId: moved.googlePlaceId,
         details: moved.details ?? '',
+        bookingReference: (moved.bookingReference ?? '').trim(),
         cost: moved.cost,
         costType: _storedCostType(moved),
         gate: moved.gate,
@@ -1068,6 +1070,7 @@ class _ActivityFields {
   final String location;
   final String googlePlaceId;
   final String details;
+  final String bookingReference;
   final double? cost;
   final String costType;
   final String? gate;
@@ -1089,6 +1092,7 @@ class _ActivityFields {
     required this.location,
     required this.googlePlaceId,
     required this.details,
+    required this.bookingReference,
     required this.cost,
     required this.costType,
     this.gate,
@@ -1150,6 +1154,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
   late final TextEditingController _locationController;
   late final TextEditingController _googlePlaceIdController;
   late final TextEditingController _detailsController;
+  late final TextEditingController _bookingReferenceController;
   late final TextEditingController _costController;
   late String _costType;
   late final TextEditingController _gateController;
@@ -1199,6 +1204,9 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       text: activity?.googlePlaceId ?? '',
     );
     _detailsController = TextEditingController(text: activity?.details ?? '');
+    _bookingReferenceController = TextEditingController(
+      text: (activity?.bookingReference ?? '').trim(),
+    );
     _costController = TextEditingController(text: _costBoxText(activity?.cost));
     _costType = _storedCostType(activity);
     _gateController = TextEditingController(text: activity?.gate ?? '');
@@ -1258,6 +1266,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     _locationController.dispose();
     _googlePlaceIdController.dispose();
     _detailsController.dispose();
+    _bookingReferenceController.dispose();
     _costController.dispose();
     _gateController.dispose();
     _baggageController.dispose();
@@ -1404,6 +1413,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       location: _locationController.text.trim(),
       googlePlaceId: _googlePlaceIdController.text.trim(),
       details: _detailsController.text.trim(),
+      bookingReference: _bookingReferenceController.text.trim(),
       cost: cost,
       costType: _costType,
       gate: _usesFlightFields ? _gateController.text.trim() : null,
@@ -1453,6 +1463,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       location: fields.location,
       googlePlaceId: fields.googlePlaceId,
       details: fields.details,
+      bookingReference: fields.bookingReference,
       cost: fields.cost,
       costType: fields.costType,
       gate: fields.gate,
@@ -1599,6 +1610,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
         _textField(_locationController, 'Location'),
         _textField(_googlePlaceIdController, 'Google Place ID'),
         _textField(_detailsController, 'Details'),
+        _textField(_bookingReferenceController, 'Booking reference'),
         _textField(_costController, 'Cost', decimal: true),
         const SizedBox(height: 12),
         SegmentedButton<String>(

@@ -94,7 +94,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
       _detailsController.text = e.details ?? '';
       _customTypeController.text = e.customType ?? '';
       _serviceProviderController.text = e.serviceProvider ?? '';
-      _bookingReferenceController.text = e.bookingReference ?? '';
+      _bookingReferenceController.text = (e.bookingReference ?? '').trim();
       _startTime = e.startTime;
       _startTimeController.text = _startTime != null
           ? _dateTimeFormat.format(_startTime!)
@@ -234,9 +234,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
       serviceProvider: _serviceProviderController.text.isEmpty
           ? null
           : _serviceProviderController.text,
-      bookingReference: _bookingReferenceController.text.isEmpty
-          ? null
-          : _bookingReferenceController.text,
+      bookingReference: _bookingReferenceController.text.trim(),
       subActivities: _subActivities,
       urlLinks: _urlLinks,
     );
@@ -474,14 +472,15 @@ class _ActivityScreenState extends State<ActivityScreen> {
                     labelText: _type?.serviceProviderLabel ?? '',
                   ),
                 ),
-                TextFormField(
-                  controller: _bookingReferenceController,
-                  decoration: InputDecoration(
-                    labelText: _type?.bookingReferenceLabel ?? '',
-                  ),
-                ),
                 const SizedBox(height: 16),
               ],
+              TextFormField(
+                controller: _bookingReferenceController,
+                decoration: const InputDecoration(
+                  labelText: 'Booking reference',
+                ),
+              ),
+              const SizedBox(height: 16),
               TextFormField(
                 controller: _detailsController,
                 decoration: const InputDecoration(labelText: 'Details'),
