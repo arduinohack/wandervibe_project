@@ -742,6 +742,11 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
   }
 
   Future<void> _printPlan(Plan plan) async {
+    final landscape = await showDialog<bool>(
+      context: context,
+      builder: (context) => const _PrintOrientationDialog(),
+    );
+    if (landscape == null || !mounted) return;
     final planProvider = Provider.of<PlanProvider>(context, listen: false);
     final messenger = ScaffoldMessenger.of(context);
     final activities = planProvider.itineraryActivities;
@@ -749,22 +754,11 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     final dayHeaders = _dayHeaders(activities, shownTimes, plan.timeZone);
     final rows = <PlanPdfRow>[
       for (var index = 0; index < activities.length; index++)
-        PlanPdfRow(
-          dayHeader: dayHeaders[index],
-          type: activities[index].typeLabel.isEmpty
-              ? activities[index].type.name
-              : activities[index].typeLabel,
-          start: _pdfClock(
-            shownTimes[index].start,
-            _activityStartZone(activities[index], plan.timeZone),
-          ),
-          duration: _durationLabel(activities[index]),
-          end: _pdfClock(
-            shownTimes[index].end,
-            _activityEndZone(activities[index], plan.timeZone),
-          ),
-          name: activities[index].name,
-          details: _detailsLabel(activities[index]),
+        _pdfActivityRow(
+          activities[index],
+          shownTimes[index],
+          dayHeaders[index],
+          plan.timeZone,
         ),
     ];
     try {
@@ -774,6 +768,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
         start: formatPlanDate(plan.startDate),
         end: formatPlanDate(plan.endDate),
         rows: rows,
+        landscape: landscape,
       );
       await Printing.sharePdf(
         bytes: bytes,
@@ -1127,6 +1122,56 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
       ),
     );
   }
+}
+
+String _pdfUrlLinks(Activity activity) {
+  final parts = <String>[];
+  for (final link in activity.urlLinks) {
+    final url = link.linkUrl.trim();
+    if (url.isEmpty) continue;
+    final name = link.linkName.trim();
+    parts.add(name.isEmpty ? url : '$name ($url)');
+  }
+  return parts.join(' ');
+}
+
+PlanPdfRow _pdfActivityRow(
+  Activity activity,
+  _ShownActivityTimes times,
+  String? dayHeader,
+  String planZone,
+) {
+  final storedType = activity.typeLabel.trim().isEmpty
+      ? activity.type.name
+      : activity.typeLabel.trim();
+  final cost = activity.cost;
+  return PlanPdfRow(
+    dayHeader: dayHeader,
+    type: activityTypeLabel(storedType),
+    name: activity.name.trim(),
+    start: _pdfClock(times.start, _activityStartZone(activity, planZone)),
+    end: _pdfClock(times.end, _activityEndZone(activity, planZone)),
+    duration: _durationLabel(activity),
+    startZone: activity.startTimeZone.trim(),
+    endZone: activity.endTimeZone.trim(),
+    location: activity.location?.trim() ?? '',
+    details: _detailsLabel(activity),
+    googlePlaceId: activity.googlePlaceId.trim(),
+    bookingReference: activity.bookingReference?.trim() ?? '',
+    cost: cost == null ? '' : formatPlanMoney(cost),
+    costType: cost == null
+        ? ''
+        : activity.costType == CostType.actual
+        ? 'Actual'
+        : 'Estimated',
+    gate: activity.gate?.trim() ?? '',
+    baggageClaim: activity.baggageClaim?.trim() ?? '',
+    roomNumber: activity.roomNumber?.trim() ?? '',
+    serviceProvider: activity.serviceProvider?.trim() ?? '',
+    status: _cardStatusLabel(activity.status) ?? '',
+    customType: activity.customType?.trim() ?? '',
+    urlLinks: _pdfUrlLinks(activity),
+  );
 }
 
 String formatPlanMoney(num amount) {
@@ -1772,6 +1817,46 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
           child: const Text('Cancel'),
         ),
         TextButton(onPressed: _submit, child: Text(widget.actionLabel)),
+      ],
+    );
+  }
+}
+
+class _PrintOrientationDialog extends StatefulWidget {
+  const _PrintOrientationDialog();
+
+  @override
+  State<_PrintOrientationDialog> createState() =>
+      _PrintOrientationDialogState();
+}
+
+class _PrintOrientationDialogState extends State<_PrintOrientationDialog> {
+  bool _landscape = true;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Print'),
+      content: SegmentedButton<bool>(
+        showSelectedIcon: false,
+        segments: const [
+          ButtonSegment(value: false, label: Text('Portrait')),
+          ButtonSegment(value: true, label: Text('Landscape')),
+        ],
+        selected: {_landscape},
+        onSelectionChanged: (next) {
+          setState(() => _landscape = next.first);
+        },
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, _landscape),
+          child: const Text('Print'),
+        ),
       ],
     );
   }

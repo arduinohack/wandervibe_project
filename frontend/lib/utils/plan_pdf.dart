@@ -7,11 +7,25 @@ import 'package:pdf/widgets.dart' as pw;
 class PlanPdfRow {
   final String? dayHeader;
   final String type;
-  final String start;
-  final String duration;
-  final String end;
   final String name;
+  final String start;
+  final String end;
+  final String duration;
+  final String startZone;
+  final String endZone;
+  final String location;
   final String details;
+  final String googlePlaceId;
+  final String bookingReference;
+  final String cost;
+  final String costType;
+  final String gate;
+  final String baggageClaim;
+  final String roomNumber;
+  final String serviceProvider;
+  final String status;
+  final String customType;
+  final String urlLinks;
 
   /// False opens [dayHeader] with no activity row.
   final bool includeRow;
@@ -19,13 +33,50 @@ class PlanPdfRow {
   const PlanPdfRow({
     required this.dayHeader,
     required this.type,
-    required this.start,
-    required this.duration,
-    required this.end,
     required this.name,
+    required this.start,
+    required this.end,
+    required this.duration,
+    required this.startZone,
+    required this.endZone,
+    required this.location,
     required this.details,
+    required this.googlePlaceId,
+    required this.bookingReference,
+    required this.cost,
+    required this.costType,
+    required this.gate,
+    required this.baggageClaim,
+    required this.roomNumber,
+    required this.serviceProvider,
+    required this.status,
+    required this.customType,
+    required this.urlLinks,
     this.includeRow = true,
   });
+
+  List<String> get cells => [
+    type,
+    name,
+    start,
+    end,
+    duration,
+    startZone,
+    endZone,
+    location,
+    details,
+    googlePlaceId,
+    bookingReference,
+    cost,
+    costType,
+    gate,
+    baggageClaim,
+    roomNumber,
+    serviceProvider,
+    status,
+    customType,
+    urlLinks,
+  ];
 }
 
 /// File name taken from the plan name, safe to share or download.
@@ -46,7 +97,28 @@ class _PdfDay {
   _PdfDay(this.header, this.activities);
 }
 
-const _dayColumns = ['Type', 'Start', 'Duration', 'End', 'Name', 'Details'];
+const _dayColumns = [
+  'Type',
+  'Name',
+  'Start',
+  'End',
+  'Duration',
+  'Start zone',
+  'End zone',
+  'Location',
+  'Details',
+  'Google Place ID',
+  'Booking reference',
+  'Cost',
+  'Cost type',
+  'Gate',
+  'Baggage claim',
+  'Room number',
+  'Service provider',
+  'Status',
+  'Custom type',
+  'URL links',
+];
 
 String _tableCell(String value) {
   if (value.trim() == 'not set') return '';
@@ -72,14 +144,7 @@ pw.Widget _dayTable(List<PlanPdfRow> activities) {
     headers: _dayColumns,
     data: [
       for (final row in activities)
-        [
-          _tableCell(row.type),
-          _tableCell(row.start),
-          _tableCell(row.duration),
-          _tableCell(row.end),
-          _tableCell(row.name),
-          _tableCell(row.details),
-        ],
+        [for (final cell in row.cells) _tableCell(cell)],
     ],
     border: pw.TableBorder.all(width: 0.4),
     headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10),
@@ -99,12 +164,13 @@ Future<Uint8List> buildPlanPdf({
   required String start,
   required String end,
   required List<PlanPdfRow> rows,
+  bool landscape = true,
 }) async {
   final document = pw.Document();
   final days = _daysInOrder(rows);
   document.addPage(
     pw.MultiPage(
-      pageFormat: PdfPageFormat.a4,
+      pageFormat: landscape ? PdfPageFormat.a4.landscape : PdfPageFormat.a4,
       build: (context) {
         final blocks = <pw.Widget>[
           pw.Text(
