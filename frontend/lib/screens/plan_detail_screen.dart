@@ -240,18 +240,32 @@ String? _cardDurationLabel(Activity activity) {
   return null;
 }
 
-void _addCardLine(List<String> lines, String label, String? value) {
-  final text = value?.trim() ?? '';
-  if (text.isEmpty || text == 'not set') return;
-  lines.add('$label: $text');
+Widget _cardLine(String label, String value) {
+  return Text.rich(
+    TextSpan(
+      children: [
+        TextSpan(
+          text: '$label: ',
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        TextSpan(text: value),
+      ],
+    ),
+  );
 }
 
-List<String> _activityCardLines(
+void _addCardLine(List<Widget> lines, String label, String? value) {
+  final text = value?.trim() ?? '';
+  if (text.isEmpty || text == 'not set') return;
+  lines.add(_cardLine(label, text));
+}
+
+List<Widget> _activityCardLines(
   Activity activity,
   _ShownActivityTimes times,
   String planZone,
 ) {
-  final lines = <String>[];
+  final lines = <Widget>[];
   final storedType = activity.typeLabel.trim().isEmpty
       ? activity.type.name
       : activity.typeLabel.trim();
@@ -271,20 +285,14 @@ List<String> _activityCardLines(
     );
   }
   _addCardLine(lines, 'Duration', _cardDurationLabel(activity));
-  _addCardLine(lines, 'Start zone', activity.startTimeZone);
-  _addCardLine(lines, 'End zone', activity.endTimeZone);
   _addCardLine(lines, 'Location', activity.location);
   _addCardLine(lines, 'Details', activity.details);
   _addCardLine(lines, 'Google Place ID', activity.googlePlaceId);
   _addCardLine(lines, 'Booking reference', activity.bookingReference);
   final cost = activity.cost;
   if (cost != null) {
-    _addCardLine(lines, 'Cost', formatPlanMoney(cost));
-    _addCardLine(
-      lines,
-      'Cost type',
-      activity.costType == CostType.actual ? 'Actual' : 'Estimated',
-    );
+    final mark = activity.costType == CostType.actual ? 'act' : 'est';
+    _addCardLine(lines, 'Cost($mark)', formatPlanMoney(cost));
   }
   _addCardLine(lines, 'Gate', activity.gate);
   _addCardLine(lines, 'Baggage claim', activity.baggageClaim);
@@ -296,7 +304,7 @@ List<String> _activityCardLines(
     final url = link.linkUrl.trim();
     if (url.isEmpty) continue;
     final name = link.linkName.trim();
-    lines.add(name.isEmpty ? 'Link: $url' : 'Link: $name ($url)');
+    _addCardLine(lines, 'Link', name.isEmpty ? url : '$name ($url)');
   }
   return lines;
 }
@@ -905,9 +913,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                 Wrap(
                   spacing: 8,
                   runSpacing: 4,
-                  children: [
-                    for (final line in lines) Text(line),
-                  ],
+                  children: lines,
                 ),
               ],
             ),
