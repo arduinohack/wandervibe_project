@@ -6,13 +6,14 @@ const cors = require('cors');
 
 const app = express();
 
-// Admin page origins stay allowed in every environment.
-// Development (and an unset NODE_ENV) also allows Flutter web on any localhost port.
-// Requests with no Origin (native app, curl) stay allowed. Never emit *.
+// These origins stay allowed in every environment.
+// Development (and an unset NODE_ENV) also allows http://localhost and
+// http://127.0.0.1 on any port. Requests with no Origin stay allowed. Never emit *.
 const adminOrigins = new Set([
   'http://localhost:5500',
   'http://127.0.0.1:5500',
   'http://localhost:8080',
+  'http://192.168.1.140:8081',
 ]);
 
 const devLocalOrigin = /^http:\/\/(?:localhost|127\.0\.0\.1):\d+$/;

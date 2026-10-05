@@ -2,6 +2,7 @@ const request = require('supertest');
 const app = require('../app');
 
 const flutterOrigin = 'http://localhost:63582';
+const flutterWebOrigin = 'http://192.168.1.140:8081';
 const adminOrigins = [
   'http://localhost:5500',
   'http://127.0.0.1:5500',
@@ -66,9 +67,22 @@ describe('browser CORS', () => {
     expect(foreign.headers['access-control-allow-origin']).toBeUndefined();
   });
 
-  test('production allows only the admin origins', async () => {
+  test('development and production allow the Flutter web LAN origin', async () => {
+    for (const env of ['development', 'production']) {
+      process.env.NODE_ENV = env;
+      const response = await preflight(flutterWebOrigin);
+      expect(response.status).toBe(204);
+      expect(response.headers['access-control-allow-origin']).toBe(flutterWebOrigin);
+      expect(response.headers['access-control-allow-origin']).not.toBe('*');
+
+      const unknown = await preflight('http://192.168.1.141:8081');
+      expect(unknown.headers['access-control-allow-origin']).toBeUndefined();
+    }
+  });
+
+  test('production allows the admin origins and the Flutter web LAN origin', async () => {
     process.env.NODE_ENV = 'production';
-    for (const origin of adminOrigins) {
+    for (const origin of [...adminOrigins, flutterWebOrigin]) {
       const response = await preflight(origin);
       expect(response.status).toBe(204);
       expect(response.headers['access-control-allow-origin']).toBe(origin);
