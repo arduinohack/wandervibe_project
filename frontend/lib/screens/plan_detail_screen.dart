@@ -216,6 +216,91 @@ String _detailsLabel(Activity activity) {
   return details;
 }
 
+String? _cardStatusLabel(String? status) {
+  final text = status?.trim() ?? '';
+  if (text.isEmpty) return null;
+  switch (text.toLowerCase()) {
+    case 'draft':
+      return 'Draft';
+    case 'complete':
+      return 'Complete';
+    default:
+      return text;
+  }
+}
+
+String? _cardDurationLabel(Activity activity) {
+  final minutes = activity.duration?.inMinutes;
+  if (minutes != null) return '$minutes min';
+  final start = activity.startTime;
+  final end = activity.endTime;
+  if (start != null && end != null) {
+    return '${end.difference(start).inMinutes} min';
+  }
+  return null;
+}
+
+void _addCardLine(List<String> lines, String label, String? value) {
+  final text = value?.trim() ?? '';
+  if (text.isEmpty || text == 'not set') return;
+  lines.add('$label: $text');
+}
+
+List<String> _activityCardLines(
+  Activity activity,
+  _ShownActivityTimes times,
+  String planZone,
+) {
+  final lines = <String>[];
+  final storedType = activity.typeLabel.trim().isEmpty
+      ? activity.type.name
+      : activity.typeLabel.trim();
+  _addCardLine(lines, 'Type', activityTypeLabel(storedType));
+  if (times.start != null) {
+    _addCardLine(
+      lines,
+      'Start',
+      _pdfClock(times.start, _activityStartZone(activity, planZone)),
+    );
+  }
+  if (times.end != null) {
+    _addCardLine(
+      lines,
+      'End',
+      _pdfClock(times.end, _activityEndZone(activity, planZone)),
+    );
+  }
+  _addCardLine(lines, 'Duration', _cardDurationLabel(activity));
+  _addCardLine(lines, 'Start zone', activity.startTimeZone);
+  _addCardLine(lines, 'End zone', activity.endTimeZone);
+  _addCardLine(lines, 'Location', activity.location);
+  _addCardLine(lines, 'Details', activity.details);
+  _addCardLine(lines, 'Google Place ID', activity.googlePlaceId);
+  _addCardLine(lines, 'Booking reference', activity.bookingReference);
+  final cost = activity.cost;
+  if (cost != null) {
+    _addCardLine(lines, 'Cost', formatPlanMoney(cost));
+    _addCardLine(
+      lines,
+      'Cost type',
+      activity.costType == CostType.actual ? 'Actual' : 'Estimated',
+    );
+  }
+  _addCardLine(lines, 'Gate', activity.gate);
+  _addCardLine(lines, 'Baggage claim', activity.baggageClaim);
+  _addCardLine(lines, 'Room number', activity.roomNumber);
+  _addCardLine(lines, 'Service provider', activity.serviceProvider);
+  _addCardLine(lines, 'Status', _cardStatusLabel(activity.status));
+  _addCardLine(lines, 'Custom type', activity.customType);
+  for (final link in activity.urlLinks) {
+    final url = link.linkUrl.trim();
+    if (url.isEmpty) continue;
+    final name = link.linkName.trim();
+    lines.add(name.isEmpty ? 'Link: $url' : 'Link: $name ($url)');
+  }
+  return lines;
+}
+
 /// Driving directions when the activity has a stored Google Place ID.
 Uri? _activityDirectionsUri(Activity activity) {
   final placeId = activity.googlePlaceId.trim();
@@ -736,14 +821,10 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     required bool canChange,
     int? dragIndex,
   }) {
-    final storedType = activity.typeLabel.trim().isEmpty
-        ? activity.type.name
-        : activity.typeLabel.trim();
-    final type = activityTypeLabel(storedType);
     final activityId = activity.id;
     final startZone = _activityStartZone(activity, planZone);
     final endZone = _activityEndZone(activity, planZone);
-    final details = _detailsLabel(activity);
+    final lines = _activityCardLines(activity, times, planZone);
     return Column(
       key: blockKey,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -774,7 +855,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                       ),
                     Expanded(
                       child: Text(
-                        activity.name,
+                        activity.name.trim(),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
@@ -830,11 +911,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                   spacing: 8,
                   runSpacing: 4,
                   children: [
-                    Text('Type: $type'),
-                    Text('Start: ${_pdfClock(times.start, startZone)}'),
-                    Text('Duration: ${_durationLabel(activity)}'),
-                    Text('End: ${_pdfClock(times.end, endZone)}'),
-                    Text('Details: $details'),
+                    for (final line in lines) Text(line),
                   ],
                 ),
               ],
