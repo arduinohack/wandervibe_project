@@ -26,29 +26,37 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _login() async {
-    if (_formKey.currentState!.validate()) {
-      setState(() => _isLoading = true);
-      final userProvider = Provider.of<UserProvider>(context, listen: false);
-      final navigator = Navigator.of(context);
-      try {
-        await userProvider.login(
-          _emailController.text,
-          _passwordController.text,
-        ); // Calls provider
-        if (!mounted) return;
-        if (userProvider.token != null) {
-          navigator.pushReplacement(
-            MaterialPageRoute(builder: (context) => const HomeScreen()),
-          );
-        } else {
-          _showError('Login failed—try again');
-        }
-      } catch (e) {
-        if (!mounted) return;
-        _showError(_loginErrorText(e));
-      } finally {
-        setState(() => _isLoading = false);
+    final form = _formKey.currentState;
+    if (form == null) {
+      _showError('form was null');
+      return;
+    }
+    if (!form.validate()) return;
+    setState(() => _isLoading = true);
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final navigator = Navigator.of(context);
+    try {
+      final failure = await userProvider.login(
+        _emailController.text,
+        _passwordController.text,
+      );
+      if (!mounted) return;
+      if (failure != null) {
+        _showError(failure);
+        return;
       }
+      if (userProvider.token == null) {
+        _showError('token was null');
+        return;
+      }
+      navigator.pushReplacement(
+        MaterialPageRoute(builder: (context) => const HomeScreen()),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      _showError(_loginErrorText(e));
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 

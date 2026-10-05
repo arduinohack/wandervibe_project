@@ -1,19 +1,17 @@
 import 'package:flutter/foundation.dart'; // For ChangeNotifier
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart'; // For JWT storage
 import '../utils/logger.dart';
 import '../config/constants.dart'; // Add this line for backendBaseUrl
 import '../models/user.dart'; // Your User model with Address/Preferences
 import '../config/config.dart';
+import '../storage/token_store.dart';
 
 class UserProvider extends ChangeNotifier {
   String? currentUserId; // Current user ID
   UserRole? _currentUserRole; // Private stub role
   User? _currentUser; // Private full user object
   String? _jwtToken; // Stored token
-  final FlutterSecureStorage _storage =
-      const FlutterSecureStorage(); // Secure storage
 
   UserRole? get currentUserRole => _currentUserRole;
   User? get currentUser => _currentUser;
@@ -23,6 +21,13 @@ class UserProvider extends ChangeNotifier {
     final decoded = json.decode(body);
     if (decoded is Map) return Map<String, dynamic>.from(decoded);
     return <String, dynamic>{};
+  }
+
+  String _errorText(Object error) {
+    final text = error.toString();
+    const prefix = 'Exception: ';
+    if (text.startsWith(prefix)) return text.substring(prefix.length);
+    return text;
   }
 
   String _loginFailureMessage(http.Response response) {
@@ -39,8 +44,10 @@ class UserProvider extends ChangeNotifier {
     return 'Login failed: ${response.statusCode}';
   }
 
-  // Login with real backend (POST /api/auth/login)
-  Future<void> login(String email, String password) async {
+  // Login with real backend (POST /api/auth/login).
+  // Returns null on success. A missing required value returns its name
+  // and does not throw.
+  Future<String?> login(String email, String password) async {
     try {
       final timeoutDuration = Duration(seconds: await AppConfig.timeoutSeconds);
 
@@ -63,31 +70,35 @@ class UserProvider extends ChangeNotifier {
       if (response.statusCode == 200) {
         final data = _jsonObject(response.body);
         final tokenValue = data['token'];
-        if (tokenValue is! String || tokenValue.isEmpty) {
-          throw Exception('Login failed: missing token');
+        if (tokenValue is String && tokenValue.isNotEmpty) {
+          try {
+            await writeToken(tokenValue);
+          } catch (e) {
+            logger.e('Token storage error: $e');
+          }
+          final userValue = data['user'];
+          final userMap = userValue is Map
+              ? Map<String, dynamic>.from(userValue)
+              : <String, dynamic>{};
+          final user = User.fromJson(userMap);
+          _jwtToken = tokenValue;
+          currentUserId = user.id;
+          _currentUserRole =
+              UserRole.vibeCoordinator; // Stub; later from data['user']['role']
+          _currentUser = user;
+          notifyListeners();
+          final preview = tokenValue.length <= 20
+              ? tokenValue
+              : tokenValue.substring(0, 20);
+          logger.i('Logged in as $email with token: $preview...');
+          return null;
         }
-        final userValue = data['user'];
-        final userMap = userValue is Map
-            ? Map<String, dynamic>.from(userValue)
-            : <String, dynamic>{};
-        final user = User.fromJson(userMap);
-        _jwtToken = tokenValue;
-        await _storage.write(key: 'jwt_token', value: tokenValue);
-        currentUserId = user.id;
-        _currentUserRole =
-            UserRole.vibeCoordinator; // Stub; later from data['user']['role']
-        _currentUser = user;
-        notifyListeners();
-        final preview = tokenValue.length <= 20
-            ? tokenValue
-            : tokenValue.substring(0, 20);
-        logger.i('Logged in as $email with token: $preview...');
-      } else {
-        throw Exception(_loginFailureMessage(response));
+        return 'token was null';
       }
+      return _loginFailureMessage(response);
     } catch (e) {
       logger.e('Login error: $e');
-      rethrow; // Pass error to UI for SnackBar
+      return _errorText(e);
     }
   }
 
@@ -124,7 +135,11 @@ class UserProvider extends ChangeNotifier {
         final token = data['token'];
         if (token is String && token.isNotEmpty) {
           _jwtToken = token;
-          await _storage.write(key: 'jwt_token', value: token);
+          try {
+            await writeToken(token);
+          } catch (e) {
+            logger.e('Token storage error: $e');
+          }
           notifyListeners();
         }
         logger.i('Signup successful: ${data['msg'] ?? data['message']}');
@@ -166,7 +181,7 @@ class UserProvider extends ChangeNotifier {
     }
 
     // Always clear local storage
-    await _storage.delete(key: 'jwt_token');
+    await deleteToken();
     _jwtToken = null;
     currentUserId = null;
     _currentUserRole = null;
@@ -179,7 +194,7 @@ class UserProvider extends ChangeNotifier {
   Future<void> loadStoredToken() async {
     try {
       final timeoutDuration = Duration(seconds: await AppConfig.timeoutSeconds);
-      _jwtToken = await _storage.read(key: 'jwt_token');
+      _jwtToken = await readToken();
       if (_jwtToken != null) {
         // Verify token with backend
         final response = await http
