@@ -19,6 +19,26 @@ class UserProvider extends ChangeNotifier {
   User? get currentUser => _currentUser;
   String? get token => _jwtToken;
 
+  Map<String, dynamic> _jsonObject(String body) {
+    final decoded = json.decode(body);
+    if (decoded is Map) return Map<String, dynamic>.from(decoded);
+    return <String, dynamic>{};
+  }
+
+  String _loginFailureMessage(http.Response response) {
+    try {
+      final decoded = json.decode(response.body);
+      if (decoded is Map) {
+        final message = decoded['message'] ?? decoded['msg'];
+        if (message != null) {
+          final text = message.toString().trim();
+          if (text.isNotEmpty) return text;
+        }
+      }
+    } catch (_) {}
+    return 'Login failed: ${response.statusCode}';
+  }
+
   // Login with real backend (POST /api/auth/login)
   Future<void> login(String email, String password) async {
     try {
@@ -41,28 +61,29 @@ class UserProvider extends ChangeNotifier {
         'Flutter received body: ${response.body}',
       ); // Log response (JSON or error)
       if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        _jwtToken = data['token']; // From backend response
-        await _storage.write(
-          key: 'jwt_token',
-          value: _jwtToken,
-        ); // Store securely
-        currentUserId = data['user']['_id']; // From response
+        final data = _jsonObject(response.body);
+        final tokenValue = data['token'];
+        if (tokenValue is! String || tokenValue.isEmpty) {
+          throw Exception('Login failed: missing token');
+        }
+        final userValue = data['user'];
+        final userMap = userValue is Map
+            ? Map<String, dynamic>.from(userValue)
+            : <String, dynamic>{};
+        final user = User.fromJson(userMap);
+        _jwtToken = tokenValue;
+        await _storage.write(key: 'jwt_token', value: tokenValue);
+        currentUserId = user.id;
         _currentUserRole =
             UserRole.vibeCoordinator; // Stub; later from data['user']['role']
-        _currentUser = User.fromJson(data['user']); // Parse full user
+        _currentUser = user;
         notifyListeners();
-        logger.i(
-          'Logged in as $email with token: ${_jwtToken!.substring(0, 20)}...',
-        );
+        final preview = tokenValue.length <= 20
+            ? tokenValue
+            : tokenValue.substring(0, 20);
+        logger.i('Logged in as $email with token: $preview...');
       } else {
-        final data = json.decode(response.body);
-        final errorMessage =
-            data['message'] ??
-            'Login failed: ${response.statusCode}'; // Extract message from backend
-        throw Exception(
-          errorMessage,
-        ); // Throw with backend message for UI to show
+        throw Exception(_loginFailureMessage(response));
       }
     } catch (e) {
       logger.e('Login error: $e');

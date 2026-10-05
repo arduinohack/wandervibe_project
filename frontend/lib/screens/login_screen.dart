@@ -45,9 +45,7 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       } catch (e) {
         if (!mounted) return;
-        _showError(
-          e.toString(),
-        ); // Fixed: Shows backend message (e.g., "Invalid email or password")
+        _showError(_loginErrorText(e));
       } finally {
         setState(() => _isLoading = false);
       }
@@ -58,6 +56,13 @@ class _LoginScreenState extends State<LoginScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), backgroundColor: Colors.red),
     );
+  }
+
+  String _loginErrorText(Object error) {
+    final text = error.toString();
+    const prefix = 'Exception: ';
+    if (text.startsWith(prefix)) return text.substring(prefix.length);
+    return text;
   }
 
   // Helper: Compute onPressed based on fields (enable/disable logic)

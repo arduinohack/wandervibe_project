@@ -1,5 +1,20 @@
 enum UserRole { vibeCoordinator, vibePlanner, wanderer }
 
+String _text(dynamic value) {
+  if (value == null) return '';
+  return value.toString();
+}
+
+Map<String, dynamic> _objectMap(dynamic value) {
+  if (value is Map) return Map<String, dynamic>.from(value);
+  return <String, dynamic>{};
+}
+
+bool _boolOr(dynamic value, bool fallback) {
+  if (value is bool) return value;
+  return fallback;
+}
+
 class Address {
   final String street;
   final String city;
@@ -18,11 +33,11 @@ class Address {
   // From JSON
   factory Address.fromJson(Map<String, dynamic> json) {
     return Address(
-      street: json['street'] ?? '',
-      city: json['city'] ?? '',
-      state: json['state'] ?? '',
-      country: json['country'] ?? '',
-      postalCode: json['postalCode'] ?? '',
+      street: _text(json['street']),
+      city: _text(json['city']),
+      state: _text(json['state']),
+      country: _text(json['country']),
+      postalCode: _text(json['postalCode']),
     );
   }
 
@@ -47,8 +62,8 @@ class NotificationPreferences {
   // From JSON
   factory NotificationPreferences.fromJson(Map<String, dynamic> json) {
     return NotificationPreferences(
-      email: json['email'] ?? true,
-      sms: json['sms'] ?? false,
+      email: _boolOr(json['email'], true),
+      sms: _boolOr(json['sms'], false),
     );
   }
 
@@ -90,18 +105,17 @@ class User {
   // From JSON (for API responses)
   factory User.fromJson(Map<String, dynamic> json) {
     return User(
-      id: json['_id'] ?? '',
-      firstName: json['firstName'] ?? '',
-      lastName: json['lastName'] ?? '',
-      email: json['email'] ?? '',
-      phoneNumber: json['phoneNumber'] ?? '',
-      address: Address.fromJson(json['address'] ?? {}),
+      id: _text(json['_id'] ?? json['id']),
+      firstName: _text(json['firstName']),
+      lastName: _text(json['lastName']),
+      email: _text(json['email']),
+      phoneNumber: _text(json['phoneNumber']),
+      address: Address.fromJson(_objectMap(json['address'])),
       notificationPreferences: NotificationPreferences.fromJson(
-        json['notificationPreferences'] ?? {},
+        _objectMap(json['notificationPreferences']),
       ),
-      createdAt: DateTime.parse(
-        json['createdAt'] ?? DateTime.now().toIso8601String(),
-      ),
+      createdAt:
+          DateTime.tryParse(_text(json['createdAt'])) ?? DateTime.now(),
     );
   }
 
