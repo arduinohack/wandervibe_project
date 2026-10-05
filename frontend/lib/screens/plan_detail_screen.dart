@@ -1508,6 +1508,11 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
           backgroundColor: Colors.blue,
           actions: [
             IconButton(
+              tooltip: 'Save',
+              icon: const Icon(Icons.save),
+              onPressed: _submit,
+            ),
+            IconButton(
               tooltip: 'Delete activity',
               icon: const Icon(Icons.delete),
               onPressed: _delete,
@@ -1518,14 +1523,6 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
           padding: const EdgeInsets.all(16),
           children: [
             _fieldsColumn(),
-            const SizedBox(height: 24),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: _submit,
-                child: Text(widget.actionLabel),
-              ),
-            ),
           ],
         ),
       );
