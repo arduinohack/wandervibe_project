@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/activity.dart';
 import '../models/plan.dart';
 import '../models/plan_role_label.dart';
@@ -194,6 +195,25 @@ String _detailsLabel(Activity activity) {
   final details = activity.details?.trim() ?? '';
   if (details.isEmpty) return 'not set';
   return details;
+}
+
+/// Driving directions when the activity has a stored Google Place ID.
+Uri? _activityDirectionsUri(Activity activity) {
+  final placeId = activity.googlePlaceId.trim();
+  if (placeId.isEmpty) return null;
+  final location = activity.location?.trim() ?? '';
+  final name = activity.name.trim();
+  final destination = location.isNotEmpty
+      ? location
+      : name.isNotEmpty
+          ? name
+          : placeId;
+  return Uri.https('www.google.com', '/maps/dir/', {
+    'api': '1',
+    'destination': destination,
+    'destination_place_id': placeId,
+    'travelmode': 'driving',
+  });
 }
 
 class _PlusArrowIcon extends StatelessWidget {
@@ -735,6 +755,13 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                         ),
                       ),
                     ),
+                    if (_activityDirectionsUri(activity) != null)
+                      IconButton(
+                        tooltip: 'Directions',
+                        visualDensity: VisualDensity.compact,
+                        icon: const Icon(Icons.map),
+                        onPressed: () => _openDirections(activity),
+                      ),
                     if (canChange &&
                         dragIndex != null &&
                         activityId != null &&
@@ -788,6 +815,25 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
         ),
       ],
     );
+  }
+
+  Future<void> _openDirections(Activity activity) async {
+    final uri = _activityDirectionsUri(activity);
+    if (uri == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!opened && mounted) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Could not open directions')),
+        );
+      }
+    } catch (_) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Could not open directions')),
+      );
+    }
   }
 
   Future<void> _openPlanEdit(Plan plan) async {
