@@ -19,6 +19,55 @@ double? _parsedCost(String text) {
   return double.tryParse(trimmed);
 }
 
+String _activityScreenTypeLabel(ActivityType type) {
+  switch (type) {
+    case ActivityType.flight:
+      return 'Flight';
+    case ActivityType.train:
+      return 'Train';
+    case ActivityType.carRental:
+      return 'Car Rental';
+    case ActivityType.carService:
+      return 'Car Service';
+    case ActivityType.drive:
+      return 'Drive';
+    case ActivityType.taxi:
+      return 'Taxi';
+    case ActivityType.bus:
+      return 'Bus';
+    case ActivityType.walk:
+      return 'Walk';
+    case ActivityType.ferry:
+      return 'Ferry';
+    case ActivityType.dining:
+      return 'Dining';
+    case ActivityType.hotel:
+      return 'Hotel';
+    case ActivityType.tour:
+      return 'Tour';
+    case ActivityType.activity:
+      return 'Activity';
+    case ActivityType.meal:
+      return 'Meal';
+    case ActivityType.transport:
+      return 'Transportation';
+    case ActivityType.attraction:
+      return 'Attraction';
+    case ActivityType.cruise:
+      return 'Cruise';
+    case ActivityType.setup:
+      return 'Setup';
+    case ActivityType.ceremony:
+      return 'Ceremony';
+    case ActivityType.reception:
+      return 'Reception';
+    case ActivityType.vendor:
+      return 'Vendor';
+    case ActivityType.custom:
+      return 'Custom';
+  }
+}
+
 // ActivityScreen widget for adding or editing activities
 class ActivityScreen extends StatefulWidget {
   final String planId; // Passed from PlanDetailScreen + button
@@ -453,7 +502,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                     .map(
                       (type) => DropdownMenuItem(
                         value: type,
-                        child: Text(type.toString().split('.').last),
+                        child: Text(_activityScreenTypeLabel(type)),
                       ),
                     )
                     .toList(),

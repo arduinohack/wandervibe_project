@@ -26,10 +26,28 @@ const activityTypes = [
   'ceremony',
   'reception',
   'custom',
+  'activity',
 ];
 
+const _activityTypeLabels = {
+  'flight': 'Flight',
+  'train': 'Train',
+  'car': 'Drive',
+  'car_service': 'Car Service',
+  'dining': 'Dining',
+  'hotel': 'Hotel',
+  'tour': 'Tour',
+  'attraction': 'Attraction',
+  'cruise': 'Cruise',
+  'ceremony': 'Ceremony',
+  'reception': 'Reception',
+  'custom': 'Custom',
+  'activity': 'Activity',
+};
+
 String activityTypeLabel(String type) {
-  if (type == 'car_service') return 'Car service';
+  final known = _activityTypeLabels[type.trim().toLowerCase()];
+  if (known != null) return known;
   return type;
 }
 
@@ -718,7 +736,10 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     required bool canChange,
     int? dragIndex,
   }) {
-    final type = activity.typeLabel.isEmpty ? activity.type.name : activity.typeLabel;
+    final storedType = activity.typeLabel.trim().isEmpty
+        ? activity.type.name
+        : activity.typeLabel.trim();
+    final type = activityTypeLabel(storedType);
     final activityId = activity.id;
     final startZone = _activityStartZone(activity, planZone);
     final endZone = _activityEndZone(activity, planZone);
