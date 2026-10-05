@@ -1133,8 +1133,11 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
 String _pdfCostCell(Activity activity) {
   final cost = activity.cost;
   if (cost == null) return '';
+  final money = formatPlanMoney(cost);
+  // A missing cost is stored as 0, which formats as $0.00.
+  if (money == formatPlanMoney(0)) return '';
   final mark = activity.costType == CostType.actual ? 'act' : 'est';
-  return 'Cost($mark): ${formatPlanMoney(cost)}';
+  return 'Cost($mark): $money';
 }
 
 PlanPdfRow _pdfActivityRow(
