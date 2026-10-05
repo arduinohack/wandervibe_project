@@ -129,6 +129,18 @@ List<_PdfDay> _daysInOrder(List<PlanPdfRow> rows) {
   return days;
 }
 
+String _twoDigits(int value) => value.toString().padLeft(2, '0');
+
+/// Local clock of the device that builds the file: mm/dd/yy hh:nn, 24-hour.
+String _generatedLabel(DateTime time) {
+  final month = _twoDigits(time.month);
+  final day = _twoDigits(time.day);
+  final year = _twoDigits(time.year % 100);
+  final hour = _twoDigits(time.hour);
+  final minute = _twoDigits(time.minute);
+  return 'Generated: $month/$day/$year $hour:$minute';
+}
+
 pw.Widget _dayTable(List<PlanPdfRow> activities, List<_PdfColumn> columns) {
   return pw.TableHelper.fromTextArray(
     headers: [for (final column in columns) column.heading],
@@ -159,9 +171,36 @@ Future<Uint8List> buildPlanPdf({
   final document = pw.Document();
   final days = _daysInOrder(rows);
   final columns = _columnsInPrint(rows);
+  final generated = _generatedLabel(DateTime.now());
+  final chrome = const pw.TextStyle(fontSize: 9);
   document.addPage(
     pw.MultiPage(
       pageFormat: landscape ? PdfPageFormat.a4.landscape : PdfPageFormat.a4,
+      header: (context) {
+        if (context.pageNumber <= 1) return pw.SizedBox.shrink();
+        return pw.Padding(
+          padding: const pw.EdgeInsets.only(bottom: 8),
+          child: pw.Text(
+            name,
+            style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
+          ),
+        );
+      },
+      footer: (context) {
+        return pw.Padding(
+          padding: const pw.EdgeInsets.only(top: 8),
+          child: pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            children: [
+              pw.Text(generated, style: chrome),
+              pw.Text(
+                '${context.pageNumber} of ${context.pagesCount}',
+                style: chrome,
+              ),
+            ],
+          ),
+        );
+      },
       build: (context) {
         final blocks = <pw.Widget>[
           pw.Text(
