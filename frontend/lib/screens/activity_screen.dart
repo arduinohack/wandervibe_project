@@ -8,6 +8,17 @@ import '../providers/plan_provider.dart';
 import '../providers/user_provider.dart';
 import '../utils/logger.dart';
 
+String _costBoxText(double? cost) {
+  if (cost == null) return '';
+  return cost == cost.roundToDouble() ? cost.round().toString() : cost.toString();
+}
+
+double? _parsedCost(String text) {
+  final trimmed = text.trim();
+  if (trimmed.isEmpty) return null;
+  return double.tryParse(trimmed);
+}
+
 // ActivityScreen widget for adding or editing activities
 class ActivityScreen extends StatefulWidget {
   final String planId; // Passed from PlanDetailScreen + button
@@ -79,7 +90,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
       _type = e.type;
       _locationController.text = e.location ?? '';
       _googlePlaceIdController.text = e.googlePlaceId;
-      _costController.text = e.cost?.toString() ?? '';
+      _costController.text = _costBoxText(e.cost);
       _detailsController.text = e.details ?? '';
       _customTypeController.text = e.customType ?? '';
       _serviceProviderController.text = e.serviceProvider ?? '';
@@ -214,7 +225,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
       customType: _customTypeController.text.isEmpty
           ? null
           : _customTypeController.text,
-      cost: double.tryParse(_costController.text) ?? 0.0,
+      cost: _parsedCost(_costController.text),
       costType: _costType ?? CostType.estimated,
       startTime: _startTime,
       duration: Duration(minutes: _durationMinutes),
@@ -568,22 +579,32 @@ class _ActivityScreenState extends State<ActivityScreen> {
               TextFormField(
                 controller: _costController,
                 decoration: const InputDecoration(labelText: 'Cost'),
-                keyboardType: TextInputType.number,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                validator: (value) {
+                  final text = value?.trim() ?? '';
+                  if (text.isEmpty) return null;
+                  final cost = double.tryParse(text);
+                  if (cost == null) return 'Enter cost as a number';
+                  if (cost < 0) return 'Cost cannot be negative';
+                  return null;
+                },
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<CostType>(
                 initialValue: _costType,
-                decoration: const InputDecoration(labelText: 'Cost Type'),
-                items: CostType.values
-                    .map(
-                      (type) => DropdownMenuItem(
-                        value: type,
-                        child: Text(
-                          capitalize(type.toString().split('.').last),
-                        ),
-                      ),
-                    )
-                    .toList(),
+                decoration: const InputDecoration(labelText: 'Cost type'),
+                items: const [
+                  DropdownMenuItem(
+                    value: CostType.estimated,
+                    child: Text('Estimated'),
+                  ),
+                  DropdownMenuItem(
+                    value: CostType.actual,
+                    child: Text('Actual'),
+                  ),
+                ],
                 onChanged: (value) =>
                     setState(() => _costType = value ?? CostType.estimated),
               ),

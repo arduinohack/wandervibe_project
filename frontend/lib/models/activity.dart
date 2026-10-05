@@ -312,7 +312,7 @@ class Activity {
       'location': location ?? '',
       'googlePlaceId': googlePlaceId,
       'type': type.toString().split('.').last,
-      'cost': cost ?? 0.0,
+      'cost': cost,
       'costType': costType?.toString().split('.').last ?? 'estimated',
       'startTime': startTime?.toIso8601String(),
       'duration': effectiveDuration?.inMinutes ?? 0, // Use adjusted duration

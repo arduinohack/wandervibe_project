@@ -498,6 +498,8 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
       location: draft.location,
       googlePlaceId: draft.googlePlaceId,
       details: draft.details,
+      cost: draft.cost,
+      costType: draft.costType,
       gate: draft.gate,
       baggageClaim: draft.baggageClaim,
       roomNumber: draft.roomNumber,
@@ -605,6 +607,8 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
         location: moved.location ?? '',
         googlePlaceId: moved.googlePlaceId,
         details: moved.details ?? '',
+        cost: moved.cost,
+        costType: _storedCostType(moved),
         gate: moved.gate,
         baggageClaim: moved.baggageClaim,
         roomNumber: moved.roomNumber,
@@ -1021,6 +1025,17 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
   }
 }
 
+String _costBoxText(double? cost) {
+  if (cost == null) return '';
+  if (cost == cost.roundToDouble()) return cost.round().toString();
+  return cost.toString();
+}
+
+String _storedCostType(Activity? activity) {
+  if (activity?.costType == CostType.actual) return 'actual';
+  return 'estimated';
+}
+
 class _ActivityFields {
   final String name;
   final String type;
@@ -1032,6 +1047,8 @@ class _ActivityFields {
   final String location;
   final String googlePlaceId;
   final String details;
+  final double? cost;
+  final String costType;
   final String? gate;
   final String? baggageClaim;
   final String? roomNumber;
@@ -1051,6 +1068,8 @@ class _ActivityFields {
     required this.location,
     required this.googlePlaceId,
     required this.details,
+    required this.cost,
+    required this.costType,
     this.gate,
     this.baggageClaim,
     this.roomNumber,
@@ -1110,6 +1129,8 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
   late final TextEditingController _locationController;
   late final TextEditingController _googlePlaceIdController;
   late final TextEditingController _detailsController;
+  late final TextEditingController _costController;
+  late String _costType;
   late final TextEditingController _gateController;
   late final TextEditingController _baggageController;
   late final TextEditingController _roomController;
@@ -1157,6 +1178,8 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       text: activity?.googlePlaceId ?? '',
     );
     _detailsController = TextEditingController(text: activity?.details ?? '');
+    _costController = TextEditingController(text: _costBoxText(activity?.cost));
+    _costType = _storedCostType(activity);
     _gateController = TextEditingController(text: activity?.gate ?? '');
     _baggageController = TextEditingController(text: activity?.baggageClaim ?? '');
     _roomController = TextEditingController(text: activity?.roomNumber ?? '');
@@ -1214,6 +1237,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     _locationController.dispose();
     _googlePlaceIdController.dispose();
     _detailsController.dispose();
+    _costController.dispose();
     _gateController.dispose();
     _baggageController.dispose();
     _roomController.dispose();
@@ -1322,6 +1346,19 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       setState(() => _error = 'End time must not be before the start time');
       return null;
     }
+    final costText = _costController.text.trim();
+    double? cost;
+    if (costText.isNotEmpty) {
+      cost = double.tryParse(costText);
+      if (cost == null) {
+        setState(() => _error = 'Enter cost as a number');
+        return null;
+      }
+      if (cost < 0) {
+        setState(() => _error = 'Cost cannot be negative');
+        return null;
+      }
+    }
     if (minutes == null && typedDuration.isEmpty && start != null && end != null) {
       final storedStart = widget.activity?.startTime;
       final storedEnd = widget.activity?.endTime;
@@ -1346,6 +1383,8 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       location: _locationController.text.trim(),
       googlePlaceId: _googlePlaceIdController.text.trim(),
       details: _detailsController.text.trim(),
+      cost: cost,
+      costType: _costType,
       gate: _usesFlightFields ? _gateController.text.trim() : null,
       baggageClaim: _usesFlightFields ? _baggageController.text.trim() : null,
       roomNumber: _usesRoom ? _roomController.text.trim() : null,
@@ -1393,6 +1432,8 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       location: fields.location,
       googlePlaceId: fields.googlePlaceId,
       details: fields.details,
+      cost: fields.cost,
+      costType: fields.costType,
       gate: fields.gate,
       baggageClaim: fields.baggageClaim,
       roomNumber: fields.roomNumber,
@@ -1472,13 +1513,18 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     String label, {
     String? hint,
     bool number = false,
+    bool decimal = false,
     ValueChanged<String>? onChanged,
   }) {
     return Padding(
       padding: const EdgeInsets.only(top: 12),
       child: TextField(
         controller: controller,
-        keyboardType: number ? TextInputType.number : null,
+        keyboardType: decimal
+            ? const TextInputType.numberWithOptions(decimal: true)
+            : number
+            ? TextInputType.number
+            : null,
         decoration: InputDecoration(labelText: label, hintText: hint),
         onChanged: onChanged,
       ),
@@ -1532,6 +1578,19 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
         _textField(_locationController, 'Location'),
         _textField(_googlePlaceIdController, 'Google Place ID'),
         _textField(_detailsController, 'Details'),
+        _textField(_costController, 'Cost', decimal: true),
+        const SizedBox(height: 12),
+        SegmentedButton<String>(
+          showSelectedIcon: false,
+          segments: const [
+            ButtonSegment(value: 'estimated', label: Text('Estimated')),
+            ButtonSegment(value: 'actual', label: Text('Actual')),
+          ],
+          selected: {_costType},
+          onSelectionChanged: (next) {
+            setState(() => _costType = next.first);
+          },
+        ),
         if (_usesFlightFields) ...[
           _textField(_gateController, 'Gate'),
           _textField(_baggageController, 'Baggage claim'),
