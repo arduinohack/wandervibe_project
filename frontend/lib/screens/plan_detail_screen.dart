@@ -1141,6 +1141,13 @@ String _pdfUrlLinks(Activity activity) {
   return parts.join(' ');
 }
 
+String _pdfCostCell(Activity activity) {
+  final cost = activity.cost;
+  if (cost == null) return '';
+  final mark = activity.costType == CostType.actual ? 'act' : 'est';
+  return 'Cost($mark): ${formatPlanMoney(cost)}';
+}
+
 PlanPdfRow _pdfActivityRow(
   Activity activity,
   _ShownActivityTimes times,
@@ -1150,7 +1157,6 @@ PlanPdfRow _pdfActivityRow(
   final storedType = activity.typeLabel.trim().isEmpty
       ? activity.type.name
       : activity.typeLabel.trim();
-  final cost = activity.cost;
   return PlanPdfRow(
     dayHeader: dayHeader,
     type: activityTypeLabel(storedType),
@@ -1158,18 +1164,11 @@ PlanPdfRow _pdfActivityRow(
     start: _pdfClock(times.start, _activityStartZone(activity, planZone)),
     end: _pdfClock(times.end, _activityEndZone(activity, planZone)),
     duration: _durationLabel(activity),
-    startZone: activity.startTimeZone.trim(),
-    endZone: activity.endTimeZone.trim(),
     location: activity.location?.trim() ?? '',
     details: _detailsLabel(activity),
     googlePlaceId: activity.googlePlaceId.trim(),
     bookingReference: activity.bookingReference?.trim() ?? '',
-    cost: cost == null ? '' : formatPlanMoney(cost),
-    costType: cost == null
-        ? ''
-        : activity.costType == CostType.actual
-        ? 'Actual'
-        : 'Estimated',
+    cost: _pdfCostCell(activity),
     gate: activity.gate?.trim() ?? '',
     baggageClaim: activity.baggageClaim?.trim() ?? '',
     roomNumber: activity.roomNumber?.trim() ?? '',

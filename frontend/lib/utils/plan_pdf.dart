@@ -11,14 +11,11 @@ class PlanPdfRow {
   final String start;
   final String end;
   final String duration;
-  final String startZone;
-  final String endZone;
   final String location;
   final String details;
   final String googlePlaceId;
   final String bookingReference;
   final String cost;
-  final String costType;
   final String gate;
   final String baggageClaim;
   final String roomNumber;
@@ -37,14 +34,11 @@ class PlanPdfRow {
     required this.start,
     required this.end,
     required this.duration,
-    required this.startZone,
-    required this.endZone,
     required this.location,
     required this.details,
     required this.googlePlaceId,
     required this.bookingReference,
     required this.cost,
-    required this.costType,
     required this.gate,
     required this.baggageClaim,
     required this.roomNumber,
@@ -61,14 +55,11 @@ class PlanPdfRow {
     start,
     end,
     duration,
-    startZone,
-    endZone,
     location,
     details,
     googlePlaceId,
     bookingReference,
     cost,
-    costType,
     gate,
     baggageClaim,
     roomNumber,
@@ -103,14 +94,11 @@ const _dayColumns = [
   'Start',
   'End',
   'Duration',
-  'Start zone',
-  'End zone',
   'Location',
   'Details',
   'Google Place ID',
   'Booking reference',
   'Cost',
-  'Cost type',
   'Gate',
   'Baggage claim',
   'Room number',
@@ -148,7 +136,7 @@ pw.Widget _dayTable(List<PlanPdfRow> activities) {
     ],
     border: pw.TableBorder.all(width: 0.4),
     headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10),
-    cellStyle: const pw.TextStyle(fontSize: 10),
+    cellStyle: pw.TextStyle(fontWeight: pw.FontWeight.normal, fontSize: 10),
     cellAlignment: pw.Alignment.topLeft,
     headerAlignment: pw.Alignment.topLeft,
     cellPadding: const pw.EdgeInsets.all(4),
