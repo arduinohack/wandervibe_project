@@ -1130,17 +1130,6 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
   }
 }
 
-String _pdfUrlLinks(Activity activity) {
-  final parts = <String>[];
-  for (final link in activity.urlLinks) {
-    final url = link.linkUrl.trim();
-    if (url.isEmpty) continue;
-    final name = link.linkName.trim();
-    parts.add(name.isEmpty ? url : '$name ($url)');
-  }
-  return parts.join(' ');
-}
-
 String _pdfCostCell(Activity activity) {
   final cost = activity.cost;
   if (cost == null) return '';
@@ -1166,16 +1155,12 @@ PlanPdfRow _pdfActivityRow(
     duration: _durationLabel(activity),
     location: activity.location?.trim() ?? '',
     details: _detailsLabel(activity),
-    googlePlaceId: activity.googlePlaceId.trim(),
     bookingReference: activity.bookingReference?.trim() ?? '',
     cost: _pdfCostCell(activity),
     gate: activity.gate?.trim() ?? '',
     baggageClaim: activity.baggageClaim?.trim() ?? '',
     roomNumber: activity.roomNumber?.trim() ?? '',
     serviceProvider: activity.serviceProvider?.trim() ?? '',
-    status: _cardStatusLabel(activity.status) ?? '',
-    customType: activity.customType?.trim() ?? '',
-    urlLinks: _pdfUrlLinks(activity),
   );
 }
 

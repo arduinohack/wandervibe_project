@@ -13,16 +13,12 @@ class PlanPdfRow {
   final String duration;
   final String location;
   final String details;
-  final String googlePlaceId;
   final String bookingReference;
   final String cost;
   final String gate;
   final String baggageClaim;
   final String roomNumber;
   final String serviceProvider;
-  final String status;
-  final String customType;
-  final String urlLinks;
 
   /// False opens [dayHeader] with no activity row.
   final bool includeRow;
@@ -36,38 +32,14 @@ class PlanPdfRow {
     required this.duration,
     required this.location,
     required this.details,
-    required this.googlePlaceId,
     required this.bookingReference,
     required this.cost,
     required this.gate,
     required this.baggageClaim,
     required this.roomNumber,
     required this.serviceProvider,
-    required this.status,
-    required this.customType,
-    required this.urlLinks,
     this.includeRow = true,
   });
-
-  List<String> get cells => [
-    type,
-    name,
-    start,
-    end,
-    duration,
-    location,
-    details,
-    googlePlaceId,
-    bookingReference,
-    cost,
-    gate,
-    baggageClaim,
-    roomNumber,
-    serviceProvider,
-    status,
-    customType,
-    urlLinks,
-  ];
 }
 
 /// File name taken from the plan name, safe to share or download.
@@ -88,29 +60,59 @@ class _PdfDay {
   _PdfDay(this.header, this.activities);
 }
 
-const _dayColumns = [
-  'Type',
-  'Name',
-  'Start',
-  'End',
-  'Duration',
-  'Location',
-  'Details',
-  'Google Place ID',
-  'Booking reference',
-  'Cost',
-  'Gate',
-  'Baggage claim',
-  'Room number',
-  'Service provider',
-  'Status',
-  'Custom type',
-  'URL links',
+class _PdfColumn {
+  final String heading;
+  final String Function(PlanPdfRow row) value;
+
+  const _PdfColumn(this.heading, this.value);
+}
+
+const _pdfColumns = [
+  _PdfColumn('Type', _typeCell),
+  _PdfColumn('Name', _nameCell),
+  _PdfColumn('Start', _startCell),
+  _PdfColumn('End', _endCell),
+  _PdfColumn('Duration', _durationCell),
+  _PdfColumn('Location', _locationCell),
+  _PdfColumn('Details', _detailsCell),
+  _PdfColumn('Booking reference', _bookingReferenceCell),
+  _PdfColumn('Cost', _costCell),
+  _PdfColumn('Gate', _gateCell),
+  _PdfColumn('Baggage claim', _baggageClaimCell),
+  _PdfColumn('Room number', _roomNumberCell),
+  _PdfColumn('Service provider', _serviceProviderCell),
 ];
+
+String _typeCell(PlanPdfRow row) => row.type;
+String _nameCell(PlanPdfRow row) => row.name;
+String _startCell(PlanPdfRow row) => row.start;
+String _endCell(PlanPdfRow row) => row.end;
+String _durationCell(PlanPdfRow row) => row.duration;
+String _locationCell(PlanPdfRow row) => row.location;
+String _detailsCell(PlanPdfRow row) => row.details;
+String _bookingReferenceCell(PlanPdfRow row) => row.bookingReference;
+String _costCell(PlanPdfRow row) => row.cost;
+String _gateCell(PlanPdfRow row) => row.gate;
+String _baggageClaimCell(PlanPdfRow row) => row.baggageClaim;
+String _roomNumberCell(PlanPdfRow row) => row.roomNumber;
+String _serviceProviderCell(PlanPdfRow row) => row.serviceProvider;
 
 String _tableCell(String value) {
   if (value.trim() == 'not set') return '';
   return value;
+}
+
+bool _cellHasValue(String value) {
+  final text = value.trim();
+  return text.isNotEmpty && text != 'not set';
+}
+
+List<_PdfColumn> _columnsInPrint(List<PlanPdfRow> rows) {
+  final activities = rows.where((row) => row.includeRow);
+  return [
+    for (final column in _pdfColumns)
+      if (activities.any((row) => _cellHasValue(column.value(row)))) column,
+  ];
 }
 
 List<_PdfDay> _daysInOrder(List<PlanPdfRow> rows) {
@@ -127,12 +129,12 @@ List<_PdfDay> _daysInOrder(List<PlanPdfRow> rows) {
   return days;
 }
 
-pw.Widget _dayTable(List<PlanPdfRow> activities) {
+pw.Widget _dayTable(List<PlanPdfRow> activities, List<_PdfColumn> columns) {
   return pw.TableHelper.fromTextArray(
-    headers: _dayColumns,
+    headers: [for (final column in columns) column.heading],
     data: [
       for (final row in activities)
-        [for (final cell in row.cells) _tableCell(cell)],
+        [for (final column in columns) _tableCell(column.value(row))],
     ],
     border: pw.TableBorder.all(width: 0.4),
     headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10),
@@ -156,6 +158,7 @@ Future<Uint8List> buildPlanPdf({
 }) async {
   final document = pw.Document();
   final days = _daysInOrder(rows);
+  final columns = _columnsInPrint(rows);
   document.addPage(
     pw.MultiPage(
       pageFormat: landscape ? PdfPageFormat.a4.landscape : PdfPageFormat.a4,
@@ -189,7 +192,9 @@ Future<Uint8List> buildPlanPdf({
               )
               ..add(pw.SizedBox(height: 6));
           }
-          blocks.add(_dayTable(day.activities));
+          if (columns.isNotEmpty) {
+            blocks.add(_dayTable(day.activities, columns));
+          }
         }
         return blocks;
       },
