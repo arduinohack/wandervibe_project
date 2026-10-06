@@ -21,6 +21,19 @@ const endSelect = document.getElementById('col-end');
 const locationSelect = document.getElementById('col-location');
 const message = document.getElementById('message');
 const planList = document.getElementById('plan-list');
+const exportButton = document.getElementById('export-button');
+const fieldWindow = document.getElementById('field-window');
+const fieldForm = document.getElementById('field-form');
+const fieldMessage = document.getElementById('field-message');
+const fieldCancel = document.getElementById('field-cancel');
+const exportWindow = document.getElementById('export-window');
+const exportPlan = document.getElementById('export-plan');
+const exportCsv = document.getElementById('export-csv');
+const exportXlsx = document.getElementById('export-xlsx');
+const exportCancel = document.getElementById('export-cancel');
+const exportMessage = document.getElementById('export-message');
+
+let chosenFields = [];
 
 function apiBase() {
   const configured = window.WANDERVIBE_API_BASE;
@@ -46,6 +59,11 @@ function canImport(role) {
     || role === 'planner';
 }
 
+function closeExportWindows() {
+  if (fieldWindow.open) fieldWindow.close();
+  if (exportWindow.open) exportWindow.close();
+}
+
 function clearColumnChoices() {
   columnMap.hidden = true;
   for (const select of [nameSelect, typeSelect, startSelect, endSelect, locationSelect]) {
@@ -66,6 +84,7 @@ function showSession(loggedIn) {
     planSelect.replaceChildren();
     planList.replaceChildren();
     clearColumnChoices();
+    closeExportWindows();
   }
 }
 
@@ -242,6 +261,81 @@ async function loadPlans() {
   renderPlans(rows);
 }
 
+function checkedExportFields() {
+  return [...fieldForm.querySelectorAll('input[name="export-field"]:checked')].map((box) => box.value);
+}
+
+function fillExportPlans() {
+  exportPlan.replaceChildren();
+  for (const option of planSelect.options) {
+    const copy = document.createElement('option');
+    copy.value = option.value;
+    copy.textContent = option.textContent;
+    exportPlan.appendChild(copy);
+  }
+}
+
+function filenameFrom(response, fallback) {
+  const header = response.headers.get('Content-Disposition') || '';
+  const star = /filename\*=UTF-8''([^;]+)/i.exec(header);
+  if (star) {
+    try {
+      return decodeURIComponent(star[1].trim());
+    } catch (err) {
+      return fallback;
+    }
+  }
+  const plain = /filename="([^"]+)"/i.exec(header);
+  return plain ? plain[1] : fallback;
+}
+
+async function downloadExport(format) {
+  const planId = exportPlan.value;
+  if (!planId) {
+    exportMessage.textContent = 'Choose a plan.';
+    return;
+  }
+  if (!chosenFields.length) {
+    exportMessage.textContent = 'Choose at least one field.';
+    return;
+  }
+  const params = new URLSearchParams();
+  params.set('format', format);
+  params.set('fields', chosenFields.join(','));
+  exportMessage.textContent = '';
+  const response = await fetch(`${apiBase()}/api/plans/${planId}/export?${params}`, {
+    headers: authHeaders(),
+  });
+  if (response.status === 401) {
+    closeExportWindows();
+    endSession();
+    setMessage('Log in again.', true);
+    return;
+  }
+  if (response.status === 403) {
+    exportMessage.textContent = 'Not allowed.';
+    return;
+  }
+  if (!response.ok) {
+    const body = await readJson(response);
+    exportMessage.textContent = body.message || 'Could not export.';
+    return;
+  }
+  const blob = await response.blob();
+  const fallback = format === 'xlsx' ? 'plan.xlsx' : 'plan.csv';
+  const filename = filenameFrom(response, fallback);
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  exportWindow.close();
+  setMessage(`Exported ${filename}.`);
+}
+
 sessionForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   setMessage('Logging in…');
@@ -358,6 +452,46 @@ importForm.addEventListener('submit', async (event) => {
   clearColumnChoices();
   setMessage(`Created ${body.name}. Inserted ${body.inserted}, skipped ${body.skipped}.`);
   await loadPlans();
+});
+
+exportButton.addEventListener('click', () => {
+  fieldMessage.textContent = '';
+  fieldWindow.showModal();
+});
+
+fieldCancel.addEventListener('click', () => {
+  fieldWindow.close();
+});
+
+fieldForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  const checked = checkedExportFields();
+  if (!checked.length) {
+    fieldMessage.textContent = 'Choose at least one field.';
+    return;
+  }
+  chosenFields = checked;
+  fieldMessage.textContent = '';
+  fillExportPlans();
+  fieldWindow.close();
+  exportMessage.textContent = '';
+  exportWindow.showModal();
+});
+
+exportCancel.addEventListener('click', () => {
+  exportWindow.close();
+});
+
+exportCsv.addEventListener('click', () => {
+  downloadExport('csv').catch(() => {
+    exportMessage.textContent = 'Could not export.';
+  });
+});
+
+exportXlsx.addEventListener('click', () => {
+  downloadExport('xlsx').catch(() => {
+    exportMessage.textContent = 'Could not export.';
+  });
 });
 
 if (sessionStorage.getItem(TOKEN_KEY)) {

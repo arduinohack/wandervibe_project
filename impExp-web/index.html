@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>impExp-web</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 24px auto; max-width: 40rem; line-height: 1.4; }
+    label { display: block; margin-top: 12px; }
+    input, select, button { font: inherit; }
+    input[type="email"], input[type="password"], input[type="text"], select { width: 100%; box-sizing: border-box; }
+    button { margin-top: 16px; margin-right: 8px; }
+    .message { min-height: 1.4em; }
+    .error { color: #8d1d1d; }
+    ul { padding-left: 1.2rem; }
+    li { margin: 6px 0; }
+    dialog { border: 1px solid #ccc; max-width: 28rem; max-height: 80vh; overflow: auto; }
+    dialog label { margin-top: 6px; }
+    fieldset { border: 0; margin: 12px 0; padding: 0; }
+  </style>
+</head>
+<body>
+  <h1>impExp-web</h1>
+  <p>Log in, then import or export a plan you own or collaborate on. Import reads a CSV file. Choose a CSV column for each field. Spreadsheet files (.xlsx) are not accepted for import.</p>
+
+  <form id="session-form">
+    <label>Email
+      <input id="email" type="email" name="email" autocomplete="username">
+    </label>
+    <label>Password
+      <input id="password" type="password" name="password" autocomplete="current-password">
+    </label>
+    <button id="login-button" type="submit">Log in</button>
+    <button id="logout-button" type="button" hidden>Log out</button>
+  </form>
+
+  <p id="message" class="message" role="status"></p>
+
+  <form id="import-form" hidden>
+    <label>Plan
+      <select id="plan-select" name="plan"></select>
+    </label>
+    <label>New plan name
+      <input id="plan-name" type="text" name="plan-name" autocomplete="off" placeholder="Leave empty for the generated name">
+    </label>
+    <label>CSV file
+      <input id="csv-file" type="file" name="csv-file" accept=".csv,text/csv">
+    </label>
+    <div id="column-map" hidden>
+      <p>Choose a CSV column for each field.</p>
+      <label>Name
+        <select id="col-name" name="col-name"></select>
+      </label>
+      <label>Type
+        <select id="col-type" name="col-type"></select>
+      </label>
+      <label id="default-type-label">Default type
+        <select id="default-type" name="default-type">
+          <option value="tour">tour</option>
+          <option value="dining">dining</option>
+          <option value="hotel">hotel</option>
+        </select>
+      </label>
+      <label>Start time
+        <select id="col-start" name="col-start"></select>
+      </label>
+      <label>End time
+        <select id="col-end" name="col-end"></select>
+      </label>
+      <label>Location
+        <select id="col-location" name="col-location"></select>
+      </label>
+    </div>
+    <button type="submit">Import CSV</button>
+    <button id="export-button" type="button">Export</button>
+  </form>
+
+  <dialog id="field-window">
+    <form id="field-form">
+      <p>Choose the fields to include.</p>
+      <fieldset>
+        <label><input type="checkbox" name="export-field" value="name" checked> name</label>
+        <label><input type="checkbox" name="export-field" value="type"> type</label>
+        <label><input type="checkbox" name="export-field" value="start"> start</label>
+        <label><input type="checkbox" name="export-field" value="end"> end</label>
+        <label><input type="checkbox" name="export-field" value="duration"> duration</label>
+        <label><input type="checkbox" name="export-field" value="location"> location</label>
+        <label><input type="checkbox" name="export-field" value="details"> details</label>
+        <label><input type="checkbox" name="export-field" value="googlePlaceId"> googlePlaceId</label>
+        <label><input type="checkbox" name="export-field" value="bookingReference"> bookingReference</label>
+        <label><input type="checkbox" name="export-field" value="cost"> cost</label>
+        <label><input type="checkbox" name="export-field" value="costType"> costType</label>
+        <label><input type="checkbox" name="export-field" value="gate"> gate</label>
+        <label><input type="checkbox" name="export-field" value="baggageClaim"> baggageClaim</label>
+        <label><input type="checkbox" name="export-field" value="roomNumber"> roomNumber</label>
+        <label><input type="checkbox" name="export-field" value="serviceProvider"> serviceProvider</label>
+        <label><input type="checkbox" name="export-field" value="status"> status</label>
+        <label><input type="checkbox" name="export-field" value="customType"> customType</label>
+        <label><input type="checkbox" name="export-field" value="urlLinks"> urlLinks</label>
+      </fieldset>
+      <p id="field-message" class="message error"></p>
+      <button type="submit">Accept</button>
+      <button id="field-cancel" type="button">Cancel</button>
+    </form>
+  </dialog>
+
+  <dialog id="export-window">
+    <form id="export-form">
+      <label>Plan
+        <select id="export-plan" name="export-plan"></select>
+      </label>
+      <button id="export-csv" type="button">CSV</button>
+      <button id="export-xlsx" type="button">Excel</button>
+      <button id="export-cancel" type="button">Cancel</button>
+      <p id="export-message" class="message error"></p>
+    </form>
+  </dialog>
+
+  <h2>Plans</h2>
+  <ul id="plan-list"></ul>
+
+  <script src="app.js"></script>
+</body>
+</html>

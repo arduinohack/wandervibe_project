@@ -26,6 +26,7 @@ const {
   escapeRegExp,
   uploadKind,
 } = require('../utils/csvPlanImport');
+const { readExportQuery, buildPlanExport } = require('../utils/planExport');
 const router = express.Router();
 const csvUpload = multer({
   storage: multer.memoryStorage(),
@@ -488,6 +489,45 @@ router.post('/:planId/import', authMiddleware, async (req, res) => {
   } catch (err) {
     if (res.headersSent) return;
     console.error('Plan import error:', err);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// GET /api/plans/:planId/export
+// Owner or Collaborator downloads the plan's activities. No plan is created.
+router.get('/:planId/export', authMiddleware, async (req, res) => {
+  const { planId } = req.params;
+  try {
+    const plan = await Plan.findById(planId);
+    if (!plan) {
+      return res.status(404).json({ message: 'Plan not found' });
+    }
+
+    const callerId = req.user.userId || req.user.id;
+    const role = await callerPlanRole(plan, callerId);
+    if (role !== 'Owner' && role !== 'Collaborator') {
+      return res.status(403).json({ message: 'Only Owner or Collaborator can export a plan' });
+    }
+
+    const requested = readExportQuery(req.query);
+    if (requested.error) {
+      return res.status(400).json({ message: requested.error });
+    }
+
+    const activities = await Event.find({ planId }).lean();
+    activities.sort(compareStoredOrder);
+    const file = buildPlanExport({
+      planName: plan.name,
+      planTimeZone: plan.timeZone,
+      activities,
+      fields: requested.fields,
+      format: requested.format,
+    });
+    res.setHeader('Content-Type', file.contentType);
+    res.setHeader('Content-Disposition', file.disposition);
+    return res.status(200).send(file.body);
+  } catch (err) {
+    console.error('Plan export error:', err);
     return res.status(500).json({ message: 'Server error' });
   }
 });
