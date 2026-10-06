@@ -1,5 +1,5 @@
 // Import and export page. From impExp-web: node serve.js
-// Serves this folder on port 5501. Leave the admin page on port 5500 alone.
+// Serves this folder on all interfaces, port 5501. Leave the admin page on port 5500 alone.
 // API_BASE is read from impExp-web/.env and injected into index.html.
 // An empty or missing value falls back to http://localhost:3000.
 const http = require('http');
@@ -82,6 +82,6 @@ const server = http.createServer((req, res) => {
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`impExp-web at http://localhost:${PORT}`);
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`impExp-web listening on port ${PORT}`);
 });
