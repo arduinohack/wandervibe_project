@@ -1250,7 +1250,7 @@ String _pdfCostCell(Activity activity) {
   // A missing cost is stored as 0, which formats as $0.00.
   if (money == formatPlanMoney(0)) return '';
   final mark = activity.costType == CostType.actual ? 'act' : 'est';
-  return 'Cost($mark): $money';
+  return 'Cost($mark):\n$money';
 }
 
 PlanPdfRow _pdfActivityRow(

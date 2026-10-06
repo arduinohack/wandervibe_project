@@ -129,28 +129,17 @@ List<_PdfDay> _daysInOrder(List<PlanPdfRow> rows) {
   return days;
 }
 
-/// Share of the table for one column. The share is the average printed
-/// length of that field across activities. A column stays at least as wide
-/// as its heading.
-double _columnWeight(List<PlanPdfRow> rows, _PdfColumn column) {
-  final activities = [for (final row in rows) if (row.includeRow) row];
-  final heading = column.heading.length.toDouble();
-  if (activities.isEmpty) return heading;
-  var total = 0;
-  for (final row in activities) {
-    total += _tableCell(column.value(row)).trim().length;
-  }
-  final average = total / activities.length;
-  return average > heading ? average : heading;
-}
+const _bodyFontSize = 8.0;
+const _headerFontSize = 10.0;
 
-Map<int, pw.TableColumnWidth> _columnWidths(
-  List<PlanPdfRow> rows,
-  List<_PdfColumn> columns,
-) {
+/// Start, End, and the other activity columns stay as wide as their text.
+/// Details takes the leftover page width.
+Map<int, pw.TableColumnWidth> _columnWidths(List<_PdfColumn> columns) {
   return {
     for (var index = 0; index < columns.length; index++)
-      index: pw.FlexColumnWidth(_columnWeight(rows, columns[index])),
+      index: columns[index].heading == 'Details'
+          ? const pw.FlexColumnWidth()
+          : const pw.IntrinsicColumnWidth(),
   };
 }
 
@@ -171,13 +160,6 @@ pw.Widget _dayTable(
   List<_PdfColumn> columns,
   Map<int, pw.TableColumnWidth> columnWidths,
 ) {
-  final detailsColumn = columns.indexWhere(
-    (column) => column.heading == 'Details',
-  );
-  final detailStyle = pw.TextStyle(
-    fontWeight: pw.FontWeight.normal,
-    fontSize: 8,
-  );
   return pw.TableHelper.fromTextArray(
     headers: [for (final column in columns) column.heading],
     data: [
@@ -185,16 +167,19 @@ pw.Widget _dayTable(
         [for (final column in columns) _tableCell(column.value(row))],
     ],
     border: pw.TableBorder.all(width: 0.4),
-    headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10),
-    cellStyle: pw.TextStyle(fontWeight: pw.FontWeight.normal, fontSize: 10),
-    textStyleBuilder: (index, data, rowNum) {
-      if (index == detailsColumn) return detailStyle;
-      return null;
-    },
+    headerStyle: pw.TextStyle(
+      fontWeight: pw.FontWeight.bold,
+      fontSize: _headerFontSize,
+    ),
+    cellStyle: pw.TextStyle(
+      fontWeight: pw.FontWeight.normal,
+      fontSize: _bodyFontSize,
+    ),
     cellAlignment: pw.Alignment.topLeft,
     headerAlignment: pw.Alignment.topLeft,
     cellPadding: const pw.EdgeInsets.all(4),
     columnWidths: columnWidths,
+    tableWidth: pw.TableWidth.min,
   );
 }
 
@@ -211,7 +196,7 @@ Future<Uint8List> buildPlanPdf({
   final document = pw.Document();
   final days = _daysInOrder(rows);
   final columns = _columnsInPrint(rows);
-  final columnWidths = _columnWidths(rows, columns);
+  final columnWidths = _columnWidths(columns);
   final generated = _generatedLabel(DateTime.now());
   final chrome = const pw.TextStyle(fontSize: 9);
   document.addPage(
