@@ -42,6 +42,7 @@ app.use(cors({
   },
   methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Authorization', 'Content-Type'],
+  exposedHeaders: ['Content-Disposition'],
   optionsSuccessStatus: 204,
 }));
 app.use(express.json());  // Parses JSON bodies from requests (e.g., { name: 'Paris Trip' })

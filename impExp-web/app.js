@@ -209,6 +209,7 @@ function renderPlans(rows) {
   for (const row of importable) {
     const option = document.createElement('option');
     option.value = row.plan._id;
+    option.dataset.planName = row.plan.name || '';
     option.textContent = row.plan.name || row.plan._id;
     planSelect.appendChild(option);
   }
@@ -350,23 +351,50 @@ function fillExportPlans() {
   for (const option of planSelect.options) {
     const copy = document.createElement('option');
     copy.value = option.value;
+    copy.dataset.planName = option.dataset.planName || '';
     copy.textContent = option.textContent;
     exportPlan.appendChild(copy);
   }
 }
 
-function filenameFrom(response, fallback) {
+function exportDate(now) {
+  const date = now instanceof Date ? now : new Date();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const year = String(date.getFullYear() % 100).padStart(2, '0');
+  return `${month}-${day}-${year}`;
+}
+
+function exportFilename(planName, format, now) {
+  const cleaned = String(planName || '')
+    .trim()
+    .replace(/[\\/:*?"<>|]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const base = cleaned || 'plan';
+  const ext = format === 'xlsx' ? 'xlsx' : 'csv';
+  return `${base} ${exportDate(now)}.${ext}`;
+}
+
+function filenameFrom(response) {
   const header = response.headers.get('Content-Disposition') || '';
   const star = /filename\*=UTF-8''([^;]+)/i.exec(header);
   if (star) {
     try {
       return decodeURIComponent(star[1].trim());
     } catch (err) {
-      return fallback;
+      return '';
     }
   }
   const plain = /filename="([^"]+)"/i.exec(header);
-  return plain ? plain[1] : fallback;
+  return plain ? plain[1] : '';
+}
+
+function isFixedPlanName(filename, format) {
+  const ext = format === 'xlsx' ? 'xlsx' : 'csv';
+  const name = String(filename || '').trim();
+  return name.toLowerCase() === `plan.${ext}`
+    || new RegExp(`^plan \\d{2}-\\d{2}-\\d{2}\\.${ext}$`, 'i').test(name);
 }
 
 async function downloadExport(format) {
@@ -402,8 +430,11 @@ async function downloadExport(format) {
     return;
   }
   const blob = await response.blob();
-  const fallback = format === 'xlsx' ? 'plan.xlsx' : 'plan.csv';
-  const filename = filenameFrom(response, fallback);
+  const selected = exportPlan.selectedOptions[0];
+  const planName = selected ? selected.dataset.planName : '';
+  const named = exportFilename(planName, format);
+  const headerName = filenameFrom(response);
+  const filename = headerName && !isFixedPlanName(headerName, format) ? headerName : named;
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;

@@ -81,6 +81,14 @@ describe('browser CORS', () => {
     }
   });
 
+  test('CORS exposes Content-Disposition so the page can name the export', async () => {
+    process.env.NODE_ENV = 'development';
+    const response = await request(app)
+      .get('/')
+      .set('Origin', importExportOrigin);
+    expect(response.headers['access-control-expose-headers']).toMatch(/Content-Disposition/i);
+  });
+
   test('development and production allow the import/export LAN origin', async () => {
     for (const env of ['development', 'production']) {
       process.env.NODE_ENV = env;
