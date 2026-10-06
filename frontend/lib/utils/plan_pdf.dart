@@ -132,14 +132,38 @@ List<_PdfDay> _daysInOrder(List<PlanPdfRow> rows) {
 const _bodyFontSize = 8.0;
 const _headerFontSize = 10.0;
 
-/// Start, End, and the other activity columns stay as wide as their text.
-/// Details takes the leftover page width.
-Map<int, pw.TableColumnWidth> _columnWidths(List<_PdfColumn> columns) {
+Map<int, pw.TableColumnWidth> _contentColumnWidths(List<_PdfColumn> columns) {
   return {
     for (var index = 0; index < columns.length; index++)
       index: columns[index].heading == 'Details'
           ? const pw.FlexColumnWidth()
           : const pw.IntrinsicColumnWidth(),
+  };
+}
+
+/// One measurement of every activity. Each day table reuses these widths.
+/// Activity columns stay as wide as their text. Details takes the leftover.
+Map<int, pw.TableColumnWidth> _columnWidths(
+  pw.Document document,
+  List<PlanPdfRow> activities,
+  List<_PdfColumn> columns,
+  double maxWidth,
+) {
+  final measured = _dayTable(
+    activities,
+    columns,
+    _contentColumnWidths(columns),
+  );
+  measured.layout(
+    pw.Context(document: document.document).inheritFrom(pw.ThemeData.base()),
+    pw.BoxConstraints(maxWidth: maxWidth),
+  );
+  final header = measured.children.first.children;
+  return {
+    for (var index = 0; index < columns.length; index++)
+      index: columns[index].heading == 'Details'
+          ? const pw.FlexColumnWidth()
+          : pw.FixedColumnWidth(header[index].box!.width),
   };
 }
 
@@ -155,7 +179,7 @@ String _generatedLabel(DateTime time) {
   return 'Generated: $month/$day/$year $hour:$minute';
 }
 
-pw.Widget _dayTable(
+pw.Table _dayTable(
   List<PlanPdfRow> activities,
   List<_PdfColumn> columns,
   Map<int, pw.TableColumnWidth> columnWidths,
@@ -196,12 +220,16 @@ Future<Uint8List> buildPlanPdf({
   final document = pw.Document();
   final days = _daysInOrder(rows);
   final columns = _columnsInPrint(rows);
-  final columnWidths = _columnWidths(columns);
+  final format = landscape ? PdfPageFormat.a4.landscape : PdfPageFormat.a4;
+  final activities = [for (final row in rows) if (row.includeRow) row];
+  final columnWidths = columns.isEmpty
+      ? <int, pw.TableColumnWidth>{}
+      : _columnWidths(document, activities, columns, format.availableWidth);
   final generated = _generatedLabel(DateTime.now());
   final chrome = const pw.TextStyle(fontSize: 9);
   document.addPage(
     pw.MultiPage(
-      pageFormat: landscape ? PdfPageFormat.a4.landscape : PdfPageFormat.a4,
+      pageFormat: format,
       header: (context) {
         if (context.pageNumber <= 1) return pw.SizedBox.shrink();
         return pw.Padding(

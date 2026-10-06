@@ -85,21 +85,126 @@ void main() {
     expect(page.columnWidthOf('Start'), lessThan(page.columnWidthOf('Details')));
     expect(page.columnWidthOf('End'), lessThan(page.columnWidthOf('Details')));
   });
+
+  test('day tables share column widths measured from every activity', () async {
+    const longDay = PlanPdfRow(
+      dayHeader: 'Day 1',
+      type: 'Drive',
+      name: 'Airport',
+      start: '10/5 10:00 EDT',
+      end: '10/5 18:00 EDT',
+      duration: '60 min',
+      location: 'Terminal',
+      details: 'A long note about the transfer.',
+      bookingReference: '',
+      cost: 'Cost(act):\n\$123,456.78',
+      gate: 'A12',
+      baggageClaim: '',
+      roomNumber: '',
+      serviceProvider: '',
+    );
+    const shortDay = PlanPdfRow(
+      dayHeader: 'Day 2',
+      type: 'Flight',
+      name: 'Hop',
+      start: '9:00',
+      end: '9:30',
+      duration: '',
+      location: '',
+      details: 'Brief.',
+      bookingReference: '',
+      cost: '',
+      gate: '',
+      baggageClaim: '',
+      roomNumber: '',
+      serviceProvider: '',
+    );
+
+    final shared = _pdfPage(
+      await buildPlanPdf(
+        name: 'Width Check',
+        destination: 'Here',
+        start: '10/05/26',
+        end: '10/06/26',
+        rows: const [longDay, shortDay],
+      ),
+    );
+    final narrow = _pdfPage(
+      await buildPlanPdf(
+        name: 'Width Check',
+        destination: 'Here',
+        start: '10/05/26',
+        end: '10/06/26',
+        rows: const [
+          PlanPdfRow(
+            dayHeader: 'Day 2',
+            type: 'Flight',
+            name: 'Hop',
+            start: '9:00',
+            end: '9:30',
+            duration: '',
+            location: '',
+            details: 'Brief.',
+            bookingReference: '',
+            cost: 'Cost(est):\n\$1.00',
+            gate: '',
+            baggageClaim: '',
+            roomNumber: '',
+            serviceProvider: '',
+          ),
+        ],
+      ),
+    );
+
+    const headings = [
+      'Type',
+      'Name',
+      'Start',
+      'End',
+      'Duration',
+      'Location',
+      'Details',
+      'Cost',
+      'Gate',
+    ];
+    final seen = shared.literals.where(headings.contains).toList();
+    expect(seen, [...headings, ...headings]);
+    for (final heading in ['Start', 'End', 'Cost', 'Details', 'Gate']) {
+      final widths = shared.columnWidthsOf(heading);
+      expect(widths, hasLength(2));
+      expect(widths[1], widths[0]);
+    }
+    expect(shared.literals.where((text) => text == 'A12'), ['A12']);
+    expect(shared.literals, contains(r'$123,456.78'));
+    expect(shared.columnWidthOf('Start'), greaterThan(narrow.columnWidthOf('Start')));
+    expect(shared.columnWidthOf('End'), greaterThan(narrow.columnWidthOf('End')));
+    expect(shared.columnWidthOf('Cost'), greaterThan(narrow.columnWidthOf('Cost')));
+    expect(shared.columnWidthOf('Start'), lessThan(shared.columnWidthOf('Details')));
+  });
 }
 
 class _PdfPage {
-  _PdfPage(this.literals, this._fontSizes, this._lines, this._columnWidths);
+  _PdfPage(
+    this.literals,
+    this._fontSizes,
+    this._lines,
+    this._columnWidths,
+    this._allColumnWidths,
+  );
 
   final List<String> literals;
   final Map<String, double> _fontSizes;
   final Map<String, double> _lines;
   final Map<String, double> _columnWidths;
+  final Map<String, List<double>> _allColumnWidths;
 
   double fontSizeOf(String text) => _fontSizes[text]!;
 
   double lineOf(String text) => _lines[text]!;
 
   double columnWidthOf(String heading) => _columnWidths[heading]!;
+
+  List<double> columnWidthsOf(String heading) => _allColumnWidths[heading]!;
 }
 
 _PdfPage _pdfPage(Uint8List bytes) {
@@ -119,6 +224,7 @@ _PdfPage _pdfPage(Uint8List bytes) {
   final fontSizes = <String, double>{};
   final lines = <String, double>{};
   final columnWidths = <String, double>{};
+  final allColumnWidths = <String, List<double>>{};
   var fontSize = 0.0;
   var columnWidth = 0.0;
   var textY = 0.0;
@@ -144,9 +250,10 @@ _PdfPage _pdfPage(Uint8List bytes) {
     lines.putIfAbsent(literal, () => textY);
     if (columnWidth > 0) {
       columnWidths.putIfAbsent(literal, () => columnWidth);
+      allColumnWidths.putIfAbsent(literal, () => []).add(columnWidth);
     }
   }
-  return _PdfPage(literals, fontSizes, lines, columnWidths);
+  return _PdfPage(literals, fontSizes, lines, columnWidths, allColumnWidths);
 }
 
 String _pdfLiteral(String raw) {
