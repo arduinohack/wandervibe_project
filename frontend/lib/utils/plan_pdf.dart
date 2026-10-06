@@ -129,6 +129,31 @@ List<_PdfDay> _daysInOrder(List<PlanPdfRow> rows) {
   return days;
 }
 
+/// Share of the table for one column. The share is the average printed
+/// length of that field across activities. A column stays at least as wide
+/// as its heading.
+double _columnWeight(List<PlanPdfRow> rows, _PdfColumn column) {
+  final activities = [for (final row in rows) if (row.includeRow) row];
+  final heading = column.heading.length.toDouble();
+  if (activities.isEmpty) return heading;
+  var total = 0;
+  for (final row in activities) {
+    total += _tableCell(column.value(row)).trim().length;
+  }
+  final average = total / activities.length;
+  return average > heading ? average : heading;
+}
+
+Map<int, pw.TableColumnWidth> _columnWidths(
+  List<PlanPdfRow> rows,
+  List<_PdfColumn> columns,
+) {
+  return {
+    for (var index = 0; index < columns.length; index++)
+      index: pw.FlexColumnWidth(_columnWeight(rows, columns[index])),
+  };
+}
+
 String _twoDigits(int value) => value.toString().padLeft(2, '0');
 
 /// Local clock of the device that builds the file: mm/dd/yy hh:nn, 24-hour.
@@ -141,7 +166,18 @@ String _generatedLabel(DateTime time) {
   return 'Generated: $month/$day/$year $hour:$minute';
 }
 
-pw.Widget _dayTable(List<PlanPdfRow> activities, List<_PdfColumn> columns) {
+pw.Widget _dayTable(
+  List<PlanPdfRow> activities,
+  List<_PdfColumn> columns,
+  Map<int, pw.TableColumnWidth> columnWidths,
+) {
+  final detailsColumn = columns.indexWhere(
+    (column) => column.heading == 'Details',
+  );
+  final detailStyle = pw.TextStyle(
+    fontWeight: pw.FontWeight.normal,
+    fontSize: 8,
+  );
   return pw.TableHelper.fromTextArray(
     headers: [for (final column in columns) column.heading],
     data: [
@@ -151,10 +187,14 @@ pw.Widget _dayTable(List<PlanPdfRow> activities, List<_PdfColumn> columns) {
     border: pw.TableBorder.all(width: 0.4),
     headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10),
     cellStyle: pw.TextStyle(fontWeight: pw.FontWeight.normal, fontSize: 10),
+    textStyleBuilder: (index, data, rowNum) {
+      if (index == detailsColumn) return detailStyle;
+      return null;
+    },
     cellAlignment: pw.Alignment.topLeft,
     headerAlignment: pw.Alignment.topLeft,
     cellPadding: const pw.EdgeInsets.all(4),
-    defaultColumnWidth: const pw.FlexColumnWidth(),
+    columnWidths: columnWidths,
   );
 }
 
@@ -171,6 +211,7 @@ Future<Uint8List> buildPlanPdf({
   final document = pw.Document();
   final days = _daysInOrder(rows);
   final columns = _columnsInPrint(rows);
+  final columnWidths = _columnWidths(rows, columns);
   final generated = _generatedLabel(DateTime.now());
   final chrome = const pw.TextStyle(fontSize: 9);
   document.addPage(
@@ -232,7 +273,7 @@ Future<Uint8List> buildPlanPdf({
               ..add(pw.SizedBox(height: 6));
           }
           if (columns.isNotEmpty) {
-            blocks.add(_dayTable(day.activities, columns));
+            blocks.add(_dayTable(day.activities, columns, columnWidths));
           }
         }
         return blocks;
