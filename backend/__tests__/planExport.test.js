@@ -66,6 +66,13 @@ async function acceptRole(ownerToken, memberToken, planId, email, role) {
   expect(acceptRes.status).toBe(200);
 }
 
+function exportStamp(date = new Date()) {
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const year = String(date.getFullYear() % 100).padStart(2, '0');
+  return `${month}-${day}-${year}`;
+}
+
 function getExport(token, planId, query) {
   const req = request(app).get(`/api/plans/${planId}/export`).query(query);
   if (token) req.set('Authorization', `Bearer ${token}`);
@@ -197,7 +204,7 @@ describe('plan export', () => {
 
     expect(exported.status).toBe(200);
     expect(exported.headers['content-type']).toMatch(/text\/csv/);
-    expect(exported.headers['content-disposition']).toContain('Paris Trip.csv');
+    expect(exported.headers['content-disposition']).toContain(`Paris Trip ${exportStamp()}.csv`);
     expect(await Plan.countDocuments()).toBe(beforePlans);
 
     const table = parseCsv(exported.text).filter((row) => row.some((cell) => cell !== ''));
@@ -251,7 +258,7 @@ describe('plan export', () => {
     expect(exported.headers['content-type']).toBe(
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     );
-    expect(exported.headers['content-disposition']).toContain('Paris Trip.xlsx');
+    expect(exported.headers['content-disposition']).toContain(`Paris Trip ${exportStamp()}.xlsx`);
     expect(Buffer.isBuffer(exported.body)).toBe(true);
     expect(exported.body.subarray(0, 2).toString('utf8')).toBe('PK');
     const sheet = exported.body.toString('utf8');
@@ -261,6 +268,57 @@ describe('plan export', () => {
     expect(sheet).toContain('<t>car</t>');
     expect(sheet).toContain('<v>12.5</v>');
     expect(sheet).not.toContain('activity-should-stay-out');
+  });
+
+  test('the download name is the plan name, the local date, and the format', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+    });
+    const stamp = exportStamp();
+    const harbor = await request(app)
+      .post('/api/plans')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ type: 'trip', name: 'Harbor', destination: 'Harbor' });
+    expect(harbor.status).toBe(201);
+    const harborId = harbor.body.plan._id;
+
+    const csv = await getExport(ada.token, harborId, { format: 'csv', fields: 'name' });
+    expect(csv.status).toBe(200);
+    expect(csv.headers['content-disposition']).toContain(`filename="Harbor ${stamp}.csv"`);
+    expect(csv.headers['content-disposition']).toContain(
+      `filename*=UTF-8''Harbor%20${stamp}.csv`,
+    );
+
+    const xlsx = await getXlsx(ada.token, harborId, { format: 'xlsx', fields: 'name' });
+    expect(xlsx.status).toBe(200);
+    expect(xlsx.headers['content-disposition']).toContain(`filename="Harbor ${stamp}.xlsx"`);
+    expect(xlsx.headers['content-disposition']).toContain(
+      `filename*=UTF-8''Harbor%20${stamp}.xlsx`,
+    );
+
+    const marked = await request(app)
+      .post('/api/plans')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ type: 'trip', name: '  a/b\\c:d"e  ', destination: 'X' });
+    expect(marked.status).toBe(201);
+    const markedFile = await getExport(ada.token, marked.body.plan._id, {
+      format: 'csv',
+      fields: 'name',
+    });
+    expect(markedFile.headers['content-disposition']).toContain(`filename="a b c d e ${stamp}.csv"`);
+
+    const blank = await request(app)
+      .post('/api/plans')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ type: 'trip', name: '   ', destination: 'X' });
+    expect(blank.status).toBe(201);
+    const blankFile = await getExport(ada.token, blank.body.plan._id, {
+      format: 'csv',
+      fields: 'name',
+    });
+    expect(blankFile.headers['content-disposition']).toContain(`filename="plan ${stamp}.csv"`);
   });
 
   test('csv and excel use the fields query order as the column order', async () => {

@@ -306,14 +306,23 @@ function buildXlsx(fields, rows) {
   ]);
 }
 
-function exportFilename(planName, format) {
+function exportDate(now) {
+  const date = now instanceof Date ? now : new Date();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const year = String(date.getFullYear() % 100).padStart(2, '0');
+  return `${month}-${day}-${year}`;
+}
+
+function exportFilename(planName, format, now) {
   const cleaned = String(planName || '')
     .trim()
     .replace(/[\\/:*?"<>|]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
   const base = cleaned || 'plan';
-  return `${base}.${format === 'xlsx' ? 'xlsx' : 'csv'}`;
+  const ext = format === 'xlsx' ? 'xlsx' : 'csv';
+  return `${base} ${exportDate(now)}.${ext}`;
 }
 
 function contentDisposition(filename) {
