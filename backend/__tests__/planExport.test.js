@@ -263,6 +263,35 @@ describe('plan export', () => {
     expect(sheet).not.toContain('activity-should-stay-out');
   });
 
+  test('csv and excel use the fields query order as the column order', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+    });
+    const planId = await seedPlan(ada);
+    const ordered = 'location,name,start';
+
+    const csv = await getExport(ada.token, planId, { format: 'csv', fields: ordered });
+    expect(csv.status).toBe(200);
+    const table = parseCsv(csv.text).filter((row) => row.some((cell) => cell !== ''));
+    expect(table[0]).toEqual(['location', 'name', 'start']);
+    expect(table[1]).toEqual(['', 'Gap', '10/05/26 10:00 EDT']);
+    expect(table[2]).toEqual(['Terminal', 'Airport', '10/05/26 10:00 EDT']);
+
+    const xlsx = await getXlsx(ada.token, planId, { format: 'xlsx', fields: ordered });
+    expect(xlsx.status).toBe(200);
+    const sheet = xlsx.body.toString('utf8');
+    expect(sheet).toContain(
+      '<c r="A1" t="inlineStr"><is><t>location</t></is></c>' +
+      '<c r="B1" t="inlineStr"><is><t>name</t></is></c>' +
+      '<c r="C1" t="inlineStr"><is><t>start</t></is></c>',
+    );
+    expect(sheet).toContain('<c r="A3" t="inlineStr"><is><t>Terminal</t></is></c>');
+    expect(sheet).toContain('<c r="B3" t="inlineStr"><is><t>Airport</t></is></c>');
+    expect(sheet).toContain('<c r="C3" t="inlineStr"><is><t>10/05/26 10:00 EDT</t></is></c>');
+  });
+
   test('a collaborator can export and a guest is 403', async () => {
     const ada = await registerAndLogin({
       firstName: 'Ada',

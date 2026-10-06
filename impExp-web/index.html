@@ -17,6 +17,16 @@
     dialog { border: 1px solid #ccc; max-width: 28rem; max-height: 80vh; overflow: auto; }
     dialog label { margin-top: 6px; }
     fieldset { border: 0; margin: 12px 0; padding: 0; }
+    #export-order { list-style: none; margin: 8px 0 0; padding: 0; }
+    #export-order li {
+      margin: 4px 0;
+      padding: 6px 8px;
+      border: 1px solid #ccc;
+      cursor: grab;
+      user-select: none;
+      touch-action: none;
+    }
+    #export-order li.dragging { background: #f3f3f3; }
   </style>
 </head>
 <body>
@@ -77,7 +87,8 @@
 
   <dialog id="field-window">
     <form id="field-form">
-      <p>Choose the fields to include.</p>
+      <p>Choose the fields to include. Drag the checked fields. The top field is the first column.</p>
+      <ul id="export-order"></ul>
       <fieldset>
         <label><input type="checkbox" name="export-field" value="name" checked> name</label>
         <label><input type="checkbox" name="export-field" value="type"> type</label>

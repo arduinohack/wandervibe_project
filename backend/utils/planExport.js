@@ -149,6 +149,7 @@ function readExportQuery(query) {
   }
   const requested = fieldList(source.fields);
   if (!requested.length) return { error: 'At least one field is required' };
+  // The query order is the column order.
   const fields = [];
   const seen = new Set();
   for (const field of requested) {

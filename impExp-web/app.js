@@ -26,6 +26,7 @@ const fieldWindow = document.getElementById('field-window');
 const fieldForm = document.getElementById('field-form');
 const fieldMessage = document.getElementById('field-message');
 const fieldCancel = document.getElementById('field-cancel');
+const exportOrder = document.getElementById('export-order');
 const exportWindow = document.getElementById('export-window');
 const exportPlan = document.getElementById('export-plan');
 const exportCsv = document.getElementById('export-csv');
@@ -265,6 +266,85 @@ function checkedExportFields() {
   return [...fieldForm.querySelectorAll('input[name="export-field"]:checked')].map((box) => box.value);
 }
 
+function orderItem(field) {
+  for (const item of exportOrder.children) {
+    if (item.dataset.field === field) return item;
+  }
+  return null;
+}
+
+function addOrderField(field) {
+  if (orderItem(field)) return;
+  const item = document.createElement('li');
+  item.dataset.field = field;
+  item.textContent = field;
+  exportOrder.appendChild(item);
+}
+
+function removeOrderField(field) {
+  const item = orderItem(field);
+  if (item) item.remove();
+}
+
+function exportOrderValues() {
+  return [...exportOrder.children].map((item) => item.dataset.field);
+}
+
+function orderItemAfter(y) {
+  const items = [...exportOrder.querySelectorAll('li:not(.dragging)')];
+  let closest = null;
+  let closestOffset = Number.NEGATIVE_INFINITY;
+  for (const child of items) {
+    const box = child.getBoundingClientRect();
+    const offset = y - box.top - box.height / 2;
+    if (offset < 0 && offset > closestOffset) {
+      closestOffset = offset;
+      closest = child;
+    }
+  }
+  return closest;
+}
+
+let draggingField = null;
+
+function endFieldDrag() {
+  if (!draggingField) return;
+  draggingField.classList.remove('dragging');
+  draggingField = null;
+}
+
+exportOrder.addEventListener('pointerdown', (event) => {
+  const item = event.target.closest ? event.target.closest('li') : null;
+  if (!item || item.parentElement !== exportOrder) return;
+  if (event.button != null && event.button !== 0) return;
+  draggingField = item;
+  item.classList.add('dragging');
+  if (item.setPointerCapture) {
+    try { item.setPointerCapture(event.pointerId); } catch (err) { /* already released */ }
+  }
+  event.preventDefault();
+});
+
+exportOrder.addEventListener('pointermove', (event) => {
+  if (!draggingField) return;
+  event.preventDefault();
+  const after = orderItemAfter(event.clientY);
+  if (after) exportOrder.insertBefore(draggingField, after);
+  else exportOrder.appendChild(draggingField);
+});
+
+exportOrder.addEventListener('pointerup', endFieldDrag);
+exportOrder.addEventListener('pointercancel', endFieldDrag);
+
+fieldForm.addEventListener('change', (event) => {
+  const box = event.target;
+  if (!box || box.name !== 'export-field') return;
+  if (box.checked) addOrderField(box.value);
+  else removeOrderField(box.value);
+});
+
+for (const field of checkedExportFields()) addOrderField(field);
+
 function fillExportPlans() {
   exportPlan.replaceChildren();
   for (const option of planSelect.options) {
@@ -465,7 +545,7 @@ fieldCancel.addEventListener('click', () => {
 
 fieldForm.addEventListener('submit', (event) => {
   event.preventDefault();
-  const checked = checkedExportFields();
+  const checked = exportOrderValues();
   if (!checked.length) {
     fieldMessage.textContent = 'Choose at least one field.';
     return;
