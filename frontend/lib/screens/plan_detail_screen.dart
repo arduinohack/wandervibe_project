@@ -572,18 +572,30 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     );
   }
 
+  DateTime? _insertAnchorAbove(int index, Activity selected) {
+    if (index <= 0) return selected.startTime;
+    final activities =
+        Provider.of<PlanProvider>(context, listen: false).itineraryActivities;
+    if (index > activities.length) return null;
+    final above = activities[index - 1];
+    return above.endTime ?? above.startTime;
+  }
+
   Future<void> _addActivity({
     String? insertAfter,
     String? insertBefore,
     int? insertIndex,
     DateTime? initialStart,
+    DateTime? initialEnd,
     String? initialZone,
     bool useDefaultStart = true,
+    bool shiftFollowing = false,
   }) async {
     final planProvider = Provider.of<PlanProvider>(context, listen: false);
     final openingStart = useDefaultStart
         ? _defaultActivityStart(planProvider.itineraryActivities)
         : initialStart;
+    final openingEnd = useDefaultStart ? null : (initialEnd ?? initialStart);
     final draft = await showDialog<_ActivityFields>(
       context: context,
       builder: (context) => _ActivityFormDialog(
@@ -591,6 +603,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
         actionLabel: 'Add',
         planTimeZone: _shownPlan(planProvider).timeZone,
         initialStart: openingStart,
+        initialEnd: openingEnd,
         initialZone: initialZone,
       ),
     );
@@ -598,6 +611,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     final userProvider = Provider.of<UserProvider>(context, listen: false);
     final navigator = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
+    final snapshot = List<Activity>.from(planProvider.itineraryActivities);
     final status = await planProvider.createActivity(
       planId: widget.plan.id,
       name: draft.name,
@@ -635,6 +649,94 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
       messenger.showSnackBar(
         const SnackBar(content: Text('Could not add activity')),
       );
+      return;
+    }
+    if (!shiftFollowing || insertIndex == null) return;
+    final chainStart = draft.start;
+    final chainEnd = draft.end;
+    if (chainStart == null || chainEnd == null) return;
+    // The inserted start is the end from before a duration was set.
+    final added = chainEnd.difference(chainStart);
+    if (added <= Duration.zero) return;
+    if (insertIndex < 0 || insertIndex > snapshot.length) return;
+    await _shiftBackToBackChain(
+      following: snapshot.sublist(insertIndex),
+      anchor: chainStart,
+      added: added,
+      planProvider: planProvider,
+      userProvider: userProvider,
+      messenger: messenger,
+      navigator: navigator,
+    );
+  }
+
+  Future<void> _shiftBackToBackChain({
+    required List<Activity> following,
+    required DateTime anchor,
+    required Duration added,
+    required PlanProvider planProvider,
+    required UserProvider userProvider,
+    required ScaffoldMessengerState messenger,
+    required NavigatorState navigator,
+  }) async {
+    final indexes = backToBackChainIndexes(
+      following: [
+        for (final activity in following)
+          ActivityChainTime(start: activity.startTime, end: activity.endTime),
+      ],
+      anchor: anchor,
+    );
+    final planZone = _shownPlan(planProvider).timeZone;
+    for (final index in indexes) {
+      final activity = following[index];
+      final activityId = activity.id;
+      final start = activity.startTime;
+      if (activityId == null || activityId.isEmpty || start == null) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Could not update activity')),
+        );
+        return;
+      }
+      final status = await planProvider.updateActivity(
+        activityId: activityId,
+        name: activity.name,
+        type: _activityTypeName(activity),
+        startTime: start.add(added),
+        endTime: activity.endTime?.add(added),
+        timeZone: _activityStartZone(activity, planZone),
+        startTimeZone: _activityStartZone(activity, planZone),
+        endTimeZone: _activityEndZone(activity, planZone),
+        location: activity.location ?? '',
+        googlePlaceId: activity.googlePlaceId,
+        details: activity.details ?? '',
+        bookingReference: (activity.bookingReference ?? '').trim(),
+        cost: activity.cost,
+        costType: _storedCostType(activity),
+        gate: activity.gate,
+        baggageClaim: activity.baggageClaim,
+        roomNumber: activity.roomNumber,
+        durationMinutes: activity.duration?.inMinutes,
+        writeStartTime: true,
+        writeEndTime: activity.endTime != null,
+        writeDuration: activity.duration != null,
+        planId: widget.plan.id,
+        token: userProvider.token,
+      );
+      if (!mounted) return;
+      if (status == 401) {
+        await _endSession(userProvider, planProvider, navigator);
+        return;
+      }
+      if (status == 403) {
+        messenger.showSnackBar(const SnackBar(content: Text('Not allowed')));
+        return;
+      }
+      if (status != 200) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Could not update activity')),
+        );
+        return;
+      }
     }
   }
 
@@ -882,24 +984,35 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                         tooltip: 'Insert above',
                         visualDensity: VisualDensity.compact,
                         icon: const _PlusArrowIcon(up: true),
-                        onPressed: () => _addActivity(
-                          insertBefore: activityId,
-                          insertIndex: dragIndex,
-                          initialZone: startZone,
-                          useDefaultStart: false,
-                        ),
+                        onPressed: () {
+                          final anchor = _insertAnchorAbove(dragIndex, activity);
+                          _addActivity(
+                            insertBefore: activityId,
+                            insertIndex: dragIndex,
+                            initialStart: anchor,
+                            initialEnd: anchor,
+                            initialZone: startZone,
+                            useDefaultStart: false,
+                            shiftFollowing: anchor != null,
+                          );
+                        },
                       ),
                       IconButton(
                         tooltip: 'Insert below',
                         visualDensity: VisualDensity.compact,
                         icon: const _PlusArrowIcon(up: false),
-                        onPressed: () => _addActivity(
-                          insertAfter: activityId,
-                          insertIndex: dragIndex + 1,
-                          initialStart: activity.endTime ?? activity.startTime,
-                          initialZone: endZone,
-                          useDefaultStart: false,
-                        ),
+                        onPressed: () {
+                          final anchor = activity.endTime ?? activity.startTime;
+                          _addActivity(
+                            insertAfter: activityId,
+                            insertIndex: dragIndex + 1,
+                            initialStart: anchor,
+                            initialEnd: anchor,
+                            initialZone: endZone,
+                            useDefaultStart: false,
+                            shiftFollowing: anchor != null,
+                          );
+                        },
                       ),
                       IconButton(
                         tooltip: 'Edit activity',
@@ -1264,6 +1377,7 @@ class _ActivityFormDialog extends StatefulWidget {
   final String? planId;
   final String planTimeZone;
   final DateTime? initialStart;
+  final DateTime? initialEnd;
   final DateTime? chainStart;
   final String? initialZone;
 
@@ -1274,6 +1388,7 @@ class _ActivityFormDialog extends StatefulWidget {
     this.planId,
     this.planTimeZone = '',
     this.initialStart,
+    this.initialEnd,
     this.chainStart,
     this.initialZone,
   });
@@ -1333,6 +1448,8 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
         activity.duration != null &&
         _start != null) {
       _end = _start!.add(activity.duration!);
+    } else if (activity == null) {
+      _end = widget.initialEnd;
     }
     _durationController = TextEditingController(text: _storedDurationText(activity));
     _locationController = TextEditingController(text: activity?.location ?? '');
