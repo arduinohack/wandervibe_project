@@ -3,6 +3,7 @@ const app = require('../app');
 
 const flutterOrigin = 'http://localhost:63582';
 const flutterWebOrigin = 'http://192.168.1.140:8081';
+const importExportOrigin = 'http://192.168.1.140:5501';
 const adminOrigins = [
   'http://localhost:5500',
   'http://127.0.0.1:5500',
@@ -80,9 +81,27 @@ describe('browser CORS', () => {
     }
   });
 
+  test('development and production allow the import/export LAN origin', async () => {
+    for (const env of ['development', 'production']) {
+      process.env.NODE_ENV = env;
+      const response = await preflight(importExportOrigin);
+      expect(response.status).toBe(204);
+      expect(response.headers['access-control-allow-origin']).toBe(importExportOrigin);
+      expect(response.headers['access-control-allow-origin']).not.toBe('*');
+
+      const page = await request(app).get('/').set('Origin', importExportOrigin);
+      expect(page.status).toBe(200);
+      expect(page.headers['access-control-allow-origin']).toBe(importExportOrigin);
+
+      const unknown = await preflight('http://192.168.1.140:5502');
+      expect(unknown.headers['access-control-allow-origin']).toBeUndefined();
+      expect(unknown.headers['access-control-allow-origin']).not.toBe('*');
+    }
+  });
+
   test('production allows the admin origins and the Flutter web LAN origin', async () => {
     process.env.NODE_ENV = 'production';
-    for (const origin of [...adminOrigins, flutterWebOrigin]) {
+    for (const origin of [...adminOrigins, flutterWebOrigin, importExportOrigin]) {
       const response = await preflight(origin);
       expect(response.status).toBe(204);
       expect(response.headers['access-control-allow-origin']).toBe(origin);

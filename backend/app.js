@@ -14,6 +14,7 @@ const adminOrigins = new Set([
   'http://127.0.0.1:5500',
   'http://localhost:8080',
   'http://192.168.1.140:8081',
+  'http://192.168.1.140:5501',
 ]);
 
 const devLocalOrigin = /^http:\/\/(?:localhost|127\.0\.0\.1):\d+$/;
