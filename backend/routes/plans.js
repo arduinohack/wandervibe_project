@@ -9,7 +9,7 @@ const { Event } = require('../models/Event');
 const { compareStoredOrder } = require('../utils/activityTimes');
 const authMiddleware = require('../middleware/auth.js');  // Add this line for token verification
 const { checkPermission } = require('../utils/permissions');
-const { canonicalMembershipRole } = require('../middleware/roleCheck');
+const { roleCheck, canonicalMembershipRole } = require('../middleware/roleCheck');
 const { DateTime } = require('luxon');  // For time zone/DST in Day Numbers
 const { v4: uuidv4 } = require('uuid');
 const { notifyUsers } = require('../utils/notifications');
@@ -186,6 +186,69 @@ router.get('/:planId/users', authMiddleware, async (req, res) => {
     });
   } catch (err) {
     console.error('List users error:', err);
+    res.status(500).json({ msg: 'Server error' });
+  }
+});
+
+function memberDisplayName(user) {
+  if (!user) return '';
+  return `${user.firstName || ''} ${user.lastName || ''}`.trim();
+}
+
+// GET /api/plans/:planId/members
+// Owner, Collaborator, or Guest. Accepted people plus pending invitations.
+router.get('/:planId/members', roleCheck(['Owner', 'Collaborator', 'Guest']), async (req, res) => {
+  const { planId } = req.params;
+  logger.info('In Get /api/plans/{planId}/members - lists accepted members and pending invites');
+
+  try {
+    const [planUsers, pendingInvites] = await Promise.all([
+      PlanUser.find({ planId }).select('userId role').lean(),
+      Invitation.find({ planId, status: 'pending' }).select('userId email role').lean(),
+    ]);
+
+    const userIds = new Set();
+    for (const row of planUsers) {
+      if (row.userId) userIds.add(String(row.userId));
+    }
+    for (const invite of pendingInvites) {
+      if (invite.userId) userIds.add(String(invite.userId));
+    }
+
+    const users = userIds.size
+      ? await User.find({ _id: { $in: [...userIds] } }).select('firstName lastName email').lean()
+      : [];
+    const userById = new Map(users.map((user) => [String(user._id), user]));
+
+    const members = [];
+    const acceptedIds = new Set();
+    for (const row of planUsers) {
+      const id = String(row.userId || '');
+      if (id) acceptedIds.add(id);
+      const user = userById.get(id);
+      members.push({
+        name: memberDisplayName(user),
+        email: (user && user.email) || '',
+        role: row.role,
+        status: 'accepted',
+      });
+    }
+
+    for (const invite of pendingInvites) {
+      const id = invite.userId ? String(invite.userId) : '';
+      if (id && acceptedIds.has(id)) continue;
+      const user = id ? userById.get(id) : null;
+      members.push({
+        name: memberDisplayName(user),
+        email: (user && user.email) || invite.email || '',
+        role: invite.role,
+        status: 'pending',
+      });
+    }
+
+    res.json({ members });
+  } catch (err) {
+    console.error('List members error:', err);
     res.status(500).json({ msg: 'Server error' });
   }
 });

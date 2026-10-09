@@ -554,13 +554,34 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
       userProvider.token,
     );
     if (!mounted) return;
+    if (status == 401) {
+      setState(() {
+        _loaded = true;
+        _status = status;
+      });
+      await _endSession(userProvider, planProvider, navigator);
+      return;
+    }
+    if (status == 200) {
+      final membersStatus = await planProvider.fetchPlanMembers(
+        widget.plan.id,
+        userProvider.token,
+      );
+      if (!mounted) return;
+      if (membersStatus == 401) {
+        setState(() {
+          _loaded = true;
+          _status = 401;
+        });
+        await _endSession(userProvider, planProvider, navigator);
+        return;
+      }
+    }
+    if (!mounted) return;
     setState(() {
       _loaded = true;
       _status = status;
     });
-    if (status == 401) {
-      await _endSession(userProvider, planProvider, navigator);
-    }
   }
 
   Future<void> _endSession(
@@ -1088,6 +1109,8 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
       return;
     }
     if (result == 201) {
+      await planProvider.fetchPlanMembers(plan.id, userProvider.token);
+      if (!mounted) return;
       messenger.showSnackBar(
         const SnackBar(content: Text('Invitation sent')),
       );
@@ -1214,6 +1237,37 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                         'Time zone: ${shown.timeZone.isEmpty ? 'not set' : shown.timeZone}',
                       ),
                       Text('State: ${shown.planningState}'),
+                      if (planProvider.planMembers.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        const Text(
+                          'People',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        for (final member in planProvider.planMembers)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  member.name.isNotEmpty
+                                      ? member.name
+                                      : member.email,
+                                ),
+                                if (member.name.isNotEmpty &&
+                                    member.email.isNotEmpty)
+                                  Text(member.email),
+                                Text(
+                                  planMemberRoleLine(
+                                    shown.type,
+                                    member.role,
+                                    member.status,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
                     ],
                   ),
                 ),

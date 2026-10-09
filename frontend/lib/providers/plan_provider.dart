@@ -7,6 +7,7 @@ import '../config/constants.dart'; // Add this line for backendBaseUrl
 // Add this line for UserProvider (token)
 import 'package:flutter/material.dart'; // Added: Required for Icon
 import '../models/plan.dart'; // Your Plan model
+import '../models/plan_member.dart';
 import '../models/activity.dart';
 import '../models/activity_type.dart';
 import '../models/user.dart'; // Your User model
@@ -264,6 +265,8 @@ class PlanProvider extends ChangeNotifier {
   List<PlanUser> _planUsers =
       []; // Private list of users/roles for current plan
   List<PlanUser> get planUsers => _planUsers;
+  List<PlanMember> _planMembers = [];
+  List<PlanMember> get planMembers => _planMembers;
   bool get isLoading => _isLoading;
 
   String? _currentPlanId; // Track current plan for itinerary
@@ -298,6 +301,7 @@ class PlanProvider extends ChangeNotifier {
     _isLoading = true;
     _itinerary = [];
     _itineraryError = null;
+    _planMembers = [];
     notifyListeners();
 
     try {
@@ -434,6 +438,7 @@ class PlanProvider extends ChangeNotifier {
     _plansError = null;
     _itinerary = [];
     _itineraryError = null;
+    _planMembers = [];
     _isLoading = false;
     notifyListeners();
   }
@@ -536,6 +541,57 @@ class PlanProvider extends ChangeNotifier {
       return 200;
     } catch (e) {
       logger.e('Error reading membership role: $e');
+      return null;
+    }
+  }
+
+  /// GET /api/plans/:planId/members. Accepted people and pending invitations.
+  Future<int?> fetchPlanMembers(String planId, String? token) async {
+    try {
+      if (token == null || token.isEmpty) {
+        _planMembers = [];
+        notifyListeners();
+        return 401;
+      }
+
+      final response = await http.get(
+        Uri.parse(
+          backendBaseUrl + apiPlanMembers.replaceAll('{planId}', planId),
+        ),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+
+      if (response.statusCode == 401) {
+        _planMembers = [];
+        notifyListeners();
+        return 401;
+      }
+      if (response.statusCode != 200) {
+        _planMembers = [];
+        notifyListeners();
+        return response.statusCode;
+      }
+
+      final dynamic data = json.decode(response.body);
+      if (data is! Map || data['members'] is! List) {
+        _planMembers = [];
+        notifyListeners();
+        return response.statusCode;
+      }
+
+      final parsed = <PlanMember>[];
+      for (final item in data['members'] as List) {
+        if (item is! Map) continue;
+        parsed.add(PlanMember.fromJson(Map<String, dynamic>.from(item)));
+      }
+      _planMembers = parsed;
+      logger.i('Fetched ${_planMembers.length} members for plan $planId');
+      notifyListeners();
+      return 200;
+    } catch (e) {
+      logger.e('Error fetching plan members: $e');
+      _planMembers = [];
+      notifyListeners();
       return null;
     }
   }

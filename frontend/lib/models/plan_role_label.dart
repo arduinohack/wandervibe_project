@@ -19,6 +19,15 @@ String planRoleLabel(String? planType, String storedRole) {
   }
 }
 
+/// Role line on the plan people list. Pending keeps the type label and adds Pending.
+String planMemberRoleLine(String? planType, String storedRole, String status) {
+  final label = planRoleLabel(planType, storedRole);
+  if (status.trim().toLowerCase() == 'pending') {
+    return '$label Pending';
+  }
+  return label;
+}
+
 /// Stored roles an Owner or Collaborator may send. Guest gets none.
 /// The POST body uses these names. The form shows [planRoleLabel].
 List<String> inviteStoredRoles(String? storedRole) {

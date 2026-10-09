@@ -24,4 +24,20 @@ void main() {
     expect(planRoleLabel('trip', 'Guest'), 'Attendee');
     expect(planRoleLabel('trip', 'Collaborator'), 'Co-Planner');
   });
+
+  test('trip people list uses trip labels and Pending', () {
+    expect(planMemberRoleLine('trip', 'Owner', 'accepted'), 'Organizer');
+    expect(planMemberRoleLine('trip', 'Collaborator', 'accepted'), 'Co-Planner');
+    expect(planMemberRoleLine('trip', 'Guest', 'accepted'), 'Attendee');
+    expect(planMemberRoleLine('trip', 'Collaborator', 'pending'), 'Co-Planner Pending');
+    expect(planMemberRoleLine('trip', 'Guest', 'pending'), 'Attendee Pending');
+  });
+
+  test('plan people list uses plan labels and Pending', () {
+    expect(planMemberRoleLine('plan', 'Owner', 'accepted'), 'Host');
+    expect(planMemberRoleLine('plan', 'Collaborator', 'accepted'), 'Planner');
+    expect(planMemberRoleLine('plan', 'Guest', 'accepted'), 'Guest');
+    expect(planMemberRoleLine('plan', 'Collaborator', 'pending'), 'Planner Pending');
+    expect(planMemberRoleLine('plan', 'Guest', 'pending'), 'Guest Pending');
+  });
 }
