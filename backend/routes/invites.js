@@ -6,6 +6,14 @@ const PlanUser = require('../models/PlanUser');
 const { v4: uuidv4 } = require('uuid');
 const { notifyUsers } = require('../utils/notifications');
 const { roleCheck, canonicalMembershipRole } = require('../middleware/roleCheck');
+const {
+  personDisplayName,
+  inviteeMail,
+  inviterMail,
+  acceptedMail,
+  welcomeMail,
+  rejectedMail,
+} = require('../utils/mailCopy');
 const planInviteRouter = express.Router();
 const invitesRouter = express.Router();
 
@@ -65,8 +73,9 @@ planInviteRouter.post('/:planId/invite', roleCheck(['Owner', 'Collaborator']), a
       return res.status(400).json({ msg: 'User already invited' });
     }
 
-    const plan = await Plan.findById(planId).select('name').lean();
-    const planName = (plan && plan.name) || 'a trip';
+    const plan = await Plan.findById(planId).select('name type').lean();
+    const planName = plan && plan.name;
+    const planType = plan && plan.type;
     const callerId = req.user.userId || req.user.id;
 
     const invitation = new Invitation({
@@ -80,17 +89,30 @@ planInviteRouter.post('/:planId/invite', roleCheck(['Owner', 'Collaborator']), a
     await invitation.save();
 
     if (invitee) {
-      const inviteMessage = `You've been invited to "${planName}" as ${storedRole} on PlanItVibe! Check app to accept.`;
+      const inviteMessage = inviteeMail({ planName, planType, storedRole });
       await notifyUsers([invitee._id], inviteMessage, 'email');
       await notifyUsers(
         [callerId],
-        `Invited ${invitee.firstName} ${invitee.lastName} as ${storedRole}.`,
+        inviterMail({
+          personName: personDisplayName(invitee, email),
+          planType,
+          storedRole,
+        }),
         'email',
       );
     } else {
-      const inviteMessage = `You've been invited to "${planName}" as ${storedRole} on PlanItVibe! ${signupLink(email)}`;
+      const inviteMessage = inviteeMail({
+        planName,
+        planType,
+        storedRole,
+        signupUrl: signupLink(email),
+      });
       await notifyUsers([email], inviteMessage, 'email');
-      await notifyUsers([callerId], `Invited ${email} as ${storedRole}.`, 'email');
+      await notifyUsers(
+        [callerId],
+        inviterMail({ personName: email, planType, storedRole }),
+        'email',
+      );
     }
 
     res.status(201).json({ msg: 'Invitation sent!', invitation });
@@ -167,6 +189,17 @@ invitesRouter.post('/invitations/:invitationId/respond', async (req, res) => {
     invitation.status = status;
     await invitation.save();
 
+    const [plan, invitee] = await Promise.all([
+      Plan.findById(invitation.planId).select('name type').lean(),
+      User.findById(invitation.userId).select('firstName lastName email').lean(),
+    ]);
+    const planType = plan && plan.type;
+    const planName = plan && plan.name;
+    const personName = personDisplayName(invitee, invitation.email);
+    const inviterId = (invitation.invitedBy && invitation.invitedBy._id)
+      ? invitation.invitedBy._id
+      : invitation.invitedBy;
+
     if (status === 'accepted') {
       await PlanUser.findOneAndUpdate(
         { planId: invitation.planId, userId: invitation.userId },
@@ -174,19 +207,18 @@ invitesRouter.post('/invitations/:invitationId/respond', async (req, res) => {
         { upsert: true, new: true }
       );
 
-      // Notify all trip participants (fetch them)
       const tripParticipants = await PlanUser.find({ planId: invitation.planId }).select('userId');
       const participantIds = tripParticipants.map(tu => tu.userId);
-      const acceptMsg = `${invitation.invitedBy.firstName} ${invitation.invitedBy.lastName} accepted your invite as ${invitation.role}!`;
+      const acceptMsg = acceptedMail({ personName, planType, storedRole: invitation.role });
       await notifyUsers(participantIds, acceptMsg, 'email');
     } else {
-      // Rejected: Notify inviter
-      const rejectMsg = `${req.user.firstName} ${req.user.lastName} rejected your invite to ${invitation.tripId}.`;
-      await notifyUsers([invitation.invitedBy._id], rejectMsg, 'email');
+      const rejectMsg = rejectedMail({ personName, planName, planType });
+      await notifyUsers([inviterId], rejectMsg, 'email');
     }
 
-    // Final notify to responder
-    const responseMsg = status === 'accepted' ? `Welcome to the trip as ${invitation.role}!` : 'Invite rejected.';
+    const responseMsg = status === 'accepted'
+      ? welcomeMail({ planType, storedRole: invitation.role })
+      : 'Invite rejected.';
     await notifyUsers([req.user.userId], responseMsg, 'email');
 
     res.json({ msg: `Invitation ${status}!`, invitation });

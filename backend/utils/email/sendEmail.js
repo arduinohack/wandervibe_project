@@ -5,17 +5,23 @@ const providers = {
 };
 
 const DEFAULT_FROM = 'ken@eratespecialists.com';
+const FROM_DISPLAY_NAME = 'PlanItVibe';
 
 function selectedProviderName() {
   return (typeof process.env.EMAIL_PROVIDER === 'string' ? process.env.EMAIL_PROVIDER.trim().toLowerCase() : '') || 'resend';
 }
 
+function fromAddress(raw) {
+  const value = typeof raw === 'string' ? raw.trim() : '';
+  const angled = value.match(/^(.*)<([^<>]+)>\s*$/);
+  if (angled) return angled[2].trim();
+  return value || DEFAULT_FROM;
+}
+
 function selectedFrom() {
   const raw = process.env.EMAIL_FROM;
-  if (typeof raw === 'string' && raw.trim() !== '') {
-    return raw.trim();
-  }
-  return DEFAULT_FROM;
+  const address = fromAddress(typeof raw === 'string' && raw.trim() !== '' ? raw : DEFAULT_FROM);
+  return `${FROM_DISPLAY_NAME} <${address}>`;
 }
 
 async function sendEmail({ to, subject, text, html }) {
@@ -41,4 +47,4 @@ async function sendEmail({ to, subject, text, html }) {
   }
 }
 
-module.exports = { sendEmail, selectedProviderName };
+module.exports = { sendEmail, selectedProviderName, selectedFrom };

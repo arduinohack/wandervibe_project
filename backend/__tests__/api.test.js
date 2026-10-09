@@ -559,6 +559,14 @@ describe('invites', () => {
       expect.stringContaining(`https://planitvibe.com/signup?email=${encodeURIComponent(email)}`),
       'email',
     );
+    expect(notifyUsers).toHaveBeenCalledWith(
+      [email],
+      expect.stringContaining('as Attendee'),
+      'email',
+    );
+    expect(notifyUsers.mock.calls.every((call) => !String(call[1]).includes('undefined'))).toBe(true);
+    expect(notifyUsers.mock.calls.every((call) => !String(call[1]).includes('Collaborator'))).toBe(true);
+    expect(notifyUsers.mock.calls.every((call) => !/\bGuest\b/.test(String(call[1])))).toBe(true);
 
     const again = await request(app)
       .post(`/api/plans/${planId}/invite`)
@@ -634,7 +642,39 @@ describe('invites', () => {
       expect.stringContaining('Check app to accept'),
       'email',
     );
+    expect(notifyUsers).toHaveBeenCalledWith(
+      [grace.userId],
+      expect.stringContaining('as Co-Planner'),
+      'email',
+    );
+    expect(notifyUsers).toHaveBeenCalledWith(
+      [ada.userId],
+      'Invited Grace Hopper as Co-Planner.',
+      'email',
+    );
     expect(notifyUsers.mock.calls.some((call) => String(call[1]).includes('planitvibe.com/signup'))).toBe(false);
+    expect(notifyUsers.mock.calls.every((call) => !String(call[1]).includes('undefined'))).toBe(true);
+    expect(notifyUsers.mock.calls.every((call) => !String(call[1]).includes('Collaborator'))).toBe(true);
+
+    notifyUsers.mockClear();
+    const acceptRes = await request(app)
+      .post(`/api/invites/invitations/${inviteRes.body.invitation._id}/respond`)
+      .set('Authorization', `Bearer ${grace.token}`)
+      .send({ status: 'accepted' });
+    expect(acceptRes.status).toBe(200);
+    expect(notifyUsers).toHaveBeenCalledWith(
+      expect.any(Array),
+      'Grace Hopper accepted your invite as Co-Planner!',
+      'email',
+    );
+    expect(notifyUsers).toHaveBeenCalledWith(
+      [grace.userId],
+      'Welcome to the trip as Co-Planner!',
+      'email',
+    );
+    expect(notifyUsers.mock.calls.every((call) => !String(call[1]).includes('undefined'))).toBe(true);
+    expect(notifyUsers.mock.calls.every((call) => !String(call[1]).includes('Collaborator'))).toBe(true);
+    expect(notifyUsers.mock.calls.every((call) => !/\bGuest\b/.test(String(call[1])))).toBe(true);
   });
 
   test('reassign writes Owner to the target and Collaborator to the previous owner', async () => {
