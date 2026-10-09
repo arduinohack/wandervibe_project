@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/user_provider.dart'; // For signup
+import 'auth_landing.dart';
 import 'login_screen.dart'; // Navigate to login after success
 
 class SignupScreen extends StatefulWidget {
@@ -76,16 +77,19 @@ class _SignupScreenState extends State<SignupScreen> {
           },
           {'email': _emailNotifications, 'sms': _smsNotifications},
         );
-        navigator.pushReplacement(
-          MaterialPageRoute(builder: (context) => const LoginScreen()),
-        );
-        messenger.showSnackBar(
-          const SnackBar(content: Text('Signup successful—please log in!')),
-        );
+        if (!mounted) return;
+        if (userProvider.token == null || userProvider.token!.isEmpty) {
+          navigator.pushReplacement(
+            MaterialPageRoute(builder: (context) => const LoginScreen()),
+          );
+          return;
+        }
+        await continueAfterAuth(context);
       } catch (e) {
+        if (!mounted) return;
         messenger.showSnackBar(SnackBar(content: Text('Signup error: $e')));
       } finally {
-        setState(() => _isLoading = false);
+        if (mounted) setState(() => _isLoading = false);
       }
     }
   }

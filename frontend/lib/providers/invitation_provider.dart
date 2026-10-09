@@ -8,6 +8,10 @@ import '../config/constants.dart'; // Add this line for getBackendUrl
 import '../models/invitation.dart'; // Your Invitation model
 import '../utils/logger.dart';
 
+bool pendingInviteArrayHasItems(dynamic data) {
+  return data is List && data.isNotEmpty;
+}
+
 class InvitationProvider extends ChangeNotifier {
   List<Invitation> _invitations = []; // Private list of invitations
   bool _isLoading = false; // Loading state for UI spinners
@@ -22,6 +26,26 @@ class InvitationProvider extends ChangeNotifier {
     _invitationsError = null;
     _isLoading = false;
     notifyListeners();
+  }
+
+  /// GET /api/invites?status=pending. True when the body is a non-empty array.
+  /// Does not accept or reject invitations.
+  Future<bool> hasPendingInvites(String? token) async {
+    try {
+      if (token == null || token.isEmpty) return false;
+      final response = await http.get(
+        Uri.parse('$backendBaseUrl$apiInvites?status=pending'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+      if (response.statusCode != 200) return false;
+      return pendingInviteArrayHasItems(json.decode(response.body));
+    } catch (e) {
+      logger.e('Error checking pending invitations: $e');
+      return false;
+    }
   }
 
   // GET /api/invites. The body is a raw array. [] is empty, not an error.

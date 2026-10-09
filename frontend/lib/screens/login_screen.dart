@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/user_provider.dart'; // For login
-import 'home_screen.dart'; // Navigate to home on success
+import 'auth_landing.dart';
 import 'signup_screen.dart'; // For sign up navigation
 import 'forgot_password_screen.dart'; // For forgot password navigation
 
@@ -34,7 +34,6 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!form.validate()) return;
     setState(() => _isLoading = true);
     final userProvider = Provider.of<UserProvider>(context, listen: false);
-    final navigator = Navigator.of(context);
     try {
       final failure = await userProvider.login(
         _emailController.text,
@@ -49,9 +48,7 @@ class _LoginScreenState extends State<LoginScreen> {
         _showError('token was null');
         return;
       }
-      navigator.pushReplacement(
-        MaterialPageRoute(builder: (context) => const HomeScreen()),
-      );
+      await continueAfterAuth(context);
     } catch (e) {
       if (!mounted) return;
       _showError(_loginErrorText(e));
