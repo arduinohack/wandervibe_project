@@ -67,7 +67,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('WanderVibe'), // App title
+        title: const Text('PlanItVibe'), // App title
         backgroundColor: Colors.blue, // Matches theme
         actions: [
           IconButton(

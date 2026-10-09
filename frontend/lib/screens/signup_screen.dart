@@ -83,7 +83,7 @@ class _SignupScreenState extends State<SignupScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Sign Up for WanderVibe'),
+        title: const Text('Sign Up for PlanItVibe'),
         backgroundColor: Colors.blue,
         actions: [
           TextButton(

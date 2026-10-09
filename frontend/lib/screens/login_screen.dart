@@ -88,7 +88,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Login to WanderVibe'),
+        title: const Text('Login to PlanItVibe'),
         backgroundColor: Colors.blue,
       ),
       body: Builder(
@@ -100,10 +100,18 @@ class _LoginScreenState extends State<LoginScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(
-                    Icons.travel_explore,
-                    size: 80,
-                    color: Colors.blue,
+                  Image.asset(
+                    'assets/planitvibe_logo.png',
+                    width: 96,
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'PlanItVibe',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                   const SizedBox(height: 32),
                   TextFormField(
