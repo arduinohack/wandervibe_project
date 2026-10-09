@@ -12,6 +12,7 @@ import '../utils/activity_chain.dart';
 import '../utils/activity_time.dart';
 import '../utils/plan_pdf.dart';
 import 'login_screen.dart';
+import 'plan_people_screen.dart';
 
 const activityTypes = [
   'flight',
@@ -58,11 +59,6 @@ bool canAddActivity(String? storedRole) {
 
 bool canEditPlan(String? storedRole) {
   return storedRole?.trim() == 'Owner';
-}
-
-bool canInvite(String? storedRole) {
-  final role = storedRole?.trim();
-  return role == 'Owner' || role == 'Collaborator';
 }
 
 String _twoDigits(int number) => number.toString().padLeft(2, '0');
@@ -554,34 +550,13 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
       userProvider.token,
     );
     if (!mounted) return;
-    if (status == 401) {
-      setState(() {
-        _loaded = true;
-        _status = status;
-      });
-      await _endSession(userProvider, planProvider, navigator);
-      return;
-    }
-    if (status == 200) {
-      final membersStatus = await planProvider.fetchPlanMembers(
-        widget.plan.id,
-        userProvider.token,
-      );
-      if (!mounted) return;
-      if (membersStatus == 401) {
-        setState(() {
-          _loaded = true;
-          _status = 401;
-        });
-        await _endSession(userProvider, planProvider, navigator);
-        return;
-      }
-    }
-    if (!mounted) return;
     setState(() {
       _loaded = true;
       _status = status;
     });
+    if (status == 401) {
+      await _endSession(userProvider, planProvider, navigator);
+    }
   }
 
   Future<void> _endSession(
@@ -1090,41 +1065,18 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     if (removed == true && mounted) Navigator.of(context).pop();
   }
 
-  Future<void> _openInvite(Plan plan, String storedRole) async {
-    final userProvider = Provider.of<UserProvider>(context, listen: false);
-    final planProvider = Provider.of<PlanProvider>(context, listen: false);
-    final navigator = Navigator.of(context);
-    final messenger = ScaffoldMessenger.of(context);
-    final result = await showDialog<int>(
-      context: context,
-      builder: (context) => _PlanInviteDialog(
-        planId: plan.id,
-        planType: plan.type,
-        viewerRole: storedRole,
+  Future<void> _openPeople(Plan plan) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => PlanPeopleScreen(plan: plan),
       ),
     );
-    if (!mounted) return;
-    if (result == 401) {
-      await _endSession(userProvider, planProvider, navigator);
-      return;
-    }
-    if (result == 201) {
-      await planProvider.fetchPlanMembers(plan.id, userProvider.token);
-      if (!mounted) return;
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Invitation sent')),
-      );
-    }
   }
 
   @override
   Widget build(BuildContext context) {
     final planProvider = Provider.of<PlanProvider>(context);
     final shownPlan = _shownPlan(planProvider);
-    final storedRole = planProvider.viewerStoredRole(
-      widget.plan.id,
-      Provider.of<UserProvider>(context, listen: false).currentUserId,
-    );
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -1134,14 +1086,13 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
         ),
         backgroundColor: Colors.blue,
         actions: [
-          if (canInvite(storedRole))
-            TextButton(
-              onPressed: () => _openInvite(shownPlan, storedRole!),
-              child: const Text(
-                'Invite',
-                style: TextStyle(color: Colors.white),
-              ),
+          TextButton(
+            onPressed: () => _openPeople(shownPlan),
+            child: const Text(
+              'People',
+              style: TextStyle(color: Colors.white),
             ),
+          ),
         ],
       ),
       body: Consumer<PlanProvider>(
@@ -1237,37 +1188,6 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                         'Time zone: ${shown.timeZone.isEmpty ? 'not set' : shown.timeZone}',
                       ),
                       Text('State: ${shown.planningState}'),
-                      if (planProvider.planMembers.isNotEmpty) ...[
-                        const SizedBox(height: 12),
-                        const Text(
-                          'People',
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        for (final member in planProvider.planMembers)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 8),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  member.name.isNotEmpty
-                                      ? member.name
-                                      : member.email,
-                                ),
-                                if (member.name.isNotEmpty &&
-                                    member.email.isNotEmpty)
-                                  Text(member.email),
-                                Text(
-                                  planMemberRoleLine(
-                                    shown.type,
-                                    member.role,
-                                    member.status,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                      ],
                     ],
                   ),
                 ),
@@ -1338,133 +1258,6 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
           );
         },
       ),
-    );
-  }
-}
-
-class _PlanInviteDialog extends StatefulWidget {
-  final String planId;
-  final String planType;
-  final String viewerRole;
-
-  const _PlanInviteDialog({
-    required this.planId,
-    required this.planType,
-    required this.viewerRole,
-  });
-
-  @override
-  State<_PlanInviteDialog> createState() => _PlanInviteDialogState();
-}
-
-class _PlanInviteDialogState extends State<_PlanInviteDialog> {
-  final _emailController = TextEditingController();
-  late String _role;
-  String? _error;
-  bool _sending = false;
-
-  List<String> get _roles => inviteStoredRoles(widget.viewerRole);
-
-  @override
-  void initState() {
-    super.initState();
-    _role = _roles.isEmpty ? 'Guest' : _roles.first;
-  }
-
-  @override
-  void dispose() {
-    _emailController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _send() async {
-    final email = _emailController.text.trim();
-    if (email.isEmpty) {
-      setState(() => _error = 'Email required');
-      return;
-    }
-    setState(() {
-      _sending = true;
-      _error = null;
-    });
-    final planProvider = Provider.of<PlanProvider>(context, listen: false);
-    final userProvider = Provider.of<UserProvider>(context, listen: false);
-    final result = await planProvider.inviteToPlan(
-      planId: widget.planId,
-      email: email,
-      role: _role,
-      token: userProvider.token,
-    );
-    if (!mounted) return;
-    if (result.status == 401) {
-      Navigator.pop(context, 401);
-      return;
-    }
-    if (result.status == 201) {
-      Navigator.pop(context, 201);
-      return;
-    }
-    setState(() {
-      _sending = false;
-      _error = result.error ?? 'Could not send invite';
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Invite'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            TextField(
-              controller: _emailController,
-              keyboardType: TextInputType.emailAddress,
-              autofillHints: const [AutofillHints.email],
-              enabled: !_sending,
-              decoration: const InputDecoration(labelText: 'Email'),
-            ),
-            const SizedBox(height: 8),
-            if (_roles.isNotEmpty)
-              SegmentedButton<String>(
-                showSelectedIcon: false,
-                segments: [
-                  for (final stored in _roles)
-                    ButtonSegment(
-                      value: stored,
-                      label: Text(planRoleLabel(widget.planType, stored)),
-                    ),
-                ],
-                selected: {_role},
-                onSelectionChanged: _sending
-                    ? (_) {}
-                    : (next) {
-                        setState(() => _role = next.first);
-                      },
-              ),
-            if (_error != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  _error!,
-                  style: const TextStyle(color: Colors.red),
-                ),
-              ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: _sending ? null : () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        TextButton(
-          onPressed: _sending ? null : _send,
-          child: const Text('Invite'),
-        ),
-      ],
     );
   }
 }

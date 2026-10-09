@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:wandervibe_frontend/models/plan_member.dart';
 import 'package:wandervibe_frontend/models/plan_role_label.dart';
 
 void main() {
@@ -39,5 +40,41 @@ void main() {
     expect(planMemberRoleLine('plan', 'Guest', 'accepted'), 'Guest');
     expect(planMemberRoleLine('plan', 'Collaborator', 'pending'), 'Planner Pending');
     expect(planMemberRoleLine('plan', 'Guest', 'pending'), 'Guest Pending');
+  });
+
+  test('people screen lists the Owner once at the top', () {
+    const extraOwner = PlanMember(
+      name: 'Other',
+      email: 'other@example.com',
+      role: 'Owner',
+      status: 'accepted',
+    );
+    const owner = PlanMember(
+      name: 'Ada Lovelace',
+      email: 'ada@example.com',
+      role: 'Owner',
+      status: 'accepted',
+    );
+    const collaborator = PlanMember(
+      name: 'Grace Hopper',
+      email: 'grace@example.com',
+      role: 'Collaborator',
+      status: 'accepted',
+    );
+    const pendingGuest = PlanMember(
+      name: '',
+      email: 'new.person@example.com',
+      role: 'Guest',
+      status: 'pending',
+    );
+    final listed = peopleScreenMembers([
+      collaborator,
+      extraOwner,
+      pendingGuest,
+      owner,
+    ]);
+    expect(listed, [extraOwner, collaborator, pendingGuest]);
+    expect(listed.first.role, 'Owner');
+    expect(listed.where((row) => row.role == 'Owner'), hasLength(1));
   });
 }

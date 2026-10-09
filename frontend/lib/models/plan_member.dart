@@ -26,3 +26,27 @@ class PlanMember {
     );
   }
 }
+
+bool _isStoredOwner(String role) {
+  switch (role.trim().toLowerCase()) {
+    case 'owner':
+    case 'vibecoordinator':
+      return true;
+    default:
+      return false;
+  }
+}
+
+/// Owner once at the top, then accepted Collaborators and Guests plus pending invites.
+List<PlanMember> peopleScreenMembers(List<PlanMember> members) {
+  PlanMember? owner;
+  final rest = <PlanMember>[];
+  for (final member in members) {
+    if (_isStoredOwner(member.role)) {
+      owner ??= member;
+    } else {
+      rest.add(member);
+    }
+  }
+  return [if (owner != null) owner, ...rest];
+}
