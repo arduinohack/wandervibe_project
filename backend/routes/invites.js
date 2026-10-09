@@ -80,7 +80,7 @@ planInviteRouter.post('/:planId/invite', roleCheck(['Owner', 'Collaborator']), a
     await invitation.save();
 
     if (invitee) {
-      const inviteMessage = `You've been invited to "${planName}" as ${storedRole}! Check app to accept.`;
+      const inviteMessage = `You've been invited to "${planName}" as ${storedRole} on PlanItVibe! Check app to accept.`;
       await notifyUsers([invitee._id], inviteMessage, 'email');
       await notifyUsers(
         [callerId],
@@ -88,7 +88,7 @@ planInviteRouter.post('/:planId/invite', roleCheck(['Owner', 'Collaborator']), a
         'email',
       );
     } else {
-      const inviteMessage = `You've been invited to "${planName}" as ${storedRole}! ${signupLink(email)}`;
+      const inviteMessage = `You've been invited to "${planName}" as ${storedRole} on PlanItVibe! ${signupLink(email)}`;
       await notifyUsers([email], inviteMessage, 'email');
       await notifyUsers([callerId], `Invited ${email} as ${storedRole}.`, 'email');
     }

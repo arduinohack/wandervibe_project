@@ -91,7 +91,7 @@ async function notifyUsers(userIds, message, type = 'email') {
 
       await sendEmail({
         to: overrideTo || user.email,
-        subject: 'WanderVibe Update',
+        subject: 'PlanItVibe Update',
         text: message,
       });
       sent.add(String(user.email).trim().toLowerCase());
@@ -102,7 +102,7 @@ async function notifyUsers(userIds, message, type = 'email') {
       if (sent.has(key)) continue;
       await sendEmail({
         to: overrideTo || email,
-        subject: 'WanderVibe Update',
+        subject: 'PlanItVibe Update',
         text: message,
       });
       sent.add(key);

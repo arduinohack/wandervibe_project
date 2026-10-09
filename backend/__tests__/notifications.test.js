@@ -110,7 +110,7 @@ describe('notifyUsers SMS', () => {
     expect(sendEmail).toHaveBeenCalledTimes(1);
     expect(sendEmail).toHaveBeenCalledWith({
       to: 'new.person@example.com',
-      subject: 'WanderVibe Update',
+      subject: 'PlanItVibe Update',
       text: 'Sign up at https://planitvibe.com/signup?email=new.person%40example.com',
     });
     expect(sendSms).not.toHaveBeenCalled();
