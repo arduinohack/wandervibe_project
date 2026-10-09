@@ -104,6 +104,19 @@ describe('notifyUsers SMS', () => {
     expect(sendSms).not.toHaveBeenCalledWith(expect.objectContaining({ to: '+15551234567' }));
   });
 
+  test('an email recipient with no user still uses the same mail path', async () => {
+    await notifyUsers(['new.person@example.com'], 'Sign up at https://planitvibe.com/signup?email=new.person%40example.com');
+
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+    expect(sendEmail).toHaveBeenCalledWith({
+      to: 'new.person@example.com',
+      subject: 'WanderVibe Update',
+      text: 'Sign up at https://planitvibe.com/signup?email=new.person%40example.com',
+    });
+    expect(sendSms).not.toHaveBeenCalled();
+    expect(await User.findOne({ email: 'new.person@example.com' })).toBeNull();
+  });
+
   test('NOTIFY_OVERRIDE_SMS is the destination when sms is enabled', async () => {
     process.env.NODE_ENV = 'development';
     process.env.NOTIFY_OVERRIDE_SMS = ' +15550001111 ';

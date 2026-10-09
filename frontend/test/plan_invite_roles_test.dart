@@ -17,4 +17,11 @@ void main() {
     expect(planRoleLabel('plan', 'Collaborator'), 'Planner');
     expect(planRoleLabel('plan', 'Guest'), 'Guest');
   });
+
+  test('a plan does not show Attendee; a trip does not show Guest', () {
+    expect(planRoleLabel('plan', 'Guest'), 'Guest');
+    expect(planRoleLabel('plan', 'Collaborator'), 'Planner');
+    expect(planRoleLabel('trip', 'Guest'), 'Attendee');
+    expect(planRoleLabel('trip', 'Collaborator'), 'Co-Planner');
+  });
 }

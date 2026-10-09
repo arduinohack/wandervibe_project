@@ -3,7 +3,8 @@ const mongoose = require('mongoose');
 const invitationSchema = new mongoose.Schema({
   _id: { type: String, required: true }, // UUID
   planId: { type: String, required: true },
-  userId: { type: String, required: true },
+  userId: { type: String },
+  email: { type: String },
   invitedBy: { type: String, required: true },
   role: { type: String, enum: ['Owner', 'Collaborator', 'Guest'], required: true },
   status: { type: String, enum: ['pending', 'accepted', 'rejected'], default: 'pending' }

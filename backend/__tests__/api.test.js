@@ -2,6 +2,7 @@ jest.mock('../utils/notifications', () => ({
   notifyUsers: jest.fn().mockResolvedValue(undefined),
 }));
 
+const { notifyUsers } = require('../utils/notifications');
 const request = require('supertest');
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
@@ -524,6 +525,116 @@ describe('invites', () => {
     }
 
     expect(await Invitation.countDocuments({ userId: grace.userId })).toBe(0);
+  });
+
+  test('invite stores an email with no user id when the person has no account', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+      password: 'password1',
+    });
+
+    const planRes = await request(app)
+      .post('/api/plans')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ type: 'trip', name: 'Paris', destination: 'Paris', timeZone: 'UTC' });
+    const planId = planRes.body.plan._id;
+    const email = 'new.person@example.com';
+    notifyUsers.mockClear();
+
+    const inviteRes = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email, role: 'Guest' });
+
+    expect(inviteRes.status).toBe(201);
+    expect(inviteRes.body.invitation.role).toBe('Guest');
+    expect(inviteRes.body.invitation.email).toBe(email);
+    expect(inviteRes.body.invitation.userId).toBeFalsy();
+    expect(await User.findOne({ email })).toBeNull();
+    expect(await User.countDocuments()).toBe(1);
+    expect(notifyUsers).toHaveBeenCalledWith(
+      [email],
+      expect.stringContaining(`https://planitvibe.com/signup?email=${encodeURIComponent(email)}`),
+      'email',
+    );
+
+    const again = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email, role: 'Guest' });
+    expect(again.status).toBe(400);
+
+    const registerRes = await request(app)
+      .post('/api/auth/register')
+      .send({
+        firstName: 'New',
+        lastName: 'Person',
+        email,
+        password: 'password2',
+      });
+    expect(registerRes.status).toBe(201);
+    const stored = await Invitation.findById(inviteRes.body.invitation._id);
+    expect(stored.userId).toBeTruthy();
+    expect(stored.status).toBe('pending');
+    expect(await PlanUser.findOne({ planId, userId: stored.userId })).toBeNull();
+
+    const loginRes = await request(app)
+      .post('/api/auth/login')
+      .send({ email, password: 'password2' });
+    const inbox = await request(app)
+      .get('/api/invites')
+      .set('Authorization', `Bearer ${loginRes.body.token}`);
+    expect(inbox.status).toBe(200);
+    expect(inbox.body.some((row) => row._id === stored._id)).toBe(true);
+
+    const acceptRes = await request(app)
+      .post(`/api/invites/invitations/${stored._id}/respond`)
+      .set('Authorization', `Bearer ${loginRes.body.token}`)
+      .send({ status: 'accepted' });
+    expect(acceptRes.status).toBe(200);
+    const membership = await PlanUser.findOne({ planId, userId: stored.userId });
+    expect(membership).toBeTruthy();
+    expect(membership.role).toBe('Guest');
+  });
+
+  test('invite of an existing user still stores the user id', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+      password: 'password1',
+    });
+    const grace = await registerAndLogin({
+      firstName: 'Grace',
+      lastName: 'Hopper',
+      email: 'grace@example.com',
+      password: 'password2',
+    });
+
+    const planRes = await request(app)
+      .post('/api/plans')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ type: 'trip', name: 'Paris', destination: 'Paris', timeZone: 'UTC' });
+    const planId = planRes.body.plan._id;
+    notifyUsers.mockClear();
+
+    const inviteRes = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'grace@example.com', role: 'Collaborator' });
+
+    expect(inviteRes.status).toBe(201);
+    expect(inviteRes.body.invitation.userId).toBe(grace.userId);
+    expect(inviteRes.body.invitation.email).toBe('grace@example.com');
+    expect(inviteRes.body.invitation.role).toBe('Collaborator');
+    expect(notifyUsers).toHaveBeenCalledWith(
+      [grace.userId],
+      expect.stringContaining('Check app to accept'),
+      'email',
+    );
+    expect(notifyUsers.mock.calls.some((call) => String(call[1]).includes('planitvibe.com/signup'))).toBe(false);
   });
 
   test('reassign writes Owner to the target and Collaborator to the previous owner', async () => {

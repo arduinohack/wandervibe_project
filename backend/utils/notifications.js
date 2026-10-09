@@ -53,11 +53,26 @@ async function deliverSms(users, message) {
   }
 }
 
+function splitRecipients(userIds) {
+  const ids = [];
+  const emails = [];
+  for (const item of Array.isArray(userIds) ? userIds : []) {
+    const value = String(item || '').trim();
+    if (!value) continue;
+    if (value.includes('@')) emails.push(value);
+    else ids.push(value);
+  }
+  return { ids, emails };
+}
+
 // Notify users by email, then SMS when they opted in.
+// Recipients are user ids and/or email addresses. Mail uses the same
+// override and development destination rules either way.
 async function notifyUsers(userIds, message, type = 'email') {
   let users = [];
   try {
-    console.log(`🔔 Notifying ${userIds.length} users via ${type}: "${message}"`);
+    const { ids, emails } = splitRecipients(userIds);
+    console.log(`🔔 Notifying ${ids.length + emails.length} users via ${type}: "${message}"`);
 
     if (type !== 'email') {
       console.log(`Notification type "${type}" is not sent in this pass`);
@@ -67,7 +82,8 @@ async function notifyUsers(userIds, message, type = 'email') {
     const { to: overrideTo, mode } = emailDestination();
     console.log(`notifyUsers email mode: ${mode}`);
 
-    users = await User.find({ _id: { $in: userIds } }).select('email phoneNumber notificationPreferences');
+    users = await User.find({ _id: { $in: ids } }).select('email phoneNumber notificationPreferences');
+    const sent = new Set();
     for (const user of users) {
       const prefs = user.notificationPreferences || {};
       if (prefs.email === false) continue;
@@ -78,6 +94,18 @@ async function notifyUsers(userIds, message, type = 'email') {
         subject: 'WanderVibe Update',
         text: message,
       });
+      sent.add(String(user.email).trim().toLowerCase());
+      console.log(`✅ Email sent via ${selectedProviderName()}`);
+    }
+    for (const email of emails) {
+      const key = email.toLowerCase();
+      if (sent.has(key)) continue;
+      await sendEmail({
+        to: overrideTo || email,
+        subject: 'WanderVibe Update',
+        text: message,
+      });
+      sent.add(key);
       console.log(`✅ Email sent via ${selectedProviderName()}`);
     }
   } catch (err) {

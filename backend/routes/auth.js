@@ -3,6 +3,7 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');  // For password hashing
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const Invitation = require('../models/Invitation');
 const logger = require('../utils/logger');  // Added: Borrow exported logger from ../util/logger.js
 const authMiddleware = require('../middleware/auth.js');  // Add this line for token verification
 const { v4: uuidv4 } = require('uuid');  // For reset token
@@ -155,6 +156,16 @@ router.post('/register', async (req, res) => {
       context: { email: email }
     });
     await newUser.save();
+
+    const inviteEmail = String(email).trim().toLowerCase();
+    await Invitation.updateMany(
+      {
+        status: 'pending',
+        email: inviteEmail,
+        $or: [{ userId: { $exists: false } }, { userId: null }, { userId: '' }],
+      },
+      { $set: { userId } },
+    );
 
     // Generate JWT token (no password in payload)
     const payload = { userId };

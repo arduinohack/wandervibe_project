@@ -18,11 +18,29 @@ const INVITE_ROLES = {
   wanderer: 'Guest',
 };
 
+function normalizeEmail(value) {
+  if (typeof value !== 'string') return '';
+  return value.trim().toLowerCase();
+}
+
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function emailMatch(email) {
+  return { email: { $regex: `^${escapeRegex(email)}$`, $options: 'i' } };
+}
+
+function signupLink(email) {
+  return `https://planitvibe.com/signup?email=${encodeURIComponent(email)}`;
+}
+
 // POST /api/plans/:planId/invite
-// Coordinator may invite a planner or wanderer. Planner may invite a wanderer.
+// Owner may send Collaborator or Guest. Collaborator may send Guest.
 planInviteRouter.post('/:planId/invite', roleCheck(['Owner', 'Collaborator']), async (req, res) => {
   const { planId } = req.params;
-  const { email, role } = req.body;
+  const { role } = req.body;
+  const email = normalizeEmail(req.body && req.body.email);
   const storedRole = INVITE_ROLES[role];
 
   if (!email || !storedRole) {
@@ -38,33 +56,42 @@ planInviteRouter.post('/:planId/invite', roleCheck(['Owner', 'Collaborator']), a
   }
 
   try {
-    // Find invitee
-    const invitee = await User.findOne({ email });
-    if (!invitee) {
-      return res.status(404).json({ msg: 'User not found' });
-    }
-
-    // Check if already invited/participant
-    const existing = await Invitation.findOne({ planId, userId: invitee._id });
+    const invitee = await User.findOne(emailMatch(email));
+    const existingQuery = invitee
+      ? { planId, $or: [{ userId: invitee._id }, { email }] }
+      : { planId, email };
+    const existing = await Invitation.findOne(existingQuery);
     if (existing) {
       return res.status(400).json({ msg: 'User already invited' });
     }
 
-    // Create invitation
-    const invitationId = uuidv4();
+    const plan = await Plan.findById(planId).select('name').lean();
+    const planName = (plan && plan.name) || 'a trip';
+    const callerId = req.user.userId || req.user.id;
+
     const invitation = new Invitation({
-      _id: invitationId,
+      _id: uuidv4(),
       planId,
-      userId: invitee._id,
-      invitedBy: req.user.userId || req.user.id,
-      role: storedRole
+      invitedBy: callerId,
+      role: storedRole,
+      email,
+      ...(invitee ? { userId: invitee._id } : {}),
     });
     await invitation.save();
 
-    // Notify invitee and inviter
-    const inviteMessage = `You\'ve been invited to "${req.trip?.name || 'a trip'}" as ${storedRole}! Check app to accept.`;
-    await notifyUsers([invitee._id], inviteMessage, 'email');
-    await notifyUsers([req.user.userId || req.user.id], `Invited ${invitee.firstName} ${invitee.lastName} as ${storedRole}.`, 'email');
+    if (invitee) {
+      const inviteMessage = `You've been invited to "${planName}" as ${storedRole}! Check app to accept.`;
+      await notifyUsers([invitee._id], inviteMessage, 'email');
+      await notifyUsers(
+        [callerId],
+        `Invited ${invitee.firstName} ${invitee.lastName} as ${storedRole}.`,
+        'email',
+      );
+    } else {
+      const inviteMessage = `You've been invited to "${planName}" as ${storedRole}! ${signupLink(email)}`;
+      await notifyUsers([email], inviteMessage, 'email');
+      await notifyUsers([callerId], `Invited ${email} as ${storedRole}.`, 'email');
+    }
 
     res.status(201).json({ msg: 'Invitation sent!', invitation });
   } catch (err) {
@@ -131,7 +158,7 @@ invitesRouter.post('/invitations/:invitationId/respond', async (req, res) => {
       return res.status(404).json({ msg: 'Invitation not found or already responded' });
     }
 
-    if (invitation.userId.toString() !== req.user.userId) {
+    if (!invitation.userId || invitation.userId.toString() !== req.user.userId) {
       return res.status(403).json({ msg: 'Access denied: Not your invitation' });
     }
 

@@ -552,7 +552,7 @@ function sharedPerson(row, user) {
 function sharedInvite(row, user) {
   return {
     _id: String(row._id),
-    email: (user && user.email) || '',
+    email: (user && user.email) || row.email || '',
     role: row.role,
     status: 'pending',
   };

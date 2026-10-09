@@ -4,7 +4,9 @@ import '../providers/user_provider.dart'; // For signup
 import 'login_screen.dart'; // Navigate to login after success
 
 class SignupScreen extends StatefulWidget {
-  const SignupScreen({super.key});
+  final String? email;
+
+  const SignupScreen({super.key, this.email});
 
   @override
   State<SignupScreen> createState() => _SignupScreenState();
@@ -25,6 +27,15 @@ class _SignupScreenState extends State<SignupScreen> {
   bool _emailNotifications = true; // Default prefs
   bool _smsNotifications = false;
   bool _isLoading = false; // For spinner
+
+  @override
+  void initState() {
+    super.initState();
+    final fromLink = widget.email ?? Uri.base.queryParameters['email'];
+    if (fromLink != null && fromLink.trim().isNotEmpty) {
+      _emailController.text = fromLink.trim();
+    }
+  }
 
   @override
   void dispose() {

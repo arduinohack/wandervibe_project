@@ -4,6 +4,7 @@ import 'providers/user_provider.dart';
 import 'providers/invitation_provider.dart';
 import 'providers/plan_provider.dart';
 import 'screens/login_screen.dart'; // Login if no token
+import 'screens/signup_screen.dart';
 //import 'screens/home_screen.dart'; // Home if logged in
 
 void main() {
@@ -30,6 +31,12 @@ class MyApp extends StatelessWidget {
       title: 'PlanItVibe',
       theme: ThemeData(primarySwatch: Colors.blue),
       home: const LoginScreen(), // Always start with LoginScreen (no auto-stub)
+      routes: {
+        '/signup': (context) {
+          final email = Uri.base.queryParameters['email'];
+          return SignupScreen(email: email);
+        },
+      },
     );
   }
 }
