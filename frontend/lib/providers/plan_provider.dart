@@ -172,9 +172,29 @@ class PlanUpdateResult {
   const PlanUpdateResult({this.status, this.plan});
 }
 
+class PlanInviteResult {
+  final int? status;
+  final String? error;
+
+  const PlanInviteResult({this.status, this.error});
+}
+
 String _trimmed(dynamic value) {
   if (value == null) return '';
   return value.toString().trim();
+}
+
+String? _apiErrorMessage(String body) {
+  try {
+    final data = json.decode(body);
+    if (data is! Map) return null;
+    final msg = data['msg'] ?? data['message'];
+    if (msg == null) return null;
+    final text = msg.toString().trim();
+    return text.isEmpty ? null : text;
+  } catch (_) {
+    return null;
+  }
 }
 
 String _personName(Map item) {
@@ -845,6 +865,44 @@ class PlanProvider extends ChangeNotifier {
     } catch (e) {
       logger.e('Error updating plan: $e');
       return const PlanUpdateResult();
+    }
+  }
+
+  /// POST /api/plans/:planId/invite with { email, role }.
+  /// Role is Collaborator or Guest. 201 is success.
+  Future<PlanInviteResult> inviteToPlan({
+    required String planId,
+    required String email,
+    required String role,
+    required String? token,
+  }) async {
+    try {
+      if (token == null || token.isEmpty) {
+        return const PlanInviteResult(status: 401);
+      }
+      final response = await http.post(
+        Uri.parse(
+          backendBaseUrl + apiPlanInvite.replaceAll('{planId}', planId),
+        ),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode({'email': email, 'role': role}),
+      );
+      if (response.statusCode == 201) {
+        return const PlanInviteResult(status: 201);
+      }
+      if (response.statusCode == 401) {
+        return const PlanInviteResult(status: 401);
+      }
+      return PlanInviteResult(
+        status: response.statusCode,
+        error: _apiErrorMessage(response.body),
+      );
+    } catch (e) {
+      logger.e('Error inviting to plan: $e');
+      return const PlanInviteResult();
     }
   }
 

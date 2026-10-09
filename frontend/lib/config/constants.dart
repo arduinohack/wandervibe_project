@@ -15,6 +15,7 @@ const String apiUsersUpdate = '/api/auth/users/{id}';
 const String apiPlans = '/api/plans';
 const String apiPlansItinerary = '/api/plans/{planId}/itinerary';
 const String apiPlanUsers = '/api/plans/{planId}/users';
+const String apiPlanInvite = '/api/plans/{planId}/invite';
 const String apiActivities = '/api/activities';
 const String apiActivitiesAlias = '/api/events';
 const String apiInvites = '/api/invites';

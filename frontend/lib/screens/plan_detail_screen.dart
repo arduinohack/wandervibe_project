@@ -60,6 +60,11 @@ bool canEditPlan(String? storedRole) {
   return storedRole?.trim() == 'Owner';
 }
 
+bool canInvite(String? storedRole) {
+  final role = storedRole?.trim();
+  return role == 'Owner' || role == 'Collaborator';
+}
+
 String _twoDigits(int number) => number.toString().padLeft(2, '0');
 
 String _utcDateLabel(DateTime? value) {
@@ -1064,9 +1069,39 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     if (removed == true && mounted) Navigator.of(context).pop();
   }
 
+  Future<void> _openInvite(Plan plan, String storedRole) async {
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final result = await showDialog<int>(
+      context: context,
+      builder: (context) => _PlanInviteDialog(
+        planId: plan.id,
+        planType: plan.type,
+        viewerRole: storedRole,
+      ),
+    );
+    if (!mounted) return;
+    if (result == 401) {
+      await _endSession(userProvider, planProvider, navigator);
+      return;
+    }
+    if (result == 201) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Invitation sent')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final shownPlan = _shownPlan(Provider.of<PlanProvider>(context));
+    final planProvider = Provider.of<PlanProvider>(context);
+    final shownPlan = _shownPlan(planProvider);
+    final storedRole = planProvider.viewerStoredRole(
+      widget.plan.id,
+      Provider.of<UserProvider>(context, listen: false).currentUserId,
+    );
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -1075,6 +1110,16 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
           maxLines: 1,
         ),
         backgroundColor: Colors.blue,
+        actions: [
+          if (canInvite(storedRole))
+            TextButton(
+              onPressed: () => _openInvite(shownPlan, storedRole!),
+              child: const Text(
+                'Invite',
+                style: TextStyle(color: Colors.white),
+              ),
+            ),
+        ],
       ),
       body: Consumer<PlanProvider>(
         builder: (context, planProvider, child) {
@@ -1239,6 +1284,133 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
           );
         },
       ),
+    );
+  }
+}
+
+class _PlanInviteDialog extends StatefulWidget {
+  final String planId;
+  final String planType;
+  final String viewerRole;
+
+  const _PlanInviteDialog({
+    required this.planId,
+    required this.planType,
+    required this.viewerRole,
+  });
+
+  @override
+  State<_PlanInviteDialog> createState() => _PlanInviteDialogState();
+}
+
+class _PlanInviteDialogState extends State<_PlanInviteDialog> {
+  final _emailController = TextEditingController();
+  late String _role;
+  String? _error;
+  bool _sending = false;
+
+  List<String> get _roles => inviteStoredRoles(widget.viewerRole);
+
+  @override
+  void initState() {
+    super.initState();
+    _role = _roles.isEmpty ? 'Guest' : _roles.first;
+  }
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _send() async {
+    final email = _emailController.text.trim();
+    if (email.isEmpty) {
+      setState(() => _error = 'Email required');
+      return;
+    }
+    setState(() {
+      _sending = true;
+      _error = null;
+    });
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final result = await planProvider.inviteToPlan(
+      planId: widget.planId,
+      email: email,
+      role: _role,
+      token: userProvider.token,
+    );
+    if (!mounted) return;
+    if (result.status == 401) {
+      Navigator.pop(context, 401);
+      return;
+    }
+    if (result.status == 201) {
+      Navigator.pop(context, 201);
+      return;
+    }
+    setState(() {
+      _sending = false;
+      _error = result.error ?? 'Could not send invite';
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Invite'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: _emailController,
+              keyboardType: TextInputType.emailAddress,
+              autofillHints: const [AutofillHints.email],
+              enabled: !_sending,
+              decoration: const InputDecoration(labelText: 'Email'),
+            ),
+            const SizedBox(height: 8),
+            if (_roles.isNotEmpty)
+              SegmentedButton<String>(
+                showSelectedIcon: false,
+                segments: [
+                  for (final stored in _roles)
+                    ButtonSegment(
+                      value: stored,
+                      label: Text(planRoleLabel(widget.planType, stored)),
+                    ),
+                ],
+                selected: {_role},
+                onSelectionChanged: _sending
+                    ? (_) {}
+                    : (next) {
+                        setState(() => _role = next.first);
+                      },
+              ),
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  _error!,
+                  style: const TextStyle(color: Colors.red),
+                ),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _sending ? null : () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: _sending ? null : _send,
+          child: const Text('Invite'),
+        ),
+      ],
     );
   }
 }

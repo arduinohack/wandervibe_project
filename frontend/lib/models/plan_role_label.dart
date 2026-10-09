@@ -18,3 +18,12 @@ String planRoleLabel(String? planType, String storedRole) {
       return raw.isEmpty ? 'Unknown' : raw;
   }
 }
+
+/// Stored roles an Owner or Collaborator may send. Guest gets none.
+/// The POST body uses these names. The form shows [planRoleLabel].
+List<String> inviteStoredRoles(String? storedRole) {
+  final role = storedRole?.trim();
+  if (role == 'Owner') return const ['Collaborator', 'Guest'];
+  if (role == 'Collaborator') return const ['Guest'];
+  return const [];
+}
