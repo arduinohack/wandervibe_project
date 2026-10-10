@@ -63,6 +63,13 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<void> _logOut() async {
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final navigator = Navigator.of(context);
+    await _endSession(userProvider, planProvider, navigator);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -118,20 +125,16 @@ class _HomeScreenState extends State<HomeScreen> {
             },
             tooltip: 'App Settings',
           ),
+          IconButton(
+            icon: const Icon(Icons.door_front_door),
+            tooltip: 'Log out',
+            onPressed: _logOut,
+          ),
           PopupMenuButton<String>(
             tooltip: 'App menu',
             onSelected: (choice) async {
               if (choice != 'logout') return;
-              final userProvider = Provider.of<UserProvider>(
-                context,
-                listen: false,
-              );
-              final planProvider = Provider.of<PlanProvider>(
-                context,
-                listen: false,
-              );
-              final navigator = Navigator.of(context);
-              await _endSession(userProvider, planProvider, navigator);
+              await _logOut();
             },
             itemBuilder: (context) => const [
               PopupMenuItem<String>(
