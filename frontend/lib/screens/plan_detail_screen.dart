@@ -1142,20 +1142,78 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     if (removed == true && mounted) Navigator.of(context).pop();
   }
 
+  bool _showLinkMyPlan(Plan plan, String? storedRole) {
+    if (plan.sourcePlanId.trim().isEmpty) return true;
+    return storedRole?.trim() == 'Owner';
+  }
+
+  List<Activity> _linkChoices(List<Activity> activities) {
+    return [
+      for (final activity in activities)
+        if (!activity.linked && (activity.id ?? '').isNotEmpty) activity,
+    ];
+  }
+
   Future<void> _linkMyPlan(Plan plan) async {
-    final window = await showDialog<_LinkWindowResult>(
-      context: context,
-      builder: (context) => const _LinkWindowDialog(),
-    );
-    if (window == null || !mounted) return;
     final userProvider = Provider.of<UserProvider>(context, listen: false);
     final planProvider = Provider.of<PlanProvider>(context, listen: false);
     final navigator = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
+    final sourceId = plan.sourcePlanId.trim();
+    final updating = sourceId.isNotEmpty;
+    final List<Activity> choices;
+    if (updating) {
+      final read = await planProvider.readItinerary(
+        planId: sourceId,
+        token: userProvider.token,
+      );
+      if (!mounted) return;
+      if (read.status == 401) {
+        await _endSession(userProvider, planProvider, navigator);
+        return;
+      }
+      if (read.status != 200) {
+        messenger.showSnackBar(
+          SnackBar(content: Text(read.error ?? 'Could not load activities')),
+        );
+        return;
+      }
+      choices = _linkChoices(read.activities);
+    } else {
+      choices = _linkChoices(planProvider.itineraryActivities);
+    }
+    final selected = await showDialog<List<String>>(
+      context: context,
+      builder: (context) => _LinkActivitiesDialog(
+        activities: choices,
+        checkedIds: updating ? plan.linkedActivityIds.toSet() : const {},
+        actionLabel: updating ? 'Save' : 'Link',
+      ),
+    );
+    if (selected == null || !mounted) return;
+    if (updating) {
+      final result = await planProvider.updateLinkedActivities(
+        planId: plan.id,
+        activityIds: selected,
+        token: userProvider.token,
+      );
+      if (!mounted) return;
+      if (result.status == 401) {
+        await _endSession(userProvider, planProvider, navigator);
+        return;
+      }
+      if (result.status != 200) {
+        messenger.showSnackBar(
+          SnackBar(content: Text(result.error ?? 'Could not update the links')),
+        );
+        return;
+      }
+      await _load();
+      return;
+    }
     final result = await planProvider.linkPersonalPlan(
       planId: plan.id,
-      start: window.start,
-      end: window.end,
+      activityIds: selected,
       token: userProvider.token,
     );
     if (!mounted) return;
@@ -1305,13 +1363,14 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                       ),
                       if (dateLine != null) Text(dateLine),
                       Text('State: ${shown.planningState}'),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: TextButton(
-                          onPressed: () => _linkMyPlan(shown),
-                          child: const Text('Link my plan'),
+                      if (_showLinkMyPlan(shown, storedRole))
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton(
+                            onPressed: () => _linkMyPlan(shown),
+                            child: const Text('Link my plan'),
+                          ),
                         ),
-                      ),
                     ],
                   ),
                 ),
@@ -2421,91 +2480,74 @@ class _PlanEditScreenState extends State<_PlanEditScreen> {
   }
 }
 
-class _LinkWindowResult {
-  final DateTime start;
-  final DateTime end;
+class _LinkActivitiesDialog extends StatefulWidget {
+  final List<Activity> activities;
+  final Set<String> checkedIds;
+  final String actionLabel;
 
-  const _LinkWindowResult({required this.start, required this.end});
-}
-
-class _LinkWindowDialog extends StatefulWidget {
-  const _LinkWindowDialog();
+  const _LinkActivitiesDialog({
+    required this.activities,
+    required this.checkedIds,
+    required this.actionLabel,
+  });
 
   @override
-  State<_LinkWindowDialog> createState() => _LinkWindowDialogState();
+  State<_LinkActivitiesDialog> createState() => _LinkActivitiesDialogState();
 }
 
-class _LinkWindowDialogState extends State<_LinkWindowDialog> {
-  DateTime? _start;
-  DateTime? _end;
-  String? _error;
+class _LinkActivitiesDialogState extends State<_LinkActivitiesDialog> {
+  late final Set<String> _checked;
 
-  Future<void> _pick(bool start) async {
-    final current = start ? _start : _end;
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _calendarDate(current),
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2100),
-    );
-    if (picked == null) return;
-    final day = DateTime.utc(picked.year, picked.month, picked.day);
-    setState(() {
-      if (start) {
-        _start = day;
-      } else {
-        _end = day;
-      }
-      _error = null;
-    });
+  @override
+  void initState() {
+    super.initState();
+    _checked = {
+      for (final activity in widget.activities)
+        if (widget.checkedIds.contains(activity.id)) activity.id!,
+    };
   }
 
   void _submit() {
-    final start = _start;
-    final endDay = _end;
-    if (start == null || endDay == null) {
-      setState(() => _error = 'Choose a start and end date');
-      return;
-    }
-    final end = DateTime.utc(
-      endDay.year,
-      endDay.month,
-      endDay.day,
-      23,
-      59,
-      59,
-      999,
-    );
-    if (end.isBefore(start)) {
-      setState(() => _error = 'End must be on or after start');
-      return;
-    }
-    Navigator.pop(context, _LinkWindowResult(start: start, end: end));
+    Navigator.pop(context, [
+      for (final activity in widget.activities)
+        if (_checked.contains(activity.id)) activity.id!,
+    ]);
   }
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
       title: const Text('Link my plan'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          TextButton(
-            onPressed: () => _pick(true),
-            child: Text(
-              _start == null ? 'Start date' : 'Start: ${formatPlanDate(_start)}',
-            ),
-          ),
-          TextButton(
-            onPressed: () => _pick(false),
-            child: Text(
-              _end == null ? 'End date' : 'End: ${formatPlanDate(_end)}',
-            ),
-          ),
-          if (_error != null)
-            Text(_error!, style: const TextStyle(color: Colors.red)),
-        ],
+      content: SizedBox(
+        width: double.maxFinite,
+        height: 360,
+        child: widget.activities.isEmpty
+            ? const Text('No activities yet')
+            : ListView(
+                children: [
+                  for (final activity in widget.activities)
+                    CheckboxListTile(
+                      value: _checked.contains(activity.id),
+                      controlAffinity: ListTileControlAffinity.leading,
+                      title: Text(
+                        activity.name.trim().isEmpty
+                            ? 'Unnamed activity'
+                            : activity.name.trim(),
+                      ),
+                      onChanged: (checked) {
+                        final id = activity.id;
+                        if (id == null || id.isEmpty) return;
+                        setState(() {
+                          if (checked == true) {
+                            _checked.add(id);
+                          } else {
+                            _checked.remove(id);
+                          }
+                        });
+                      },
+                    ),
+                ],
+              ),
       ),
       actions: [
         TextButton(
@@ -2514,7 +2556,7 @@ class _LinkWindowDialogState extends State<_LinkWindowDialog> {
         ),
         TextButton(
           onPressed: _submit,
-          child: const Text('Link'),
+          child: Text(widget.actionLabel),
         ),
       ],
     );

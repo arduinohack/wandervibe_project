@@ -521,13 +521,29 @@ router.post('/:planId/reassign-coordinator', authMiddleware, async (req, res) =>
   }
 });
 
-function windowInstant(value) {
-  if (value == null || value === '') return null;
-  if (typeof value !== 'string' && typeof value !== 'number' && !(value instanceof Date)) {
-    return null;
+function selectedActivityIds(body) {
+  if (!body || !Object.prototype.hasOwnProperty.call(body, 'activityIds') || !Array.isArray(body.activityIds)) {
+    return { invalid: true, message: 'activityIds is required' };
   }
-  const date = value instanceof Date ? value : new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
+  const ids = [];
+  const seen = new Set();
+  for (const item of body.activityIds) {
+    if (typeof item !== 'string') {
+      return { invalid: true, message: 'An activity is not on this plan' };
+    }
+    const id = item.trim();
+    if (!id) return { invalid: true, message: 'An activity is not on this plan' };
+    if (seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  return { ids };
+}
+
+async function activityMissingFromPlan(planId, ids) {
+  if (!ids.length) return false;
+  const found = await Event.find({ _id: { $in: ids }, planId }).select('_id').lean();
+  return found.length !== ids.length;
 }
 
 function relevantZone(event, plan) {
@@ -552,9 +568,9 @@ function compareByStart(a, b) {
   return String(a._id).localeCompare(String(b._id));
 }
 
-// POST /api/plans/:planId/link { start, end }
-// A member, including Guest, creates a personal plan that points at this plan.
-// Activities and members stay on the source plan.
+// POST /api/plans/:planId/link { activityIds }
+// A member, including Guest, creates a personal plan that points at the
+// selected activities. Those activities stay on this plan.
 router.post('/:planId/link', authMiddleware, async (req, res) => {
   const { planId } = req.params;
   try {
@@ -569,13 +585,12 @@ router.post('/:planId/link', authMiddleware, async (req, res) => {
       return res.status(403).json({ message: 'Only a plan member can link a personal plan' });
     }
 
-    const start = windowInstant(req.body && req.body.start);
-    const end = windowInstant(req.body && req.body.end);
-    if (!start || !end) {
-      return res.status(400).json({ message: 'start and end are required' });
+    const selected = selectedActivityIds(req.body);
+    if (selected.invalid) {
+      return res.status(400).json({ message: selected.message });
     }
-    if (end.getTime() < start.getTime()) {
-      return res.status(400).json({ message: 'end must be on or after start' });
+    if (await activityMissingFromPlan(planId, selected.ids)) {
+      return res.status(400).json({ message: 'An activity is not on this plan' });
     }
 
     const personalId = uuidv4();
@@ -592,8 +607,7 @@ router.post('/:planId/link', authMiddleware, async (req, res) => {
       autoCalculateEndDate: false,
       ownerId: callerId,
       sourcePlanId: String(source._id),
-      linkStart: start,
-      linkEnd: end,
+      linkedActivityIds: selected.ids,
     });
     await personal.save();
     await new PlanUser({
@@ -605,6 +619,45 @@ router.post('/:planId/link', authMiddleware, async (req, res) => {
     return res.status(201).json({ plan: personal });
   } catch (err) {
     console.error('Link plan error:', err);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// PUT /api/plans/:planId/link { activityIds }
+// The owner of a personal plan replaces the selected source activities.
+// Unchecked activities stay on the source plan.
+router.put('/:planId/link', authMiddleware, async (req, res) => {
+  const { planId } = req.params;
+  try {
+    const plan = await Plan.findById(planId);
+    if (!plan) {
+      return res.status(404).json({ message: 'Plan not found' });
+    }
+
+    const callerId = req.user.userId || req.user.id;
+    const role = await callerPlanRole(plan, callerId);
+    if (role !== 'Owner') {
+      return res.status(403).json({ message: 'Only the Owner can change linked activities' });
+    }
+
+    const sourcePlanId = typeof plan.sourcePlanId === 'string' ? plan.sourcePlanId.trim() : '';
+    if (!sourcePlanId) {
+      return res.status(400).json({ message: 'This plan is not linked to another plan' });
+    }
+
+    const selected = selectedActivityIds(req.body);
+    if (selected.invalid) {
+      return res.status(400).json({ message: selected.message });
+    }
+    if (await activityMissingFromPlan(sourcePlanId, selected.ids)) {
+      return res.status(400).json({ message: 'An activity is not on this plan' });
+    }
+
+    plan.linkedActivityIds = selected.ids;
+    await plan.save();
+    return res.json({ plan });
+  } catch (err) {
+    console.error('Update linked activities error:', err);
     return res.status(500).json({ message: 'Server error' });
   }
 });
@@ -636,11 +689,13 @@ router.get('/:planId/itinerary', authMiddleware, async (req, res) => {
     }));
 
     const sourcePlanId = typeof plan.sourcePlanId === 'string' ? plan.sourcePlanId.trim() : '';
-    if (sourcePlanId && plan.linkStart && plan.linkEnd) {
-      const linked = await Event.find({
-        planId: sourcePlanId,
-        startTime: { $gte: plan.linkStart, $lte: plan.linkEnd },
-      });
+    if (sourcePlanId) {
+      const linkedIds = Array.isArray(plan.linkedActivityIds)
+        ? plan.linkedActivityIds.map((id) => String(id).trim()).filter(Boolean)
+        : [];
+      const linked = linkedIds.length
+        ? await Event.find({ planId: sourcePlanId, _id: { $in: linkedIds } })
+        : [];
       const own = events.map((event) => ({ ...event, linked: false }));
       const fromSource = linked.map((event) => ({
         ...event.toObject(),

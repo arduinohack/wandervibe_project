@@ -17,6 +17,7 @@ const planSchema = new mongoose.Schema({
   timeZone: { type: String, required: false },
   ownerId: { type: String, ref: 'User', required: true },
   sourcePlanId: { type: String, default: '' },
+  linkedActivityIds: { type: [String], default: [] },
   linkStart: { type: Date, required: false },
   linkEnd: { type: Date, required: false },
   participants: [{

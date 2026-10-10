@@ -143,6 +143,7 @@ class Plan {
   final DateTime? earliestStart;
   final DateTime? latestEnd;
   final String sourcePlanId;
+  final List<String> linkedActivityIds;
   final DateTime? linkStart;
   final DateTime? linkEnd;
 
@@ -166,6 +167,7 @@ class Plan {
     this.earliestStart,
     this.latestEnd,
     this.sourcePlanId = '',
+    this.linkedActivityIds = const [],
     this.linkStart,
     this.linkEnd,
   });
@@ -206,6 +208,7 @@ class Plan {
       earliestStart: _dateValue(json['earliestStart']),
       latestEnd: _dateValue(json['latestEnd']),
       sourcePlanId: _stringValue(json['sourcePlanId']),
+      linkedActivityIds: _stringList(json['linkedActivityIds']),
       linkStart: _dateValue(json['linkStart']),
       linkEnd: _dateValue(json['linkEnd']),
     );

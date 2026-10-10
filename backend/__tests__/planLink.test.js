@@ -16,9 +16,6 @@ jest.setTimeout(30000);
 
 let mongo;
 
-const windowStart = '2026-07-01T00:00:00.000Z';
-const windowEnd = '2026-07-08T23:59:59.999Z';
-
 async function registerAndLogin({ firstName, lastName, email }) {
   const registerRes = await request(app)
     .post('/api/auth/register')
@@ -98,7 +95,7 @@ afterAll(async () => {
 });
 
 describe('personal plan link', () => {
-  test('a guest links a personal plan and sees source activities in the window', async () => {
+  test('a guest links selected activities and sees them with their own', async () => {
     const ada = await registerAndLogin({
       firstName: 'Ada',
       lastName: 'Lovelace',
@@ -111,21 +108,21 @@ describe('personal plan link', () => {
     });
     const planId = await createPlan(ada.token);
     await acceptRole(ada.token, sam.token, planId, 'sam@example.com', 'Guest');
-    const insideId = await addActivity(ada.token, planId, 'Lunch', '2026-07-02T12:00:00.000Z');
-    const outsideId = await addActivity(ada.token, planId, 'August dinner', '2026-08-01T12:00:00.000Z');
+    const lunchId = await addActivity(ada.token, planId, 'Lunch', '2026-07-02T12:00:00.000Z');
+    const dinnerId = await addActivity(ada.token, planId, 'Dinner', '2026-07-03T19:00:00.000Z');
+    const museumId = await addActivity(ada.token, planId, 'Museum', '2026-08-01T12:00:00.000Z');
     const sourceActivities = await Event.countDocuments({ planId });
     const sourceMembers = await PlanUser.countDocuments({ planId });
 
     const linked = await request(app)
       .post(`/api/plans/${planId}/link`)
       .set('Authorization', `Bearer ${sam.token}`)
-      .send({ start: windowStart, end: windowEnd });
+      .send({ activityIds: [lunchId, dinnerId] });
     expect(linked.status).toBe(201);
     const personal = linked.body.plan;
     expect(personal.ownerId).toBe(sam.userId);
     expect(personal.sourcePlanId).toBe(planId);
-    expect(new Date(personal.linkStart).toISOString()).toBe(windowStart);
-    expect(new Date(personal.linkEnd).toISOString()).toBe(windowEnd);
+    expect(personal.linkedActivityIds).toEqual([lunchId, dinnerId]);
     expect(personal.name).toBe('My Paris');
     expect(await Event.countDocuments({ planId })).toBe(sourceActivities);
     expect(await PlanUser.countDocuments({ planId })).toBe(sourceMembers);
@@ -134,61 +131,70 @@ describe('personal plan link', () => {
     expect(personalMembers).toHaveLength(1);
     expect(personalMembers[0].userId).toBe(sam.userId);
     expect(personalMembers[0].role).toBe('Owner');
-    const source = await Plan.findById(planId);
+    const source = await Plan.findById(planId).lean();
     expect(source.name).toBe('Paris');
     expect(source.ownerId).toBe(ada.userId);
+    expect(source.sourcePlanId || '').toBe('');
 
-    const ownId = await addActivity(sam.token, personal._id, 'Early note', '2026-06-01T08:00:00.000Z');
+    const beforeId = await addActivity(sam.token, personal._id, 'Early note', '2026-06-01T08:00:00.000Z');
+    const afterId = await addActivity(sam.token, personal._id, 'Late note', '2026-09-01T08:00:00.000Z');
     const itinerary = await request(app)
       .get(`/api/plans/${personal._id}/itinerary`)
       .set('Authorization', `Bearer ${sam.token}`);
     expect(itinerary.status).toBe(200);
     const rows = itinerary.body.events;
-    expect(rows.map((row) => row._id)).toEqual([ownId, insideId]);
-    expect(rows[0].linked).toBe(false);
-    expect(rows[0].name).toBe('Early note');
-    expect(rows[1].linked).toBe(true);
-    expect(rows[1].name).toBe('Lunch');
-    expect(rows.some((row) => row._id === outsideId)).toBe(false);
+    expect(rows.map((row) => row._id)).toEqual([beforeId, lunchId, dinnerId, afterId]);
+    expect(rows[0]).toMatchObject({ linked: false, name: 'Early note' });
+    expect(rows[1]).toMatchObject({ linked: true, name: 'Lunch' });
+    expect(rows[2]).toMatchObject({ linked: true, name: 'Dinner' });
+    expect(rows[3]).toMatchObject({ linked: false, name: 'Late note' });
+    expect(rows.some((row) => row._id === museumId)).toBe(false);
 
     await request(app)
-      .put(`/api/activities/${insideId}`)
+      .put(`/api/activities/${lunchId}`)
       .set('Authorization', `Bearer ${ada.token}`)
       .send({ name: 'Lunch revised' });
     const reloaded = await request(app)
       .get(`/api/plans/${personal._id}/itinerary`)
       .set('Authorization', `Bearer ${sam.token}`);
-    const lunch = reloaded.body.events.find((row) => row._id === insideId);
+    const lunch = reloaded.body.events.find((row) => row._id === lunchId);
     expect(lunch.name).toBe('Lunch revised');
     expect(lunch.linked).toBe(true);
-    expect(await Event.findById(insideId)).toMatchObject({ planId, name: 'Lunch revised' });
+    expect(await Event.findById(lunchId)).toMatchObject({ planId, name: 'Lunch revised' });
 
     const renamed = await request(app)
-      .put(`/api/activities/${ownId}`)
+      .put(`/api/activities/${beforeId}`)
       .set('Authorization', `Bearer ${sam.token}`)
       .send({ name: 'My early note' });
     expect(renamed.status).toBe(200);
     expect(renamed.body.name).toBe('My early note');
 
     const blocked = await request(app)
-      .put(`/api/activities/${insideId}`)
+      .put(`/api/activities/${lunchId}`)
       .set('Authorization', `Bearer ${sam.token}`)
       .send({ name: 'Guest changed lunch' });
     expect(blocked.status).toBe(403);
-    expect((await Event.findById(insideId)).name).toBe('Lunch revised');
+    expect((await Event.findById(lunchId)).name).toBe('Lunch revised');
 
-    const removed = await request(app)
-      .delete(`/api/activities/${ownId}`)
+    const removedOwn = await request(app)
+      .delete(`/api/activities/${beforeId}`)
       .set('Authorization', `Bearer ${sam.token}`);
-    expect(removed.status).toBe(200);
+    expect(removedOwn.status).toBe(200);
+
+    const removedSource = await request(app)
+      .delete(`/api/activities/${dinnerId}`)
+      .set('Authorization', `Bearer ${ada.token}`);
+    expect(removedSource.status).toBe(200);
     const afterDelete = await request(app)
       .get(`/api/plans/${personal._id}/itinerary`)
       .set('Authorization', `Bearer ${sam.token}`);
-    expect(afterDelete.body.events.map((row) => row._id)).toEqual([insideId]);
-    expect(await Event.findById(outsideId)).not.toBeNull();
+    expect(afterDelete.body.events.map((row) => row._id)).toEqual([lunchId, afterId]);
+    expect(await Event.findById(dinnerId)).toBeNull();
+    expect(await Event.findById(museumId)).not.toBeNull();
+    expect((await Plan.findById(planId).lean()).name).toBe('Paris');
   });
 
-  test('a non-member is 403 and a missing token is 401', async () => {
+  test('a non-member is 403, a missing token is 401, and an unknown activity is 400', async () => {
     const ada = await registerAndLogin({
       firstName: 'Ada',
       lastName: 'Lovelace',
@@ -200,43 +206,126 @@ describe('personal plan link', () => {
       email: 'otto@example.com',
     });
     const planId = await createPlan(ada.token);
+    const otherPlanId = await createPlan(ada.token);
+    const onPlan = await addActivity(ada.token, planId, 'Lunch', '2026-07-02T12:00:00.000Z');
+    const elsewhere = await addActivity(ada.token, otherPlanId, 'Elsewhere', '2026-07-02T12:00:00.000Z');
 
     const denied = await request(app)
       .post(`/api/plans/${planId}/link`)
       .set('Authorization', `Bearer ${outsider.token}`)
-      .send({ start: windowStart, end: windowEnd });
+      .send({ activityIds: [onPlan] });
     expect(denied.status).toBe(403);
     expect(denied.body.message).toBe('Only a plan member can link a personal plan');
     expect(await Plan.countDocuments({ sourcePlanId: planId })).toBe(0);
 
     const missing = await request(app)
       .post(`/api/plans/${planId}/link`)
-      .send({ start: windowStart, end: windowEnd });
+      .send({ activityIds: [onPlan] });
     expect(missing.status).toBe(401);
     expect(missing.body.message).toBe('No token, authorization denied');
-  });
-
-  test('start and end are required and end cannot be before start', async () => {
-    const ada = await registerAndLogin({
-      firstName: 'Ada',
-      lastName: 'Lovelace',
-      email: 'ada@example.com',
-    });
-    const planId = await createPlan(ada.token);
 
     const blank = await request(app)
       .post(`/api/plans/${planId}/link`)
       .set('Authorization', `Bearer ${ada.token}`)
       .send({});
     expect(blank.status).toBe(400);
-    expect(blank.body.message).toBe('start and end are required');
+    expect(blank.body.message).toBe('activityIds is required');
 
-    const reversed = await request(app)
+    const unknown = await request(app)
       .post(`/api/plans/${planId}/link`)
       .set('Authorization', `Bearer ${ada.token}`)
-      .send({ start: windowEnd, end: windowStart });
-    expect(reversed.status).toBe(400);
-    expect(reversed.body.message).toBe('end must be on or after start');
+      .send({ activityIds: [onPlan, elsewhere] });
+    expect(unknown.status).toBe(400);
+    expect(unknown.body.message).toBe('An activity is not on this plan');
     expect(await Plan.countDocuments({ sourcePlanId: planId })).toBe(0);
+    expect(await Event.findById(onPlan)).not.toBeNull();
+    expect(await Event.findById(elsewhere)).not.toBeNull();
+  });
+
+  test('the owner replaces the selected activities without deleting them on the source', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+    });
+    const sam = await registerAndLogin({
+      firstName: 'Sam',
+      lastName: 'Guest',
+      email: 'sam@example.com',
+    });
+    const planId = await createPlan(ada.token);
+    await acceptRole(ada.token, sam.token, planId, 'sam@example.com', 'Guest');
+    const lunchId = await addActivity(ada.token, planId, 'Lunch', '2026-07-02T12:00:00.000Z');
+    const dinnerId = await addActivity(ada.token, planId, 'Dinner', '2026-07-03T19:00:00.000Z');
+
+    const linked = await request(app)
+      .post(`/api/plans/${planId}/link`)
+      .set('Authorization', `Bearer ${sam.token}`)
+      .send({ activityIds: [lunchId] });
+    expect(linked.status).toBe(201);
+    const personalId = linked.body.plan._id;
+
+    const replaced = await request(app)
+      .put(`/api/plans/${personalId}/link`)
+      .set('Authorization', `Bearer ${sam.token}`)
+      .send({ activityIds: [dinnerId] });
+    expect(replaced.status).toBe(200);
+    expect(replaced.body.plan.linkedActivityIds).toEqual([dinnerId]);
+    const afterUncheck = await request(app)
+      .get(`/api/plans/${personalId}/itinerary`)
+      .set('Authorization', `Bearer ${sam.token}`);
+    expect(afterUncheck.body.events.map((row) => row._id)).toEqual([dinnerId]);
+    expect(afterUncheck.body.events[0].linked).toBe(true);
+    expect(await Event.findById(lunchId)).toMatchObject({ planId, name: 'Lunch' });
+
+    const added = await request(app)
+      .put(`/api/plans/${personalId}/link`)
+      .set('Authorization', `Bearer ${sam.token}`)
+      .send({ activityIds: [lunchId, dinnerId] });
+    expect(added.status).toBe(200);
+    const both = await request(app)
+      .get(`/api/plans/${personalId}/itinerary`)
+      .set('Authorization', `Bearer ${sam.token}`);
+    expect(both.body.events.map((row) => row._id)).toEqual([lunchId, dinnerId]);
+
+    const cleared = await request(app)
+      .put(`/api/plans/${personalId}/link`)
+      .set('Authorization', `Bearer ${sam.token}`)
+      .send({ activityIds: [] });
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.plan.linkedActivityIds).toEqual([]);
+    const none = await request(app)
+      .get(`/api/plans/${personalId}/itinerary`)
+      .set('Authorization', `Bearer ${sam.token}`);
+    expect(none.body.events).toEqual([]);
+    expect(await Event.countDocuments({ planId })).toBe(2);
+
+    const restored = await request(app)
+      .put(`/api/plans/${personalId}/link`)
+      .set('Authorization', `Bearer ${sam.token}`)
+      .send({ activityIds: [lunchId] });
+    expect(restored.status).toBe(200);
+
+    const notOnSource = await request(app)
+      .put(`/api/plans/${personalId}/link`)
+      .set('Authorization', `Bearer ${sam.token}`)
+      .send({ activityIds: [dinnerId, 'missing-activity'] });
+    expect(notOnSource.status).toBe(400);
+    expect(notOnSource.body.message).toBe('An activity is not on this plan');
+    expect((await Plan.findById(personalId).lean()).linkedActivityIds).toEqual([lunchId]);
+
+    const outsider = await request(app)
+      .put(`/api/plans/${personalId}/link`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ activityIds: [dinnerId] });
+    expect(outsider.status).toBe(403);
+    expect(outsider.body.message).toBe('Only the Owner can change linked activities');
+    expect((await Plan.findById(personalId).lean()).linkedActivityIds).toEqual([lunchId]);
+
+    const missingToken = await request(app)
+      .put(`/api/plans/${personalId}/link`)
+      .send({ activityIds: [dinnerId] });
+    expect(missingToken.status).toBe(401);
+    expect(missingToken.body.message).toBe('No token, authorization denied');
   });
 });

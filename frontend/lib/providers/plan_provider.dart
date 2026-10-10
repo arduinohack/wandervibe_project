@@ -183,6 +183,18 @@ class PlanLinkResult {
   const PlanLinkResult({this.status, this.plan, this.error});
 }
 
+class PlanItineraryRead {
+  final int? status;
+  final List<Activity> activities;
+  final String? error;
+
+  const PlanItineraryRead({
+    this.status,
+    this.activities = const [],
+    this.error,
+  });
+}
+
 class PlanInviteResult {
   final int? status;
   final String? error;
@@ -226,6 +238,7 @@ Plan _planWithOwner(Plan plan, String ownerId) {
     earliestStart: plan.earliestStart,
     latestEnd: plan.latestEnd,
     sourcePlanId: plan.sourcePlanId,
+    linkedActivityIds: plan.linkedActivityIds,
     linkStart: plan.linkStart,
     linkEnd: plan.linkEnd,
   );
@@ -259,6 +272,7 @@ Plan _planKeepingActivitySpan(Plan updated, Plan previous) {
     earliestStart: earliestStart,
     latestEnd: latestEnd,
     sourcePlanId: updated.sourcePlanId,
+    linkedActivityIds: updated.linkedActivityIds,
     linkStart: updated.linkStart,
     linkEnd: updated.linkEnd,
   );
@@ -812,11 +826,46 @@ class PlanProvider extends ChangeNotifier {
     }
   }
 
+  /// GET /api/plans/:planId/itinerary without replacing the open itinerary.
+  Future<PlanItineraryRead> readItinerary({
+    required String planId,
+    required String? token,
+  }) async {
+    try {
+      if (token == null || token.isEmpty) {
+        return const PlanItineraryRead(status: 401);
+      }
+      final response = await http.get(
+        Uri.parse(
+          '$backendBaseUrl${apiPlansItinerary.replaceAll('{planId}', planId)}',
+        ),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (response.statusCode != 200) {
+        return PlanItineraryRead(
+          status: response.statusCode,
+          error: _apiErrorMessage(response.body),
+        );
+      }
+      final data = json.decode(response.body);
+      final events = data is Map ? data['events'] : null;
+      if (events is! List) return PlanItineraryRead(status: response.statusCode);
+      final activities = <Activity>[];
+      for (final item in events) {
+        if (item is! Map) continue;
+        activities.add(Activity.fromJson(_itineraryActivityJson(item)));
+      }
+      return PlanItineraryRead(status: 200, activities: activities);
+    } catch (e) {
+      logger.e('Error reading itinerary: $e');
+      return const PlanItineraryRead();
+    }
+  }
+
   /// POST /api/plans/:planId/link. The new plan is owned by the caller.
   Future<PlanLinkResult> linkPersonalPlan({
     required String planId,
-    required DateTime start,
-    required DateTime end,
+    required List<String> activityIds,
     required String? token,
   }) async {
     try {
@@ -831,10 +880,7 @@ class PlanProvider extends ChangeNotifier {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
         },
-        body: json.encode({
-          'start': start.toUtc().toIso8601String(),
-          'end': end.toUtc().toIso8601String(),
-        }),
+        body: json.encode({'activityIds': activityIds}),
       );
       if (response.statusCode != 201) {
         return PlanLinkResult(
@@ -852,6 +898,51 @@ class PlanProvider extends ChangeNotifier {
       return PlanLinkResult(status: 201, plan: created);
     } catch (e) {
       logger.e('Error linking a personal plan: $e');
+      return const PlanLinkResult();
+    }
+  }
+
+  /// PUT /api/plans/:planId/link. Replaces the selected source activities.
+  Future<PlanLinkResult> updateLinkedActivities({
+    required String planId,
+    required List<String> activityIds,
+    required String? token,
+  }) async {
+    try {
+      if (token == null || token.isEmpty) {
+        return const PlanLinkResult(status: 401);
+      }
+      final response = await http.put(
+        Uri.parse(
+          '$backendBaseUrl${apiPlanLink.replaceAll('{planId}', planId)}',
+        ),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode({'activityIds': activityIds}),
+      );
+      if (response.statusCode != 200) {
+        return PlanLinkResult(
+          status: response.statusCode,
+          error: _apiErrorMessage(response.body),
+        );
+      }
+      final data = json.decode(response.body);
+      final planJson = data is Map ? data['plan'] : null;
+      if (planJson is! Map) return const PlanLinkResult(status: 200);
+      final updated = Plan.fromJson(Map<String, dynamic>.from(planJson));
+      _plans = [
+        for (final plan in _plans)
+          if (plan.id == planId)
+            _planKeepingActivitySpan(updated, plan)
+          else
+            plan,
+      ];
+      notifyListeners();
+      return PlanLinkResult(status: 200, plan: updated);
+    } catch (e) {
+      logger.e('Error updating linked activities: $e');
       return const PlanLinkResult();
     }
   }
