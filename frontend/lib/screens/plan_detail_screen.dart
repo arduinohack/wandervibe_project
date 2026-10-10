@@ -14,6 +14,7 @@ import '../utils/activity_chain.dart';
 import '../utils/activity_time.dart';
 import '../utils/logger.dart';
 import '../utils/plan_pdf.dart';
+import 'activity_history_screen.dart';
 import 'login_screen.dart';
 import 'plan_people_screen.dart';
 
@@ -1021,6 +1022,13 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                         icon: const Icon(Icons.map),
                         onPressed: () => _openDirections(activity),
                       ),
+                    if (activityId != null && activityId.isNotEmpty)
+                      IconButton(
+                        tooltip: 'History',
+                        visualDensity: VisualDensity.compact,
+                        icon: const Icon(Icons.history),
+                        onPressed: () => _openActivityHistory(activity),
+                      ),
                     if (canChange &&
                         dragIndex != null &&
                         activityId != null &&
@@ -1079,6 +1087,26 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
         ),
       ],
     );
+  }
+
+  Future<void> _openActivityHistory(Activity activity) async {
+    final activityId = activity.id;
+    if (activityId == null || activityId.isEmpty) return;
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final storedRole = planProvider.viewerStoredRole(
+      widget.plan.id,
+      userProvider.currentUserId,
+    );
+    final restored = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (context) => ActivityHistoryScreen(
+          activityId: activityId,
+          canRestore: canAddActivity(storedRole),
+        ),
+      ),
+    );
+    if (restored == true && mounted) await _load();
   }
 
   Future<void> _openDirections(Activity activity) async {

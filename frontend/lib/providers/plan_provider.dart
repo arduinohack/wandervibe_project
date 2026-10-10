@@ -257,6 +257,39 @@ class PlanPlaceMapResult {
   const PlanPlaceMapResult({this.status, this.bytes});
 }
 
+class ActivityHistoryRevision {
+  final String id;
+  final String userId;
+  final String action;
+  final String createdAt;
+
+  const ActivityHistoryRevision({
+    required this.id,
+    required this.userId,
+    required this.action,
+    required this.createdAt,
+  });
+}
+
+class ActivityHistoryResult {
+  final int? status;
+  final String? error;
+  final List<ActivityHistoryRevision> revisions;
+
+  const ActivityHistoryResult({
+    this.status,
+    this.error,
+    this.revisions = const [],
+  });
+}
+
+class ActivityRestoreResult {
+  final int? status;
+  final String? error;
+
+  const ActivityRestoreResult({this.status, this.error});
+}
+
 String _trimmed(dynamic value) {
   if (value == null) return '';
   return value.toString().trim();
@@ -1247,6 +1280,83 @@ class PlanProvider extends ChangeNotifier {
     } catch (e) {
       logger.e('Error deleting activity: $e');
       return null;
+    }
+  }
+
+  /// GET /api/activities/:id/history. The list is newest first, as the API returns it.
+  Future<ActivityHistoryResult> fetchActivityHistory({
+    required String activityId,
+    required String? token,
+  }) async {
+    try {
+      if (token == null || token.isEmpty) {
+        return const ActivityHistoryResult(status: 401);
+      }
+      final response = await http.get(
+        Uri.parse('$backendBaseUrl$apiActivities/$activityId/history'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+      if (response.statusCode != 200) {
+        return ActivityHistoryResult(
+          status: response.statusCode,
+          error: _apiErrorMessage(response.body),
+        );
+      }
+      final data = json.decode(response.body);
+      if (data is! List) return const ActivityHistoryResult(status: 200);
+      final revisions = <ActivityHistoryRevision>[];
+      for (final item in data) {
+        if (item is! Map) continue;
+        final map = Map<String, dynamic>.from(item);
+        final id = _trimmed(map['_id']);
+        if (id.isEmpty) continue;
+        revisions.add(
+          ActivityHistoryRevision(
+            id: id,
+            userId: _trimmed(map['userId']),
+            action: _trimmed(map['action']),
+            createdAt: _trimmed(map['createdAt']),
+          ),
+        );
+      }
+      return ActivityHistoryResult(status: 200, revisions: revisions);
+    } catch (e) {
+      logger.e('Error loading activity history: $e');
+      return const ActivityHistoryResult();
+    }
+  }
+
+  /// POST /api/activities/:id/restore with { revisionId }. Does not notify anyone.
+  Future<ActivityRestoreResult> restoreActivityRevision({
+    required String activityId,
+    required String revisionId,
+    required String? token,
+  }) async {
+    try {
+      if (token == null || token.isEmpty) {
+        return const ActivityRestoreResult(status: 401);
+      }
+      final response = await http.post(
+        Uri.parse('$backendBaseUrl$apiActivities/$activityId/restore'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode({'revisionId': revisionId}),
+      );
+      if (response.statusCode == 200) {
+        return const ActivityRestoreResult(status: 200);
+      }
+      return ActivityRestoreResult(
+        status: response.statusCode,
+        error: _apiErrorMessage(response.body),
+      );
+    } catch (e) {
+      logger.e('Error restoring activity: $e');
+      return const ActivityRestoreResult();
     }
   }
 
