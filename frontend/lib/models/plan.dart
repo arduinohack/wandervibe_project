@@ -1,20 +1,46 @@
 import '../models/user.dart'; // Add this line for User class in participants
+import '../utils/activity_time.dart';
 import 'activity.dart';
+
+String _twoDigitDatePart(int value) => value.toString().padLeft(2, '0');
+
+String _ymd(int year, int month, int day) {
+  return '${year.toString().padLeft(4, '0')}-${_twoDigitDatePart(month)}-${_twoDigitDatePart(day)}';
+}
 
 /// UTC calendar date from a plan field. Null stays "not set".
 String formatPlanDate(DateTime? value) {
   if (value == null) return 'not set';
   final utc = value.toUtc();
-  final year = utc.year.toString().padLeft(4, '0');
-  final month = utc.month.toString().padLeft(2, '0');
-  final day = utc.day.toString().padLeft(2, '0');
-  return '$year-$month-$day';
+  return _ymd(utc.year, utc.month, utc.day);
+}
+
+/// Calendar day of [instant] in [planTimeZone]. Empty zone uses [deviceTimeZone],
+/// then the device local zone.
+String formatPlanHeaderDate(
+  DateTime instant, {
+  String planTimeZone = '',
+  String? deviceTimeZone,
+}) {
+  final plan = planTimeZone.trim();
+  final zone = plan.isNotEmpty ? plan : (deviceTimeZone ?? '').trim();
+  if (zone.isEmpty) {
+    final local = instant.toLocal();
+    return _ymd(local.year, local.month, local.day);
+  }
+  final clock = clockInZone(instant, zone);
+  return _ymd(clock.year, clock.month, clock.day);
 }
 
 /// Plan detail header dates from activity times. Null when there is no line to show.
 /// Earliest start and latest end; an activity with no end uses its start.
-/// Same UTC day is one date. No activities, or none with a start, hides the line.
-String? planHeaderDateLine(List<Activity> activities) {
+/// Same calendar day in the plan zone is one date. No activities, or none with a
+/// start, hides the line. Empty plan zone uses the device zone.
+String? planHeaderDateLine(
+  List<Activity> activities, {
+  String planTimeZone = '',
+  String? deviceTimeZone,
+}) {
   if (activities.isEmpty) return null;
   DateTime? earliestStart;
   DateTime? latestEnd;
@@ -30,8 +56,16 @@ String? planHeaderDateLine(List<Activity> activities) {
     }
   }
   if (earliestStart == null) return null;
-  final startLabel = formatPlanDate(earliestStart);
-  final endLabel = formatPlanDate(latestEnd ?? earliestStart);
+  final startLabel = formatPlanHeaderDate(
+    earliestStart,
+    planTimeZone: planTimeZone,
+    deviceTimeZone: deviceTimeZone,
+  );
+  final endLabel = formatPlanHeaderDate(
+    latestEnd ?? earliestStart,
+    planTimeZone: planTimeZone,
+    deviceTimeZone: deviceTimeZone,
+  );
   if (startLabel == endLabel) return 'Dates: $startLabel';
   return 'Dates: $startLabel - $endLabel';
 }

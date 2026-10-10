@@ -1175,7 +1175,10 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
           final canChange = canAddActivity(storedRole);
           final shownTimes = _shownActivityTimes(activities);
           final dayHeaders = _dayHeaders(activities, shownTimes, shown.timeZone);
-          final dateLine = planHeaderDateLine(activities);
+          final dateLine = planHeaderDateLine(
+            activities,
+            planTimeZone: shown.timeZone,
+          );
 
           return ListView(
             padding: const EdgeInsets.all(16),
