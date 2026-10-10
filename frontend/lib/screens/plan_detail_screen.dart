@@ -1175,6 +1175,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
           final canChange = canAddActivity(storedRole);
           final shownTimes = _shownActivityTimes(activities);
           final dayHeaders = _dayHeaders(activities, shownTimes, shown.timeZone);
+          final dateLine = planHeaderDateLine(activities);
 
           return ListView(
             padding: const EdgeInsets.all(16),
@@ -1220,12 +1221,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                       Text(
                         'Activity costs: ${formatPlanMoney(_planActualCost(activities))}',
                       ),
-                      Text(
-                        'Dates: ${formatPlanDate(shown.startDate)} - ${formatPlanDate(shown.endDate)}',
-                      ),
-                      Text(
-                        'Time zone: ${shown.timeZone.isEmpty ? 'not set' : shown.timeZone}',
-                      ),
+                      if (dateLine != null) Text(dateLine),
                       Text('State: ${shown.planningState}'),
                     ],
                   ),

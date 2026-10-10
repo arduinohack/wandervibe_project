@@ -1,4 +1,5 @@
 import '../models/user.dart'; // Add this line for User class in participants
+import 'activity.dart';
 
 /// UTC calendar date from a plan field. Null stays "not set".
 String formatPlanDate(DateTime? value) {
@@ -8,6 +9,31 @@ String formatPlanDate(DateTime? value) {
   final month = utc.month.toString().padLeft(2, '0');
   final day = utc.day.toString().padLeft(2, '0');
   return '$year-$month-$day';
+}
+
+/// Plan detail header dates from activity times. Null when there is no line to show.
+/// Earliest start and latest end; an activity with no end uses its start.
+/// Same UTC day is one date. No activities, or none with a start, hides the line.
+String? planHeaderDateLine(List<Activity> activities) {
+  if (activities.isEmpty) return null;
+  DateTime? earliestStart;
+  DateTime? latestEnd;
+  for (final activity in activities) {
+    final start = activity.startTime;
+    final end = activity.endTime ?? start;
+    if (start != null &&
+        (earliestStart == null || start.isBefore(earliestStart))) {
+      earliestStart = start;
+    }
+    if (end != null && (latestEnd == null || end.isAfter(latestEnd))) {
+      latestEnd = end;
+    }
+  }
+  if (earliestStart == null) return null;
+  final startLabel = formatPlanDate(earliestStart);
+  final endLabel = formatPlanDate(latestEnd ?? earliestStart);
+  if (startLabel == endLabel) return 'Dates: $startLabel';
+  return 'Dates: $startLabel - $endLabel';
 }
 
 String _stringValue(dynamic value, {String fallback = ''}) {
