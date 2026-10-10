@@ -227,19 +227,21 @@ router.post('/forgot-password', async (req, res) => {
     });
     await user.save();
 
-    // Send the reset link to the account email.
-    const resetUrl = `http://localhost:3000/reset-password?token=${resetToken}&email=${email}`;  // Frontend link
+    // Account email only. sendEmail applies EMAIL_PROVIDER and the shared From.
+    // Do not use NOTIFY_OVERRIDE_EMAIL or the development Gmail override.
+    const accountEmail = user.email;
+    const resetUrl = `http://localhost:3000/reset-password?token=${resetToken}&email=${accountEmail}`;
     logger.info('Requesting password reset email to user', {
       userId: userId,
       event: 'AuthForgotPWRequest',
-      context: { email: email }
+      context: { email: accountEmail }
     });
     try {
       await sendEmail({
-        to: email,
-        subject: 'Password Reset Request',
-        text: `Click to reset your password: ${resetUrl}\nThis link expires in 1 hour.`,
-        html: `<p>Click <a href="${resetUrl}">here</a> to reset your password. Expires in 1 hour.</p>`
+        to: accountEmail,
+        subject: 'PlanItVibe password reset',
+        text: `PlanItVibe: reset your password: ${resetUrl}\nThis link expires in 1 hour.`,
+        html: `<p>PlanItVibe: reset your password: <a href="${resetUrl}">${resetUrl}</a></p><p>This link expires in 1 hour.</p>`
       });
     } catch (err) {
       const status = (err.response && err.response.statusCode) || err.statusCode;
