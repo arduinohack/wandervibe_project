@@ -303,18 +303,18 @@ List<pw.Widget> _dayMaps(List<PlanPdfRow> activities, double maxWidth) {
     blocks
       ..add(pw.SizedBox(height: 12))
       ..add(
-        pw.Text(
-          _mapCaption(row),
-          style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold),
-        ),
-      )
-      ..add(pw.SizedBox(height: 6))
-      ..add(
         pw.Image(
           pw.MemoryImage(image),
           width: maxWidth,
           height: 220,
           fit: pw.BoxFit.cover,
+        ),
+      )
+      ..add(pw.SizedBox(height: 6))
+      ..add(
+        pw.Text(
+          _mapCaption(row),
+          style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold),
         ),
       );
   }
