@@ -450,44 +450,71 @@ router.post('/:planId/remove-user', authMiddleware, async (req, res) => {
   }
 });
 
-// POST /api/plans/:planId/reassign-coordinator (Protected: Transfers ownership to VibePlanner)
-// only owners of a plan can reassign coordinator role to an existing planner
+async function reassignTargetId(body) {
+  const rawId = body && typeof body.targetUserId === 'string' ? body.targetUserId.trim() : '';
+  if (rawId) return rawId;
+  const email = normalizeMemberEmail(body && body.email);
+  if (!email) return '';
+  const user = await User.findOne(memberEmailMatch(email)).select('_id').lean();
+  return user ? String(user._id) : '';
+}
+
+function personName(user, email) {
+  const first = user && typeof user.firstName === 'string' ? user.firstName.trim() : '';
+  const last = user && typeof user.lastName === 'string' ? user.lastName.trim() : '';
+  const named = `${first} ${last}`.trim();
+  if (named) return named;
+  return email || 'the new owner';
+}
+
+// POST /api/plans/:planId/reassign-coordinator
+// Owner assigns an accepted Collaborator. Body is { email } or { targetUserId }.
+// A Guest or a pending invite is 400. A non-owner is 403. No token is 401.
 router.post('/:planId/reassign-coordinator', authMiddleware, async (req, res) => {
   const { planId } = req.params;
-  const { targetUserId } = req.body;
-
-  logger.info('In Post /api/plans/{planID}/reassign-coordinator - transfers plan ownership to a plan\'s VibePlanner');
-
-  if (!targetUserId) {
-    return res.status(400).json({ msg: 'Missing targetUserId' });
-  }
+  logger.info('In Post /api/plans/{planID}/reassign-coordinator - transfers plan ownership to an accepted Collaborator');
 
   try {
-    const callerPlanUser = await PlanUser.findOne({ planId, userId: req.user.userId });
+    const callerId = String((req.user && (req.user.userId || req.user.id)) || '');
+    const callerPlanUser = await PlanUser.findOne({ planId, userId: callerId });
     if (!callerPlanUser || canonicalMembershipRole(callerPlanUser.role) !== 'Owner') {
       return res.status(403).json({ msg: 'Only Owner can reassign' });
     }
 
-    const targetPlanUser = await PlanUser.findOne({ planId, userId: targetUserId }).populate('userId', 'firstName lastName');
-    if (!targetPlanUser || canonicalMembershipRole(targetPlanUser.role) !== 'Collaborator') {
-      return res.status(400).json({ msg: 'Target must be a Collaborator' });
+    const targetId = await reassignTargetId(req.body);
+    if (!targetId || targetId === callerId) {
+      return res.status(400).json({ msg: 'Target must be an accepted Collaborator' });
     }
 
-    callerPlanUser.role = 'Collaborator';
-    targetPlanUser.role = 'Owner';
-    await callerPlanUser.save();
-    await targetPlanUser.save();
+    const targetPlanUser = await PlanUser.findOne({ planId, userId: targetId });
+    if (!targetPlanUser || canonicalMembershipRole(targetPlanUser.role) !== 'Collaborator') {
+      return res.status(400).json({ msg: 'Target must be an accepted Collaborator' });
+    }
 
     const plan = await Plan.findById(planId);
-    plan.ownerId = targetUserId;
+    if (!plan) {
+      return res.status(404).json({ msg: 'Plan not found' });
+    }
+
+    targetPlanUser.role = 'Owner';
+    await targetPlanUser.save();
+    await PlanUser.updateMany(
+      {
+        planId,
+        userId: { $ne: targetId },
+        role: { $in: ['Owner', 'VibeCoordinator', 'coordinator'] },
+      },
+      { $set: { role: 'Collaborator' } },
+    );
+    plan.ownerId = targetId;
     await plan.save();
 
-    const allParticipants = await PlanUser.find({ planId }).select('userId');
-    const participantIds = allParticipants.map(tu => tu.userId);
-    const reassignMsg = `Ownership transferred to ${targetPlanUser.userId.firstName} ${targetPlanUser.userId.lastName}!`;
-    await notifyUsers(participantIds, reassignMsg, 'email');
+    const targetUser = await User.findById(targetId).select('firstName lastName email').lean();
+    const targetEmail = (targetUser && targetUser.email) || normalizeMemberEmail(req.body && req.body.email);
+    const reassignMsg = `Ownership transferred to ${personName(targetUser, targetEmail)}.`;
+    await notifyUsers([callerId, targetId], reassignMsg, 'email');
 
-    res.json({ msg: 'Ownership reassigned!', newCoordinator: targetPlanUser.userId });
+    res.json({ msg: 'Ownership reassigned!', ownerId: targetId });
   } catch (err) {
     console.error('Reassign error:', err);
     res.status(500).json({ msg: 'Server error' });

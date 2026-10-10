@@ -188,6 +188,37 @@ class PlanMemberRemoveResult {
   const PlanMemberRemoveResult({this.status, this.error});
 }
 
+class PlanReassignResult {
+  final int? status;
+  final String? error;
+  final String? ownerId;
+
+  const PlanReassignResult({this.status, this.error, this.ownerId});
+}
+
+Plan _planWithOwner(Plan plan, String ownerId) {
+  return Plan(
+    id: plan.id,
+    type: plan.type,
+    name: plan.name,
+    destination: plan.destination,
+    startDate: plan.startDate,
+    endDate: plan.endDate,
+    autoCalculateStartDate: plan.autoCalculateStartDate,
+    autoCalculateEndDate: plan.autoCalculateEndDate,
+    location: plan.location,
+    budget: plan.budget,
+    planningState: plan.planningState,
+    timeZone: plan.timeZone,
+    participants: plan.participants,
+    ownerId: ownerId,
+    activityIds: plan.activityIds,
+    createdAt: plan.createdAt,
+    earliestStart: plan.earliestStart,
+    latestEnd: plan.latestEnd,
+  );
+}
+
 class PlanPlaceMapResult {
   final int? status;
   final Uint8List? bytes;
@@ -198,6 +229,19 @@ class PlanPlaceMapResult {
 String _trimmed(dynamic value) {
   if (value == null) return '';
   return value.toString().trim();
+}
+
+String? _ownerIdFromBody(String body) {
+  try {
+    final data = json.decode(body);
+    if (data is! Map) return null;
+    final ownerId = data['ownerId'];
+    if (ownerId == null) return null;
+    final text = ownerId.toString().trim();
+    return text.isEmpty ? null : text;
+  } catch (_) {
+    return null;
+  }
 }
 
 String? _apiErrorMessage(String body) {
@@ -1008,6 +1052,52 @@ class PlanProvider extends ChangeNotifier {
     } catch (e) {
       logger.e('Error removing plan member: $e');
       return const PlanMemberRemoveResult();
+    }
+  }
+
+  /// POST /api/plans/:planId/reassign-coordinator with { email }.
+  /// 200 moves ownership to that accepted Collaborator.
+  Future<PlanReassignResult> reassignPlanOwner({
+    required String planId,
+    required String email,
+    required String? token,
+  }) async {
+    try {
+      if (token == null || token.isEmpty) {
+        return const PlanReassignResult(status: 401);
+      }
+      final response = await http.post(
+        Uri.parse(
+          backendBaseUrl + apiPlanReassign.replaceAll('{planId}', planId),
+        ),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode({'email': email}),
+      );
+      if (response.statusCode == 200) {
+        final ownerId = _ownerIdFromBody(response.body);
+        if (ownerId != null && ownerId.isNotEmpty) {
+          _plans = [
+            for (final plan in _plans)
+              if (plan.id == planId) _planWithOwner(plan, ownerId) else plan,
+          ];
+        }
+        _viewerRoles[planId] = 'Collaborator';
+        notifyListeners();
+        return PlanReassignResult(status: 200, ownerId: ownerId);
+      }
+      if (response.statusCode == 401) {
+        return const PlanReassignResult(status: 401);
+      }
+      return PlanReassignResult(
+        status: response.statusCode,
+        error: _apiErrorMessage(response.body),
+      );
+    } catch (e) {
+      logger.e('Error reassigning plan owner: $e');
+      return const PlanReassignResult();
     }
   }
 

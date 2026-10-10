@@ -24,6 +24,7 @@ class _PlanPeopleScreenState extends State<PlanPeopleScreen> {
   String? _error;
   bool _sending = false;
   String? _removingEmail;
+  String? _assigningEmail;
 
   @override
   void initState() {
@@ -175,6 +176,62 @@ class _PlanPeopleScreenState extends State<PlanPeopleScreen> {
     }
   }
 
+  Future<void> _assignOwner(PlanMember member) async {
+    final email = member.email.trim();
+    if (email.isEmpty) return;
+    final name = member.name.isNotEmpty ? member.name : email;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Assign as Owner'),
+        content: Text('Assign $name as the owner of this plan?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Assign'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _assigningEmail = email);
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final result = await planProvider.reassignPlanOwner(
+      planId: widget.plan.id,
+      email: email,
+      token: userProvider.token,
+    );
+    if (!mounted) return;
+    if (result.status == 401) {
+      await _endSession(userProvider, planProvider, navigator);
+      return;
+    }
+    if (result.status == 200) {
+      final status = await planProvider.fetchPlanMembers(
+        widget.plan.id,
+        userProvider.token,
+      );
+      if (!mounted) return;
+      setState(() => _assigningEmail = null);
+      if (status == 401) {
+        await _endSession(userProvider, planProvider, navigator);
+      }
+      return;
+    }
+    setState(() => _assigningEmail = null);
+    messenger.showSnackBar(
+      SnackBar(content: Text(result.error ?? 'Could not assign owner')),
+    );
+  }
+
   Widget _memberTile(
     PlanMember member,
     String planType,
@@ -182,7 +239,11 @@ class _PlanPeopleScreenState extends State<PlanPeopleScreen> {
   ) {
     final title = member.name.isNotEmpty ? member.name : member.email;
     final canRemove = canRemoveStoredRole(callerRole, member.role);
-    final removing = _removingEmail == member.email.trim();
+    final canAssign = canAssignAsOwner(callerRole, member.role, member.status);
+    final email = member.email.trim();
+    final removing = _removingEmail == email;
+    final assigning = _assigningEmail == email;
+    final busy = removing || assigning || _sending || _assigningEmail != null;
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
@@ -199,12 +260,21 @@ class _PlanPeopleScreenState extends State<PlanPeopleScreen> {
               ],
             ),
           ),
-          if (canRemove)
-            TextButton(
-              onPressed: removing || _sending
-                  ? null
-                  : () => _removeMember(member),
-              child: const Text('Remove'),
+          if (canAssign || canRemove)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (canAssign)
+                  TextButton(
+                    onPressed: busy ? null : () => _assignOwner(member),
+                    child: const Text('Assign as Owner'),
+                  ),
+                if (canRemove)
+                  TextButton(
+                    onPressed: busy ? null : () => _removeMember(member),
+                    child: const Text('Remove'),
+                  ),
+              ],
             ),
         ],
       ),

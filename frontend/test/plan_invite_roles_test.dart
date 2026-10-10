@@ -42,6 +42,15 @@ void main() {
     expect(planMemberRoleLine('plan', 'Guest', 'pending'), 'Guest Pending');
   });
 
+  test('only the Owner can assign an accepted Co-Planner or Planner', () {
+    expect(canAssignAsOwner('Owner', 'Collaborator', 'accepted'), isTrue);
+    expect(canAssignAsOwner('Owner', 'VibePlanner', 'accepted'), isTrue);
+    expect(canAssignAsOwner('Owner', 'Collaborator', 'pending'), isFalse);
+    expect(canAssignAsOwner('Owner', 'Guest', 'accepted'), isFalse);
+    expect(canAssignAsOwner('Collaborator', 'Collaborator', 'accepted'), isFalse);
+    expect(canAssignAsOwner('Guest', 'Collaborator', 'accepted'), isFalse);
+  });
+
   test('Owner may remove Collaborator or Guest; Collaborator may remove Guest', () {
     expect(canRemoveStoredRole('Owner', 'Collaborator'), isTrue);
     expect(canRemoveStoredRole('Owner', 'Guest'), isTrue);

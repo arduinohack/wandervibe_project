@@ -37,6 +37,23 @@ List<String> inviteStoredRoles(String? storedRole) {
   return const [];
 }
 
+/// Owner may assign an accepted Collaborator. Pending and Guest are not assignable.
+bool canAssignAsOwner(
+  String? callerStoredRole,
+  String targetStoredRole,
+  String status,
+) {
+  if (callerStoredRole?.trim() != 'Owner') return false;
+  if (status.trim().toLowerCase() != 'accepted') return false;
+  switch (targetStoredRole.trim().toLowerCase()) {
+    case 'collaborator':
+    case 'vibeplanner':
+      return true;
+    default:
+      return false;
+  }
+}
+
 /// Owner may remove Collaborator or Guest. Collaborator may remove Guest.
 /// Guest may remove none. Owner is never removable.
 bool canRemoveStoredRole(String? callerStoredRole, String targetStoredRole) {
