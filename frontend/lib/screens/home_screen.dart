@@ -171,6 +171,11 @@ class _HomeScreenState extends State<HomeScreen> {
               final roleText = storedRole == null
                   ? null
                   : planRoleLabel(plan.type, storedRole);
+              final dateLine = planSpanDateLine(
+                earliestStart: plan.earliestStart,
+                latestEnd: plan.latestEnd,
+                planTimeZone: plan.timeZone,
+              );
               return Card(
                 child: ListTile(
                   title: Text(plan.name),
@@ -178,7 +183,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     [
                       'Type: ${plan.type}',
                       if (roleText != null) 'Role: $roleText',
-                      'Dates: ${formatPlanDate(plan.startDate)} – ${formatPlanDate(plan.endDate)}',
+                      if (dateLine != null) dateLine,
                     ].join('\n'),
                   ),
                   onTap: () {

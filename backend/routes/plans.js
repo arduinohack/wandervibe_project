@@ -28,6 +28,7 @@ const {
 } = require('../utils/csvPlanImport');
 const { readExportQuery, buildPlanExport } = require('../utils/planExport');
 const { fetchPlaceMapPng } = require('../utils/placeMap');
+const { spansByPlanId } = require('../utils/activityDateSpan');
 const router = express.Router();
 const csvUpload = multer({
   storage: multer.memoryStorage(),
@@ -118,7 +119,19 @@ router.get('/', authMiddleware, async (req, res) => {
         { ownerId: userId },
       ],
     }).populate('participants');
-    res.status(200).json({ plans });
+    const ids = plans.map((plan) => plan._id);
+    const activities = ids.length
+      ? await Event.find({ planId: { $in: ids } }).select('planId startTime endTime').lean()
+      : [];
+    const spans = spansByPlanId(activities);
+    const payload = plans.map((plan) => {
+      const obj = typeof plan.toJSON === 'function' ? plan.toJSON() : plan;
+      const span = spans.get(String(plan._id)) || { earliestStart: null, latestEnd: null };
+      obj.earliestStart = span.earliestStart;
+      obj.latestEnd = span.latestEnd;
+      return obj;
+    });
+    res.status(200).json({ plans: payload });
   } catch (error) {
     console.error('Fetch plans error:', error);
     res.status(500).json({ message: 'Server error' });

@@ -87,6 +87,33 @@ void main() {
     );
   });
 
+  test('list dates use earliestStart and latestEnd in the plan zone', () {
+    expect(
+      planSpanDateLine(
+        earliestStart: null,
+        latestEnd: null,
+        planTimeZone: 'America/New_York',
+      ),
+      isNull,
+    );
+    expect(
+      planSpanDateLine(
+        earliestStart: DateTime.utc(2026, 10, 27, 13),
+        latestEnd: DateTime.utc(2026, 10, 28, 1),
+        planTimeZone: 'America/New_York',
+      ),
+      'Dates: 2026-10-27',
+    );
+    expect(
+      planSpanDateLine(
+        earliestStart: DateTime.utc(2026, 10, 5, 8),
+        latestEnd: DateTime.utc(2026, 10, 9, 17),
+        planTimeZone: 'UTC',
+      ),
+      'Dates: 2026-10-05 - 2026-10-09',
+    );
+  });
+
   test('an empty plan zone uses the device zone', () {
     expect(
       planHeaderDateLine(

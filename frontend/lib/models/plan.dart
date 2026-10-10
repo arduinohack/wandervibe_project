@@ -32,6 +32,29 @@ String formatPlanHeaderDate(
   return _ymd(clock.year, clock.month, clock.day);
 }
 
+/// Date line from a precomputed activity span. Null when [earliestStart] is null.
+/// Same calendar day in the plan zone is one date. Empty plan zone uses the device zone.
+String? planSpanDateLine({
+  DateTime? earliestStart,
+  DateTime? latestEnd,
+  String planTimeZone = '',
+  String? deviceTimeZone,
+}) {
+  if (earliestStart == null) return null;
+  final startLabel = formatPlanHeaderDate(
+    earliestStart,
+    planTimeZone: planTimeZone,
+    deviceTimeZone: deviceTimeZone,
+  );
+  final endLabel = formatPlanHeaderDate(
+    latestEnd ?? earliestStart,
+    planTimeZone: planTimeZone,
+    deviceTimeZone: deviceTimeZone,
+  );
+  if (startLabel == endLabel) return 'Dates: $startLabel';
+  return 'Dates: $startLabel - $endLabel';
+}
+
 /// Plan detail header dates from activity times. Null when there is no line to show.
 /// Earliest start and latest end; an activity with no end uses its start.
 /// Same calendar day in the plan zone is one date. No activities, or none with a
@@ -55,19 +78,12 @@ String? planHeaderDateLine(
       latestEnd = end;
     }
   }
-  if (earliestStart == null) return null;
-  final startLabel = formatPlanHeaderDate(
-    earliestStart,
+  return planSpanDateLine(
+    earliestStart: earliestStart,
+    latestEnd: latestEnd,
     planTimeZone: planTimeZone,
     deviceTimeZone: deviceTimeZone,
   );
-  final endLabel = formatPlanHeaderDate(
-    latestEnd ?? earliestStart,
-    planTimeZone: planTimeZone,
-    deviceTimeZone: deviceTimeZone,
-  );
-  if (startLabel == endLabel) return 'Dates: $startLabel';
-  return 'Dates: $startLabel - $endLabel';
 }
 
 String _stringValue(dynamic value, {String fallback = ''}) {
@@ -124,6 +140,8 @@ class Plan {
   final String ownerId;
   final List<String> activityIds; // Links to activities
   final DateTime createdAt;
+  final DateTime? earliestStart;
+  final DateTime? latestEnd;
 
   Plan({
     required this.id, // planID?
@@ -142,6 +160,8 @@ class Plan {
     required this.ownerId,
     this.activityIds = const [],
     required this.createdAt,
+    this.earliestStart,
+    this.latestEnd,
   });
 
   factory Plan.fromJson(Map<String, dynamic> json) {
@@ -177,6 +197,8 @@ class Plan {
       ownerId: _stringValue(json['ownerId']),
       createdAt:
           _dateValue(json['createdAt']) ?? DateTime.fromMillisecondsSinceEpoch(0),
+      earliestStart: _dateValue(json['earliestStart']),
+      latestEnd: _dateValue(json['latestEnd']),
     );
   }
   /*
