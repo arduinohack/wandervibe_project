@@ -918,9 +918,15 @@ function dateField(body, key) {
   return { present: true, value: date };
 }
 
+function budgetIsBlank(value) {
+  if (value == null) return true;
+  return typeof value === 'string' && value.trim() === '';
+}
+
 function budgetField(body) {
   if (!Object.prototype.hasOwnProperty.call(body, 'budget')) return { present: false };
   const value = body.budget;
+  if (budgetIsBlank(value)) return { present: true, value: null };
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     return { present: true, invalid: true };
   }

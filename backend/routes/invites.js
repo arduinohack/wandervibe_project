@@ -65,15 +65,27 @@ planInviteRouter.post('/:planId/invite', roleCheck(['Owner', 'Collaborator']), a
 
   try {
     const invitee = await User.findOne(emailMatch(email));
-    const existingQuery = invitee
-      ? { planId, $or: [{ userId: invitee._id }, { email }] }
-      : { planId, email };
-    const existing = await Invitation.findOne(existingQuery);
-    if (existing) {
-      return res.status(400).json({ msg: 'User already invited' });
+    const plan = await Plan.findById(planId).select('name type ownerId').lean();
+    if (invitee) {
+      const membership = await PlanUser.findOne({
+        planId,
+        userId: invitee._id,
+      }).select('_id').lean();
+      const stillMember = Boolean(membership)
+        || (plan && String(plan.ownerId) === String(invitee._id));
+      if (stillMember) {
+        return res.status(400).json({ msg: 'User already invited' });
+      }
     }
 
-    const plan = await Plan.findById(planId).select('name type').lean();
+    // A removed member keeps an accepted invitation. Replace every old row
+    // for this email so a pending or accepted invitation cannot block the new one.
+    const replaceClauses = [
+      { email: { $regex: `^${escapeRegex(email)}$`, $options: 'i' } },
+    ];
+    if (invitee) replaceClauses.push({ userId: invitee._id });
+    await Invitation.deleteMany({ planId, $or: replaceClauses });
+
     const planName = plan && plan.name;
     const planType = plan && plan.type;
     const callerId = req.user.userId || req.user.id;

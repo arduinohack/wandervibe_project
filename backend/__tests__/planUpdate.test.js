@@ -216,6 +216,90 @@ describe('owner plan update', () => {
     expect(stored.timeZone).toBe('UTC');
   });
 
+  test('a number budget is saved and a blank budget clears it', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+    });
+    const planId = await createPlan(ada.token);
+
+    const saved = await request(app)
+      .put(`/api/plans/${planId}`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ budget: 42 });
+    expect(saved.status).toBe(200);
+    expect(saved.body.plan.budget).toBe(42);
+
+    const listed = await request(app)
+      .get('/api/plans')
+      .set('Authorization', `Bearer ${ada.token}`);
+    expect(listed.status).toBe(200);
+    expect(listed.body.plans.find((plan) => plan._id === planId).budget).toBe(42);
+
+    const cleared = await request(app)
+      .put(`/api/plans/${planId}`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ budget: '' });
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.plan.budget).toBeNull();
+    expect((await Plan.findById(planId).lean()).budget).toBeNull();
+
+    const listedCleared = await request(app)
+      .get('/api/plans')
+      .set('Authorization', `Bearer ${ada.token}`);
+    expect(listedCleared.body.plans.find((plan) => plan._id === planId).budget).toBeNull();
+
+    await request(app)
+      .put(`/api/plans/${planId}`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ budget: 15 });
+    const spaces = await request(app)
+      .put(`/api/plans/${planId}`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ budget: '   ' });
+    expect(spaces.status).toBe(200);
+    expect(spaces.body.plan.budget).toBeNull();
+
+    await request(app)
+      .put(`/api/plans/${planId}`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ budget: 9 });
+    const absent = await request(app)
+      .put(`/api/plans/${planId}`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ budget: null });
+    expect(absent.status).toBe(200);
+    expect(absent.body.plan.budget).toBeNull();
+
+    await request(app)
+      .put(`/api/plans/${planId}`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ budget: 11 });
+    const omitted = await request(app)
+      .put(`/api/plans/${planId}`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ name: 'Paris' });
+    expect(omitted.status).toBe(200);
+    expect(omitted.body.plan.budget).toBe(11);
+
+    const bad = await request(app)
+      .put(`/api/plans/${planId}`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ budget: 'nope' });
+    expect(bad.status).toBe(400);
+    expect(bad.body.message).toBe('Budget must be a number');
+    expect((await Plan.findById(planId).lean()).budget).toBe(11);
+
+    const zero = await request(app)
+      .put(`/api/plans/${planId}`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ budget: 0 });
+    expect(zero.status).toBe(200);
+    expect(zero.body.plan.budget).toBe(0);
+    expect((await Plan.findById(planId).lean()).budget).toBe(0);
+  });
+
   test('an unknown plan is 404', async () => {
     const ada = await registerAndLogin({
       firstName: 'Ada',

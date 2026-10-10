@@ -1054,12 +1054,13 @@ class PlanProvider extends ChangeNotifier {
   }
 
   /// PUT /api/plans/:planId with name, destination, budget, dates, time zone,
-  /// and the auto-calculate flags. On 200 that plan in the loaded list is replaced.
+  /// and the auto-calculate flags. A null budget clears the stored amount.
+  /// On 200 that plan is replaced, then reloaded from GET /api/plans.
   Future<PlanUpdateResult> updatePlan({
     required String planId,
     required String name,
     required String destination,
-    required double budget,
+    required double? budget,
     required DateTime? startDate,
     required DateTime? endDate,
     required String timeZone,
@@ -1106,7 +1107,12 @@ class PlanProvider extends ChangeNotifier {
             plan,
       ];
       notifyListeners();
-      return PlanUpdateResult(status: 200, plan: updated);
+      await _reloadPlan(planId, token);
+      Plan? reloaded;
+      for (final plan in _plans) {
+        if (plan.id == planId) reloaded = plan;
+      }
+      return PlanUpdateResult(status: 200, plan: reloaded ?? updated);
     } catch (e) {
       logger.e('Error updating plan: $e');
       return const PlanUpdateResult();

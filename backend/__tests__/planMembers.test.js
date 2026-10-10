@@ -527,3 +527,154 @@ describe('POST /api/plans/:planId/reassign-coordinator', () => {
     expect(await User.findById(grace.userId)).toBeTruthy();
   });
 });
+
+describe('POST /api/plans/:planId/invite replaces a removed invitation', () => {
+  test('a removed collaborator can be invited again as Guest, and any removed role works', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+    });
+    const grace = await registerAndLogin({
+      firstName: 'Grace',
+      lastName: 'Hopper',
+      email: 'grace@example.com',
+    });
+    const alan = await registerAndLogin({
+      firstName: 'Alan',
+      lastName: 'Turing',
+      email: 'alan@example.com',
+    });
+    const planId = await createPlan(ada.token);
+
+    const pendingFirst = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'new.person@example.com', role: 'Collaborator' });
+    expect(pendingFirst.status).toBe(201);
+    const pendingAgain = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'new.person@example.com', role: 'Guest' });
+    expect(pendingAgain.status).toBe(201);
+    expect(pendingAgain.body.invitation.role).toBe('Guest');
+    expect(pendingAgain.body.invitation.status).toBe('pending');
+    const pendingRows = await Invitation.find({ planId, email: 'new.person@example.com' });
+    expect(pendingRows).toHaveLength(1);
+    expect(pendingRows[0]._id).toBe(pendingAgain.body.invitation._id);
+    expect(pendingRows[0].role).toBe('Guest');
+    expect(pendingRows[0]._id).not.toBe(pendingFirst.body.invitation._id);
+
+    const collaboratorInvite = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'grace@example.com', role: 'Collaborator' });
+    expect(collaboratorInvite.status).toBe(201);
+    expect((await request(app)
+      .post(`/api/invites/invitations/${collaboratorInvite.body.invitation._id}/respond`)
+      .set('Authorization', `Bearer ${grace.token}`)
+      .send({ status: 'accepted' })).status).toBe(200);
+
+    const removed = await request(app)
+      .delete(`/api/plans/${planId}/members`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'grace@example.com' });
+    expect(removed.status).toBe(200);
+    expect(await PlanUser.findOne({ planId, userId: grace.userId })).toBeNull();
+    const accepted = await Invitation.findOne({
+      planId,
+      userId: grace.userId,
+      status: 'accepted',
+    });
+    expect(accepted).toBeTruthy();
+    await Invitation.create({
+      _id: 'stale-pending-grace',
+      planId,
+      userId: grace.userId,
+      email: 'grace@example.com',
+      invitedBy: ada.userId,
+      role: 'Collaborator',
+      status: 'pending',
+    });
+
+    const again = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'Grace@Example.com', role: 'Guest' });
+    expect(again.status).toBe(201);
+    expect(again.body.invitation.role).toBe('Guest');
+    expect(again.body.invitation.status).toBe('pending');
+    const graceRows = await Invitation.find({
+      planId,
+      $or: [{ email: 'grace@example.com' }, { userId: grace.userId }],
+    });
+    expect(graceRows).toHaveLength(1);
+    expect(graceRows[0].role).toBe('Guest');
+    expect(graceRows[0].status).toBe('pending');
+    expect(graceRows[0]._id).toBe(again.body.invitation._id);
+    expect(await Invitation.findById(accepted._id)).toBeNull();
+    expect(await Invitation.findById('stale-pending-grace')).toBeNull();
+    expect(await PlanUser.findOne({ planId, userId: grace.userId })).toBeNull();
+
+    const guestInvite = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'alan@example.com', role: 'Guest' });
+    expect((await request(app)
+      .post(`/api/invites/invitations/${guestInvite.body.invitation._id}/respond`)
+      .set('Authorization', `Bearer ${alan.token}`)
+      .send({ status: 'accepted' })).status).toBe(200);
+    expect((await request(app)
+      .delete(`/api/plans/${planId}/members`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'alan@example.com' })).status).toBe(200);
+
+    const guestAgain = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'alan@example.com', role: 'Collaborator' });
+    expect(guestAgain.status).toBe(201);
+    expect(guestAgain.body.invitation.role).toBe('Collaborator');
+    const alanRows = await Invitation.find({ planId, userId: alan.userId });
+    expect(alanRows).toHaveLength(1);
+    expect(alanRows[0].role).toBe('Collaborator');
+    expect(alanRows[0].status).toBe('pending');
+  });
+
+  test('a person who is still a member is rejected', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+    });
+    const grace = await registerAndLogin({
+      firstName: 'Grace',
+      lastName: 'Hopper',
+      email: 'grace@example.com',
+    });
+    const planId = await createPlan(ada.token);
+    const invite = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'grace@example.com', role: 'Collaborator' });
+    expect(invite.status).toBe(201);
+    expect((await request(app)
+      .post(`/api/invites/invitations/${invite.body.invitation._id}/respond`)
+      .set('Authorization', `Bearer ${grace.token}`)
+      .send({ status: 'accepted' })).status).toBe(200);
+
+    const denied = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'grace@example.com', role: 'Guest' });
+    expect(denied.status).toBe(400);
+    expect(denied.body.msg).toBe('User already invited');
+
+    const rows = await Invitation.find({ planId, userId: grace.userId });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]._id).toBe(invite.body.invitation._id);
+    expect(rows[0].role).toBe('Collaborator');
+    expect(rows[0].status).toBe('accepted');
+    expect((await PlanUser.findOne({ planId, userId: grace.userId })).role).toBe('Collaborator');
+  });
+});

@@ -133,7 +133,7 @@ class Plan {
   final bool autoCalculateStartDate;
   final bool autoCalculateEndDate;
   final String location;
-  final double budget;
+  final double? budget;
   final String planningState; // "initial", "reviewing", "complete"
   final String timeZone;
   final List<PlanUser> participants;
@@ -195,7 +195,7 @@ class Plan {
       autoCalculateStartDate: json['autoCalculateStartDate'] ?? false,
       autoCalculateEndDate: json['autoCalculateEndDate'] ?? false,
       location: _stringValue(json['location']),
-      budget: json['budget'] is num ? (json['budget'] as num).toDouble() : 0,
+      budget: json['budget'] is num ? (json['budget'] as num).toDouble() : null,
       planningState: _stringValue(json['planningState'], fallback: 'initial'),
       timeZone: _stringValue(json['timeZone'], fallback: 'UTC'),
       participants: _participants(json['participants']),

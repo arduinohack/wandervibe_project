@@ -572,7 +572,14 @@ describe('invites', () => {
       .post(`/api/plans/${planId}/invite`)
       .set('Authorization', `Bearer ${ada.token}`)
       .send({ email, role: 'Guest' });
-    expect(again.status).toBe(400);
+    expect(again.status).toBe(201);
+    expect(again.body.invitation.role).toBe('Guest');
+    expect(again.body.invitation.email).toBe(email);
+    expect(again.body.invitation.userId).toBeFalsy();
+    const pendingRows = await Invitation.find({ planId, email });
+    expect(pendingRows).toHaveLength(1);
+    expect(pendingRows[0]._id).toBe(again.body.invitation._id);
+    expect(await Invitation.findById(inviteRes.body.invitation._id)).toBeNull();
 
     const registerRes = await request(app)
       .post('/api/auth/register')
@@ -583,7 +590,7 @@ describe('invites', () => {
         password: 'password2',
       });
     expect(registerRes.status).toBe(201);
-    const stored = await Invitation.findById(inviteRes.body.invitation._id);
+    const stored = await Invitation.findById(again.body.invitation._id);
     expect(stored.userId).toBeTruthy();
     expect(stored.status).toBe('pending');
     expect(await PlanUser.findOne({ planId, userId: stored.userId })).toBeNull();

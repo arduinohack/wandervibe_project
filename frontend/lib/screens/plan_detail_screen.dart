@@ -1299,7 +1299,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                       const SizedBox(height: 8),
                       Text('Destination: ${shown.destination}'),
                       if (roleText != null) Text('Role: $roleText'),
-                      Text('Budget: ${formatPlanMoney(shown.budget)}'),
+                      Text('Budget: ${formatPlanBudget(shown.budget)}'),
                       Text(
                         'Activity costs: ${formatPlanMoney(_planActualCost(activities))}',
                       ),
@@ -1424,6 +1424,11 @@ PlanPdfRow _pdfActivityRow(
     googlePlaceId: activity.googlePlaceId,
     mapImage: mapImage,
   );
+}
+
+String formatPlanBudget(num? amount) {
+  if (amount == null) return 'not set';
+  return formatPlanMoney(amount);
 }
 
 String formatPlanMoney(num amount) {
@@ -2214,15 +2219,22 @@ class _PlanEditScreenState extends State<_PlanEditScreen> {
     final name = _nameController.text.trim();
     final destination = _destinationController.text.trim();
     final timeZone = _timeZoneController.text.trim();
-    final budget = double.tryParse(_budgetController.text.trim());
+    final budgetText = _budgetController.text.trim();
+    final double? budget;
+    if (budgetText.isEmpty) {
+      budget = null;
+    } else {
+      final parsed = double.tryParse(budgetText);
+      if (parsed == null || parsed.isNaN || parsed.isInfinite) {
+        setState(() => _error = 'Budget must be a number');
+        return;
+      }
+      budget = parsed;
+    }
     final start = _start;
     final end = _end;
     if (name.isEmpty || timeZone.isEmpty) {
       setState(() => _error = 'Enter a name and a time zone');
-      return;
-    }
-    if (budget == null || budget.isNaN || budget.isInfinite) {
-      setState(() => _error = 'Enter a budget');
       return;
     }
     if (widget.plan.type == 'trip' && destination.isEmpty) {
@@ -2261,6 +2273,7 @@ class _PlanEditScreenState extends State<_PlanEditScreen> {
       setState(() => _error = result.error ?? 'Could not update plan');
       return;
     }
+    _budgetController.text = _costBoxText(result.plan!.budget);
     Navigator.pop(context);
   }
 

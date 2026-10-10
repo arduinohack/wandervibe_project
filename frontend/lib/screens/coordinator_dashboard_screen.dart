@@ -169,7 +169,7 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
                       leading: const Icon(Icons.flight_takeoff),
                       title: Text(plan.name),
                       subtitle: Text(
-                        '${plan.destination} | Budget: \$${plan.budget}',
+                        '${plan.destination} | Budget: ${plan.budget == null ? 'not set' : '\$${plan.budget}'}',
                       ),
                       trailing: IconButton(
                         icon: const Icon(Icons.edit),
