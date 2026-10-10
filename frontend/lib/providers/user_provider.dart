@@ -156,16 +156,28 @@ class UserProvider extends ChangeNotifier {
     }
   }
 
-  // Logout (clear token locally and call backend)
+  // POST /api/auth/logout while the bearer token is still saved, then drop it.
+  // A failed call still clears the saved token.
   Future<void> logout() async {
-    try {
-      final timeoutDuration = Duration(seconds: await AppConfig.timeoutSeconds);
-      final token = _jwtToken;
-      if (token != null) {
-        // Call backend logout (optional, for blacklisting)
+    final memoryToken = _jwtToken;
+    String? token = memoryToken != null && memoryToken.isNotEmpty
+        ? memoryToken
+        : null;
+    if (token == null) {
+      try {
+        token = await readToken();
+      } catch (e) {
+        logger.e('Logout token read error: $e');
+      }
+    }
+    if (token != null && token.isNotEmpty) {
+      try {
+        final timeoutDuration = Duration(
+          seconds: await AppConfig.timeoutSeconds,
+        );
         final response = await http
             .post(
-              Uri.parse((backendBaseUrl) + apiAuthLogout),
+              Uri.parse(backendBaseUrl + apiAuthLogout),
               headers: {
                 'Content-Type': 'application/json',
                 'Authorization': 'Bearer $token',
@@ -173,17 +185,18 @@ class UserProvider extends ChangeNotifier {
             )
             .timeout(timeoutDuration);
         if (response.statusCode != 200) {
-          logger.i(
-            'Backend logout failed: ${response.statusCode}',
-          ); // Non-fatal—local clear anyway
+          logger.i('Backend logout failed: ${response.statusCode}');
         }
+      } catch (e) {
+        logger.e('Logout API error: $e');
       }
-    } catch (e) {
-      logger.e('Logout API error: $e'); // Non-fatal
     }
 
-    // Always clear local storage
-    await deleteToken();
+    try {
+      await deleteToken();
+    } catch (e) {
+      logger.e('Logout token delete error: $e');
+    }
     _jwtToken = null;
     currentUserId = null;
     _currentUserRole = null;

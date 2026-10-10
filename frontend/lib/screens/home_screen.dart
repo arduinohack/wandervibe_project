@@ -109,22 +109,6 @@ class _HomeScreenState extends State<HomeScreen> {
             tooltip: 'Edit profile',
           ),
           IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () async {
-              final userProvider = Provider.of<UserProvider>(
-                context,
-                listen: false,
-              );
-              await userProvider.logout();
-              if (!context.mounted) return;
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (context) => const LoginScreen()),
-              );
-            },
-            tooltip: 'Logout',
-          ),
-          IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () {
               Navigator.push(
@@ -133,6 +117,28 @@ class _HomeScreenState extends State<HomeScreen> {
               );
             },
             tooltip: 'App Settings',
+          ),
+          PopupMenuButton<String>(
+            tooltip: 'App menu',
+            onSelected: (choice) async {
+              if (choice != 'logout') return;
+              final userProvider = Provider.of<UserProvider>(
+                context,
+                listen: false,
+              );
+              final planProvider = Provider.of<PlanProvider>(
+                context,
+                listen: false,
+              );
+              final navigator = Navigator.of(context);
+              await _endSession(userProvider, planProvider, navigator);
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem<String>(
+                value: 'logout',
+                child: Text('Log out'),
+              ),
+            ],
           ),
         ],
       ),
