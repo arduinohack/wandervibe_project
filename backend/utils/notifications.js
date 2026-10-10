@@ -32,18 +32,31 @@ function smsTo(user, overrideTo, mode) {
   return typeof user.phoneNumber === 'string' ? user.phoneNumber.trim() : '';
 }
 
+// SMS has no subject line. The body names PlanItVibe. Email text stays as passed.
+function smsText(message) {
+  const source = typeof message === 'string' ? message : '';
+  const named = source
+    .replace(/Wander Vibe/gi, 'PlanItVibe')
+    .replace(/WanderVibe/gi, 'PlanItVibe');
+  if (named.includes('PlanItVibe')) return named;
+  const trimmed = named.trim();
+  if (!trimmed) return 'PlanItVibe';
+  return `PlanItVibe: ${trimmed}`;
+}
+
 // SMS errors stay here so a failed text does not skip email or the request handler.
 async function deliverSms(users, message) {
   try {
     const { to: overrideTo, mode } = smsDestination();
     console.log(`notifyUsers sms mode: ${mode}`);
+    const body = smsText(message);
     for (const user of users) {
       try {
         const prefs = user.notificationPreferences || {};
         if (prefs.sms !== true) continue;
         const to = smsTo(user, overrideTo, mode);
         if (!to) continue;
-        await sendSms({ to, body: message });
+        await sendSms({ to, body });
       } catch (err) {
         console.error(`SMS notification error: ${err.message}`);
       }

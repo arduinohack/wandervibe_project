@@ -71,8 +71,11 @@ describe('notifyUsers SMS', () => {
     expect(sendSms).toHaveBeenCalledTimes(1);
     expect(sendSms).toHaveBeenCalledWith({
       to: '+15551234567',
-      body: 'Your plan "Paris" has been created!',
+      body: 'PlanItVibe: Your plan "Paris" has been created!',
     });
+    expect(sendEmail).toHaveBeenCalledWith(expect.objectContaining({
+      text: 'Your plan "Paris" has been created!',
+    }));
     expect(sendEmail).toHaveBeenCalledTimes(1);
   });
 
@@ -131,8 +134,33 @@ describe('notifyUsers SMS', () => {
     expect(sendSms).toHaveBeenCalledTimes(1);
     expect(sendSms).toHaveBeenCalledWith({
       to: '+15550001111',
-      body: 'Invite accepted.',
+      body: 'PlanItVibe: Invite accepted.',
     });
     expect(sendSms).not.toHaveBeenCalledWith(expect.objectContaining({ to: '+15551234567' }));
+  });
+
+  test('every text says PlanItVibe and does not say WanderVibe', async () => {
+    const user = await makeUser({
+      sms: true,
+      phoneNumber: '+15551234567',
+      email: 'ada-brand@example.com',
+    });
+
+    await notifyUsers([user._id], 'Hello from WanderVibe and Wander Vibe');
+    await notifyUsers(
+      [user._id],
+      'You\'ve been invited to "Paris" as Attendee on PlanItVibe! Check app to accept.',
+    );
+
+    const bodies = sendSms.mock.calls.map((call) => call[0].body);
+    expect(bodies).toEqual([
+      'Hello from PlanItVibe and PlanItVibe',
+      'You\'ve been invited to "Paris" as Attendee on PlanItVibe! Check app to accept.',
+    ]);
+    expect(bodies.every((body) => body.includes('PlanItVibe'))).toBe(true);
+    expect(bodies.join('\n')).not.toMatch(/Wander\s?Vibe/i);
+    expect(sendEmail).toHaveBeenCalledWith(expect.objectContaining({
+      text: 'Hello from WanderVibe and Wander Vibe',
+    }));
   });
 });
