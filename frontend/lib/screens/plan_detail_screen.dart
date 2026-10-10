@@ -12,6 +12,7 @@ import '../providers/plan_provider.dart';
 import '../providers/user_provider.dart';
 import '../utils/activity_chain.dart';
 import '../utils/activity_time.dart';
+import '../utils/logger.dart';
 import '../utils/plan_pdf.dart';
 import 'login_screen.dart';
 import 'plan_people_screen.dart';
@@ -886,6 +887,9 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
             token: userProvider.token,
           );
           if (!mounted) return;
+          if (result.status == 401 || result.status == 403) {
+            logger.w('Place map GET status ${result.status}');
+          }
           if (result.status == 401) {
             if (progressShown) navigator.pop();
             await _endSession(userProvider, planProvider, navigator);

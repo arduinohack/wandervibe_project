@@ -357,14 +357,21 @@ router.delete('/:planId/members', roleCheck(['Owner', 'Collaborator', 'Guest']),
 router.get('/:planId/place-map', roleCheck(['Owner', 'Collaborator', 'Guest']), async (req, res) => {
   const { planId } = req.params;
   const placeId = String((req.query && req.query.placeId) || '').trim();
-  logger.info('In Get /api/plans/{planId}/place-map - Google Map around a stored Place ID');
+  logger.info('In Get /api/plans/{planId}/place-map - Google Map around a stored Place ID', {
+    userId: req.user.userId,
+    event: 'GetAPIPlanPlaceMap',
+    context: { planId, placeId },
+  });
 
   if (!placeId) {
     return res.status(400).json({ msg: 'Missing placeId' });
   }
 
   try {
-    const onPlan = await Event.findOne({ planId, googlePlaceId: placeId }).select('_id').lean();
+    const onPlan = await Event.findOne({
+      googlePlaceId: placeId,
+      $or: [{ planId }, { eventPlanId: planId }],
+    }).select('_id').lean();
     if (!onPlan) {
       return res.status(404).json({ msg: 'Place not found on plan' });
     }

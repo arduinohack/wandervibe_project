@@ -947,14 +947,21 @@ class PlanProvider extends ChangeNotifier {
   }) async {
     try {
       if (token == null || token.isEmpty) {
+        logger.w('Place map GET status 401');
         return const PlanPlaceMapResult(status: 401);
       }
       final response = await http.get(
         Uri.parse(
-          backendBaseUrl + apiPlanPlaceMap.replaceAll('{planId}', planId),
-        ).replace(queryParameters: {'placeId': placeId}),
-        headers: {'Authorization': 'Bearer $token'},
+          '$backendBaseUrl${apiPlanPlaceMap.replaceAll('{planId}', planId)}?placeId=${Uri.encodeQueryComponent(placeId)}',
+        ),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
       );
+      if (response.statusCode == 401 || response.statusCode == 403) {
+        logger.w('Place map GET status ${response.statusCode}');
+      }
       if (response.statusCode == 401) {
         return const PlanPlaceMapResult(status: 401);
       }
