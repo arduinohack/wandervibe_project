@@ -69,9 +69,11 @@ void main() {
     final literals = page.literals;
     expect(literals, contains('Drive'));
     expect(literals, contains('Flight'));
-    expect(literals, contains('Service'));
+    expect(literals.join(' '), contains('Car'));
+    expect(literals.join(' '), contains('Service'));
     expect(literals, contains('Name'));
-    expect(literals, contains('Car'));
+    expect(literals, contains('Duration'));
+    expect(literals.where((text) => text.contains('Duration')), ['Duration']);
     expect(literals, contains('Cost(act):'));
     expect(literals, contains(r'$12.00'));
     expect(literals.where((text) => text.startsWith('Cost(')), ['Cost(act):']);
@@ -84,9 +86,10 @@ void main() {
 
     expect(page.columnWidthOf('Start'), lessThan(page.columnWidthOf('Details')));
     expect(page.columnWidthOf('End'), lessThan(page.columnWidthOf('Details')));
+    expect(page.columnWidthOf('Duration'), lessThan(page.columnWidthOf('Details')));
   });
 
-  test('day tables share column widths measured from every activity', () async {
+  test('empty day columns get no width and leftover goes to Name and Details', () async {
     const longDay = PlanPdfRow(
       dayHeader: 'Day 1',
       type: 'Drive',
@@ -96,8 +99,8 @@ void main() {
       duration: '60 min',
       location: 'Terminal',
       details: 'A long note about the transfer.',
-      bookingReference: '',
-      cost: 'Cost(act):\n\$123,456.78',
+      bookingReference: 'AB12',
+      cost: 'Cost(est):\n\$1,100.00',
       gate: 'A12',
       baggageClaim: '',
       roomNumber: '',
@@ -120,7 +123,7 @@ void main() {
       serviceProvider: '',
     );
 
-    final shared = _pdfPage(
+    final page = _pdfPage(
       await buildPlanPdf(
         name: 'Width Check',
         destination: 'Here',
@@ -129,57 +132,24 @@ void main() {
         rows: const [longDay, shortDay],
       ),
     );
-    final narrow = _pdfPage(
-      await buildPlanPdf(
-        name: 'Width Check',
-        destination: 'Here',
-        start: '10/05/26',
-        end: '10/06/26',
-        rows: const [
-          PlanPdfRow(
-            dayHeader: 'Day 2',
-            type: 'Flight',
-            name: 'Hop',
-            start: '9:00',
-            end: '9:30',
-            duration: '',
-            location: '',
-            details: 'Brief.',
-            bookingReference: '',
-            cost: 'Cost(est):\n\$1.00',
-            gate: '',
-            baggageClaim: '',
-            roomNumber: '',
-            serviceProvider: '',
-          ),
-        ],
-      ),
-    );
 
-    const headings = [
-      'Type',
-      'Name',
-      'Start',
-      'End',
-      'Duration',
-      'Location',
-      'Details',
-      'Cost',
-      'Gate',
-    ];
-    final seen = shared.literals.where(headings.contains).toList();
-    expect(seen, [...headings, ...headings]);
-    for (final heading in ['Start', 'End', 'Cost', 'Details', 'Gate']) {
-      final widths = shared.columnWidthsOf(heading);
-      expect(widths, hasLength(2));
-      expect(widths[1], widths[0]);
-    }
-    expect(shared.literals.where((text) => text == 'A12'), ['A12']);
-    expect(shared.literals, contains(r'$123,456.78'));
-    expect(shared.columnWidthOf('Start'), greaterThan(narrow.columnWidthOf('Start')));
-    expect(shared.columnWidthOf('End'), greaterThan(narrow.columnWidthOf('End')));
-    expect(shared.columnWidthOf('Cost'), greaterThan(narrow.columnWidthOf('Cost')));
-    expect(shared.columnWidthOf('Start'), lessThan(shared.columnWidthOf('Details')));
+    expect(page.literals.where((text) => text == 'Duration'), ['Duration']);
+    expect(page.literals, contains(r'$1,100.00'));
+    expect(page.literals.where((text) => text.contains('1,100')), [r'$1,100.00']);
+    expect(page.literals, contains('Cost(est):'));
+    expect(page.literals.where((text) => text == 'A12'), ['A12']);
+    expect(page.literals.where((text) => text == 'Gate'), ['Gate']);
+    expect(page.literals, contains('Booking'));
+    expect(page.literals, contains('reference'));
+    expect(page.columnWidthsOf('Gate'), hasLength(1));
+    expect(page.columnWidthsOf('Duration'), hasLength(1));
+    expect(page.columnWidthsOf('Name'), hasLength(2));
+    expect(page.columnWidthOf('Name'), greaterThan(page.columnWidthOf('Start')));
+    expect(page.columnWidthOf('Details'), greaterThan(page.columnWidthOf('Start')));
+    expect(
+      page.columnWidthOf('Details'),
+      greaterThan(page.columnWidthOf('Booking')),
+    );
   });
 
   test('a Place ID map is drawn after that day with a caption', () async {

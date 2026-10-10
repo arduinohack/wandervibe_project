@@ -67,20 +67,33 @@ class _PdfDay {
 class _PdfColumn {
   final String heading;
   final String Function(PlanPdfRow row) value;
+  final bool flex;
+  final bool headingOneLine;
+  final List<String> minBodyLines;
 
-  const _PdfColumn(this.heading, this.value);
+  const _PdfColumn(
+    this.heading,
+    this.value, {
+    this.flex = false,
+    this.headingOneLine = false,
+    this.minBodyLines = const [],
+  });
 }
 
 const _pdfColumns = [
   _PdfColumn('Type', _typeCell),
-  _PdfColumn('Name', _nameCell),
+  _PdfColumn('Name', _nameCell, flex: true),
   _PdfColumn('Start', _startCell),
   _PdfColumn('End', _endCell),
-  _PdfColumn('Duration', _durationCell),
+  _PdfColumn('Duration', _durationCell, headingOneLine: true),
   _PdfColumn('Location', _locationCell),
-  _PdfColumn('Details', _detailsCell),
+  _PdfColumn('Details', _detailsCell, flex: true),
   _PdfColumn('Booking reference', _bookingReferenceCell),
-  _PdfColumn('Cost', _costCell),
+  _PdfColumn(
+    'Cost',
+    _costCell,
+    minBodyLines: ['Cost(est):', 'Cost(act):', r'$1,100.00'],
+  ),
   _PdfColumn('Gate', _gateCell),
   _PdfColumn('Baggage claim', _baggageClaimCell),
   _PdfColumn('Room number', _roomNumberCell),
@@ -135,39 +148,95 @@ List<_PdfDay> _daysInOrder(List<PlanPdfRow> rows) {
 
 const _bodyFontSize = 8.0;
 const _headerFontSize = 10.0;
+const _cellPadding = 4.0;
 
-Map<int, pw.TableColumnWidth> _contentColumnWidths(List<_PdfColumn> columns) {
-  return {
-    for (var index = 0; index < columns.length; index++)
-      index: columns[index].heading == 'Details'
-          ? const pw.FlexColumnWidth()
-          : const pw.IntrinsicColumnWidth(),
-  };
+double _lineWidth(PdfFont font, String text, double fontSize) {
+  if (text.isEmpty) return 0;
+  return font.stringMetrics(text).advanceWidth * fontSize;
 }
 
-/// One measurement of every activity. Each day table reuses these widths.
-/// Activity columns stay as wide as their text. Details takes the leftover.
-Map<int, pw.TableColumnWidth> _columnWidths(
-  pw.Document document,
+double _headingMinWidth(PdfFont font, _PdfColumn column) {
+  final heading = column.heading.trim();
+  if (heading.isEmpty) return 0;
+  if (column.headingOneLine) {
+    return _lineWidth(font, heading, _headerFontSize);
+  }
+  var widest = 0.0;
+  for (final word in heading.split(RegExp(r'\s+'))) {
+    if (word.isEmpty) continue;
+    final width = _lineWidth(font, word, _headerFontSize);
+    if (width > widest) widest = width;
+  }
+  return widest;
+}
+
+double _columnMinWidth(
+  PdfFont headerFont,
+  PdfFont bodyFont,
+  _PdfColumn column,
+  List<PlanPdfRow> activities,
+) {
+  var widest = _headingMinWidth(headerFont, column);
+  void consider(String text) {
+    for (final line in text.split('\n')) {
+      final width = _lineWidth(bodyFont, line.trim(), _bodyFontSize);
+      if (width > widest) widest = width;
+    }
+  }
+
+  for (final extra in column.minBodyLines) {
+    consider(extra);
+  }
+  for (final row in activities) {
+    consider(_tableCell(column.value(row)));
+  }
+  return widest + _cellPadding * 2 + 1;
+}
+
+/// Per-day widths from printed values. Empty columns get none. Leftover goes
+/// to Name and Details. Booking reference stays content-sized.
+Map<int, pw.TableColumnWidth> _balancedColumnWidths(
+  PdfFont headerFont,
+  PdfFont bodyFont,
   List<PlanPdfRow> activities,
   List<_PdfColumn> columns,
   double maxWidth,
 ) {
-  final measured = _dayTable(
-    activities,
-    columns,
-    _contentColumnWidths(columns),
-  );
-  measured.layout(
-    pw.Context(document: document.document).inheritFrom(pw.ThemeData.base()),
-    pw.BoxConstraints(maxWidth: maxWidth),
-  );
-  final header = measured.children.first.children;
+  final mins = [
+    for (final column in columns)
+      _columnMinWidth(headerFont, bodyFont, column, activities),
+  ];
+  final flexIndexes = [
+    for (var index = 0; index < columns.length; index++)
+      if (columns[index].flex) index,
+  ];
+  var fixed = 0.0;
+  var flexMin = 0.0;
+  for (var index = 0; index < columns.length; index++) {
+    if (columns[index].flex) {
+      flexMin += mins[index];
+    } else {
+      fixed += mins[index];
+    }
+  }
+  final widths = List<double>.from(mins);
+  if (flexIndexes.isNotEmpty) {
+    final leftover = maxWidth - fixed;
+    final share = leftover > 0 ? leftover / flexIndexes.length : 0.0;
+    for (final index in flexIndexes) {
+      widths[index] = share > mins[index] ? share : mins[index];
+    }
+    final used = widths.fold<double>(0, (sum, width) => sum + width);
+    if (used > maxWidth && leftover > 0) {
+      final scale = leftover / flexMin;
+      for (final index in flexIndexes) {
+        widths[index] = mins[index] * scale;
+      }
+    }
+  }
   return {
     for (var index = 0; index < columns.length; index++)
-      index: columns[index].heading == 'Details'
-          ? const pw.FlexColumnWidth()
-          : pw.FixedColumnWidth(header[index].box!.width),
+      index: pw.FixedColumnWidth(widths[index]),
   };
 }
 
@@ -264,12 +333,9 @@ Future<Uint8List> buildPlanPdf({
 }) async {
   final document = pw.Document();
   final days = _daysInOrder(rows);
-  final columns = _columnsInPrint(rows);
   final format = landscape ? PdfPageFormat.a4.landscape : PdfPageFormat.a4;
-  final activities = [for (final row in rows) if (row.includeRow) row];
-  final columnWidths = columns.isEmpty
-      ? <int, pw.TableColumnWidth>{}
-      : _columnWidths(document, activities, columns, format.availableWidth);
+  final headerFont = PdfFont.helveticaBold(document.document);
+  final bodyFont = PdfFont.helvetica(document.document);
   final generated = _generatedLabel(DateTime.now());
   final chrome = const pw.TextStyle(fontSize: 9);
   document.addPage(
@@ -330,8 +396,21 @@ Future<Uint8List> buildPlanPdf({
               )
               ..add(pw.SizedBox(height: 6));
           }
+          final columns = _columnsInPrint(day.activities);
           if (columns.isNotEmpty) {
-            blocks.add(_dayTable(day.activities, columns, columnWidths));
+            blocks.add(
+              _dayTable(
+                day.activities,
+                columns,
+                _balancedColumnWidths(
+                  headerFont,
+                  bodyFont,
+                  day.activities,
+                  columns,
+                  format.availableWidth,
+                ),
+              ),
+            );
           }
           blocks.addAll(_dayMaps(day.activities, format.availableWidth));
         }
