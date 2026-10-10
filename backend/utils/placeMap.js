@@ -1,33 +1,90 @@
 const axios = require('axios');
+const logger = require('./logger');
 
-const DETAILS_URL = 'https://maps.googleapis.com/maps/api/place/details/json';
 const STATIC_URL = 'https://maps.googleapis.com/maps/api/staticmap';
 const MAP_ZOOM = '15';
-const MAP_SIZE = '640x400';
+const MAP_SIZE = '600x400';
+const BODY_LOG_CHARS = 180;
 
 function googleMapsKey() {
   return String(process.env.GOOGLE_MAPS_API_KEY || '').trim();
 }
 
-async function defaultGetJson(url, params) {
-  const res = await axios.get(url, { params, timeout: 15000 });
-  return res.data;
+function redactKey(text, key) {
+  const raw = String(text == null ? '' : text);
+  if (!key) return raw;
+  return raw.split(key).join('[redacted]');
 }
 
-async function defaultGetBuffer(url, params) {
+function bodyText(body) {
+  if (body == null) return '';
+  if (Buffer.isBuffer(body)) return body.toString('utf8');
+  if (body instanceof ArrayBuffer) return Buffer.from(body).toString('utf8');
+  return String(body);
+}
+
+function isPng(body, contentType) {
+  const type = String(contentType || '').toLowerCase();
+  if (type.includes('image/png') && body && body.length) return true;
+  const buf = Buffer.isBuffer(body) ? body : Buffer.from(body || []);
+  return buf.length >= 8
+    && buf[0] === 0x89
+    && buf[1] === 0x50
+    && buf[2] === 0x4e
+    && buf[3] === 0x47;
+}
+
+function googleErrorMessage(text) {
+  try {
+    const data = JSON.parse(text);
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+    const msg = data.error_message || data.errorMessage || data.message;
+    if (typeof msg === 'string' && msg.trim()) return msg.trim();
+    if (data.error && typeof data.error.message === 'string' && data.error.message.trim()) {
+      return data.error.message.trim();
+    }
+    if (typeof data.status === 'string' && data.status.trim()) return data.status.trim();
+    return null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function logGoogleResponse(status, body, key) {
+  const snippet = redactKey(bodyText(body), key).slice(0, BODY_LOG_CHARS);
+  logger.info(`Google Static Map status ${status}`, {
+    event: 'GoogleStaticMap',
+    context: { status, body: snippet },
+  });
+}
+
+function staticMapUrl(placeId, key) {
+  const params = new URLSearchParams({
+    center: `place_id:${placeId}`,
+    markers: `color:red|place_id:${placeId}`,
+    zoom: MAP_ZOOM,
+    size: MAP_SIZE,
+    format: 'png',
+    key,
+  });
+  return `${STATIC_URL}?${params.toString()}`;
+}
+
+async function defaultGetStatic(url) {
   const res = await axios.get(url, {
-    params,
     timeout: 15000,
     responseType: 'arraybuffer',
-    validateStatus: (status) => status === 200,
+    validateStatus: () => true,
   });
-  const type = String((res.headers && res.headers['content-type']) || '');
-  if (!type.toLowerCase().startsWith('image/png')) return null;
-  return Buffer.from(res.data);
+  return {
+    status: res.status,
+    contentType: String((res.headers && res.headers['content-type']) || ''),
+    body: Buffer.from(res.data || []),
+  };
 }
 
 // PNG of a Google Map around a Place ID. Zoom 15 is neighborhood scale.
-async function fetchPlaceMapPng(placeId, { getJson, getBuffer } = {}) {
+async function fetchPlaceMapPng(placeId, { getStatic } = {}) {
   const key = googleMapsKey();
   if (!key) {
     return { status: 503, msg: 'Google Maps is not configured' };
@@ -37,54 +94,41 @@ async function fetchPlaceMapPng(placeId, { getJson, getBuffer } = {}) {
     return { status: 400, msg: 'Missing placeId' };
   }
 
-  const jsonGet = getJson || defaultGetJson;
-  const bufGet = getBuffer || defaultGetBuffer;
-  let details;
+  const url = staticMapUrl(id, key);
+  const get = getStatic || defaultGetStatic;
+  let res;
   try {
-    details = await jsonGet(DETAILS_URL, {
-      place_id: id,
-      fields: 'geometry/location',
-      key,
-    });
+    res = await get(url);
   } catch (err) {
+    const status = (err.response && err.response.status) || 0;
+    const errBody = (err.response && err.response.data) || err.message || '';
+    logGoogleResponse(status, errBody, key);
     return { status: 502, msg: 'Could not load map' };
   }
 
-  const location = details && details.result && details.result.geometry
-    && details.result.geometry.location;
-  const lat = location && location.lat;
-  const lng = location && location.lng;
-  if (details.status !== 'OK' || typeof lat !== 'number' || typeof lng !== 'number') {
-    return { status: 502, msg: 'Could not load map' };
+  const status = res && res.status;
+  const body = res && res.body;
+  logGoogleResponse(status, body, key);
+
+  if (isPng(body, res && res.contentType)) {
+    return { status: 200, png: Buffer.from(body), contentType: 'image/png' };
   }
 
-  const center = `${lat},${lng}`;
-  let png;
-  try {
-    png = await bufGet(STATIC_URL, {
-      center,
-      zoom: MAP_ZOOM,
-      size: MAP_SIZE,
-      scale: '2',
-      maptype: 'roadmap',
-      markers: `color:red|${center}`,
-      key,
-    });
-  } catch (err) {
-    return { status: 502, msg: 'Could not load map' };
+  const text = bodyText(body);
+  const googleError = googleErrorMessage(text);
+  if (googleError) {
+    return { status: 502, msg: googleError };
   }
-
-  if (!png || !png.length) {
-    return { status: 502, msg: 'Could not load map' };
-  }
-  return { status: 200, png, contentType: 'image/png' };
+  return { status: 502, msg: 'Could not load map' };
 }
 
 module.exports = {
   fetchPlaceMapPng,
   googleMapsKey,
-  DETAILS_URL,
+  staticMapUrl,
+  redactKey,
   STATIC_URL,
   MAP_ZOOM,
   MAP_SIZE,
+  BODY_LOG_CHARS,
 };
