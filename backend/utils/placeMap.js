@@ -55,7 +55,7 @@ async function fetchPlaceMapPng(placeId, { getJson, getBuffer } = {}) {
   const lat = location && location.lat;
   const lng = location && location.lng;
   if (details.status !== 'OK' || typeof lat !== 'number' || typeof lng !== 'number') {
-    return { status: 404, msg: 'Place not found' };
+    return { status: 502, msg: 'Could not load map' };
   }
 
   const center = `${lat},${lng}`;

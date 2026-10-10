@@ -61,11 +61,14 @@ beforeAll(async () => {
 
 afterEach(async () => {
   fetchPlaceMapPng.mockReset();
+  const db = mongoose.connection.db;
   await Promise.all([
     User.deleteMany({}),
     Plan.deleteMany({}),
     PlanUser.deleteMany({}),
     Event.deleteMany({}),
+    db.collection('events').deleteMany({}),
+    db.collection('activities').deleteMany({}),
   ]);
 });
 
@@ -108,6 +111,37 @@ describe('GET /api/plans/:planId/place-map', () => {
       .set('Authorization', `Bearer ${ada.token}`)
       .query({ placeId: PLACE_ID });
     expect(unknown.status).toBe(404);
+    expect(unknown.body.msg).toBe('Place not on an activity');
+    expect(fetchPlaceMapPng).not.toHaveBeenCalled();
+  });
+
+  test('404 names the check that failed', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+    });
+    const grace = await registerAndLogin({
+      firstName: 'Grace',
+      lastName: 'Hopper',
+      email: 'grace@example.com',
+    });
+    const planId = await createPlan(ada.token);
+
+    const missingPlan = await request(app)
+      .get('/api/plans/not-a-plan/place-map')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .query({ placeId: PLACE_ID });
+    expect(missingPlan.status).toBe(404);
+    expect(missingPlan.body.msg).toBe('Plan not found');
+    expect(fetchPlaceMapPng).not.toHaveBeenCalled();
+
+    const missingMembership = await request(app)
+      .get(`/api/plans/${planId}/place-map`)
+      .set('Authorization', `Bearer ${grace.token}`)
+      .query({ placeId: PLACE_ID });
+    expect(missingMembership.status).toBe(404);
+    expect(missingMembership.body.msg).toBe('Membership not found');
     expect(fetchPlaceMapPng).not.toHaveBeenCalled();
   });
 
@@ -177,7 +211,38 @@ describe('GET /api/plans/:planId/place-map', () => {
     expect(res.body.msg).toBe('Google Maps is not configured');
   });
 
-  test('a non-member is 403', async () => {
+  test('Google failure after a stored Place ID is 502', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+    });
+    const planId = await createPlan(ada.token);
+    const created = await request(app)
+      .post('/api/activities')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({
+        name: 'Opera',
+        type: 'attraction',
+        planId,
+        googlePlaceId: PLACE_ID,
+      });
+    expect(created.status).toBe(201);
+
+    fetchPlaceMapPng.mockResolvedValue({
+      status: 404,
+      msg: 'Place not found',
+    });
+
+    const res = await request(app)
+      .get(`/api/plans/${planId}/place-map`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .query({ placeId: PLACE_ID });
+    expect(res.status).toBe(502);
+    expect(fetchPlaceMapPng).toHaveBeenCalledWith(PLACE_ID);
+  });
+
+  test('a non-member is 404 membership', async () => {
     const ada = await registerAndLogin({
       firstName: 'Ada',
       lastName: 'Lovelace',
@@ -194,7 +259,94 @@ describe('GET /api/plans/:planId/place-map', () => {
       .get(`/api/plans/${planId}/place-map`)
       .set('Authorization', `Bearer ${grace.token}`)
       .query({ placeId: PLACE_ID });
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
+    expect(res.body.msg).toBe('Membership not found');
     expect(fetchPlaceMapPng).not.toHaveBeenCalled();
+  });
+
+  test('reads googlePlaceId from the activities collection, not events', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+    });
+    const planId = await createPlan(ada.token);
+    const db = mongoose.connection.db;
+
+    await db.collection('events').insertOne({
+      planId,
+      googlePlaceId: PLACE_ID,
+      name: 'Old event row',
+      type: 'attraction',
+      ownerId: ada.userId,
+    });
+
+    const fromEvents = await request(app)
+      .get(`/api/plans/${planId}/place-map`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .query({ placeId: PLACE_ID });
+    expect(fromEvents.status).toBe(404);
+    expect(fromEvents.body.msg).toBe('Place not on an activity');
+    expect(fetchPlaceMapPng).not.toHaveBeenCalled();
+
+    await db.collection('activities').insertOne({
+      planId: `  ${planId}  `,
+      googlePlaceId: `  ${PLACE_ID}  `,
+      name: 'Opera',
+      type: 'attraction',
+      ownerId: ada.userId,
+    });
+
+    fetchPlaceMapPng.mockResolvedValue({
+      status: 200,
+      png: PNG,
+      contentType: 'image/png',
+    });
+
+    const fromActivities = await request(app)
+      .get(`/api/plans/${planId}/place-map`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .query({ placeId: `  ${PLACE_ID}  ` });
+    expect(fromActivities.status).toBe(200);
+    expect(Buffer.from(fromActivities.body).equals(PNG)).toBe(true);
+    expect(fetchPlaceMapPng).toHaveBeenCalledWith(PLACE_ID);
+  });
+
+  test('matches a string planId when the activity stored an ObjectId', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+    });
+    const objectId = new mongoose.Types.ObjectId();
+    const planId = String(objectId);
+    await Plan.create({
+      _id: planId,
+      type: 'trip',
+      name: 'ObjectId plan',
+      destination: 'Paris',
+      ownerId: ada.userId,
+    });
+    await PlanUser.create({ planId, userId: ada.userId, role: 'Owner' });
+    await mongoose.connection.db.collection('activities').insertOne({
+      planId: objectId,
+      googlePlaceId: PLACE_ID,
+      name: 'Opera',
+      type: 'attraction',
+      ownerId: ada.userId,
+    });
+
+    fetchPlaceMapPng.mockResolvedValue({
+      status: 200,
+      png: PNG,
+      contentType: 'image/png',
+    });
+
+    const res = await request(app)
+      .get(`/api/plans/${planId}/place-map`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .query({ placeId: PLACE_ID });
+    expect(res.status).toBe(200);
+    expect(fetchPlaceMapPng).toHaveBeenCalledWith(PLACE_ID);
   });
 });

@@ -28,6 +28,7 @@ const {
 } = require('../utils/csvPlanImport');
 const { readExportQuery, buildPlanExport } = require('../utils/planExport');
 const { fetchPlaceMapPng } = require('../utils/placeMap');
+const { findActivityWithPlace } = require('../utils/activityPlace');
 const { spansByPlanId } = require('../utils/activityDateSpan');
 const router = express.Router();
 const csvUpload = multer({
@@ -354,8 +355,8 @@ router.delete('/:planId/members', roleCheck(['Owner', 'Collaborator', 'Guest']),
 
 // GET /api/plans/:planId/place-map?placeId=
 // Member-only PNG of a Google Map around a Place ID stored on this plan.
-router.get('/:planId/place-map', roleCheck(['Owner', 'Collaborator', 'Guest']), async (req, res) => {
-  const { planId } = req.params;
+router.get('/:planId/place-map', async (req, res) => {
+  const planId = String((req.params && req.params.planId) || '').trim();
   const placeId = String((req.query && req.query.placeId) || '').trim();
   logger.info('In Get /api/plans/{planId}/place-map - Google Map around a stored Place ID', {
     userId: req.user.userId,
@@ -368,17 +369,26 @@ router.get('/:planId/place-map', roleCheck(['Owner', 'Collaborator', 'Guest']), 
   }
 
   try {
-    const onPlan = await Event.findOne({
-      googlePlaceId: placeId,
-      $or: [{ planId }, { eventPlanId: planId }],
-    }).select('_id').lean();
+    const plan = await Plan.findOne({ _id: planId }).select('_id').lean();
+    if (!plan) {
+      return res.status(404).json({ msg: 'Plan not found' });
+    }
+
+    const userId = String((req.user && (req.user.userId || req.user.id)) || '').trim();
+    const membership = await PlanUser.findOne({ planId, userId }).select('_id').lean();
+    if (!membership) {
+      return res.status(404).json({ msg: 'Membership not found' });
+    }
+
+    const onPlan = await findActivityWithPlace(planId, placeId);
     if (!onPlan) {
-      return res.status(404).json({ msg: 'Place not found on plan' });
+      return res.status(404).json({ msg: 'Place not on an activity' });
     }
 
     const result = await fetchPlaceMapPng(placeId);
     if (result.status !== 200) {
-      return res.status(result.status).json({ msg: result.msg });
+      const status = result.status === 404 ? 502 : result.status;
+      return res.status(status).json({ msg: result.msg });
     }
     res.set('Content-Type', result.contentType || 'image/png');
     return res.status(200).send(result.png);

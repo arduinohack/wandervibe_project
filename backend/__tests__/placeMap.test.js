@@ -60,12 +60,12 @@ describe('fetchPlaceMapPng', () => {
     });
   });
 
-  test('unknown Google place is 404', async () => {
+  test('unknown Google place is 502', async () => {
     process.env.GOOGLE_MAPS_API_KEY = 'test-key';
     const result = await fetchPlaceMapPng(PLACE_ID, {
       getJson: jest.fn().mockResolvedValue({ status: 'NOT_FOUND' }),
       getBuffer: jest.fn(),
     });
-    expect(result).toEqual({ status: 404, msg: 'Place not found' });
+    expect(result).toEqual({ status: 502, msg: 'Could not load map' });
   });
 });
