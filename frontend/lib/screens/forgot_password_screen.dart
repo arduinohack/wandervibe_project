@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/user_provider.dart'; // For forgotPassword (stub)
+import '../providers/user_provider.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({super.key});
@@ -13,6 +13,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   bool _isSending = false;
+  String? _notice;
+  bool _noticeIsError = false;
 
   @override
   void dispose() {
@@ -21,25 +23,21 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   }
 
   Future<void> _sendReset() async {
-    if (_formKey.currentState!.validate()) {
-      setState(() => _isSending = true);
-      final userProvider = Provider.of<UserProvider>(context, listen: false);
-      final navigator = Navigator.of(context);
-      final messenger = ScaffoldMessenger.of(context);
-      try {
-        await userProvider.forgotPassword(
-          _emailController.text,
-        ); // Call provider (stub for now)
-        navigator.pop();
-        messenger.showSnackBar(
-          const SnackBar(content: Text('Reset email sent! Check your inbox.')),
-        );
-      } catch (e) {
-        messenger.showSnackBar(SnackBar(content: Text('Error: $e')));
-      } finally {
-        setState(() => _isSending = false);
-      }
-    }
+    final form = _formKey.currentState;
+    if (form == null || !form.validate()) return;
+    setState(() {
+      _isSending = true;
+      _notice = null;
+    });
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final failure = await userProvider.forgotPassword(_emailController.text);
+    if (!mounted) return;
+    setState(() {
+      _isSending = false;
+      _noticeIsError = failure != null;
+      _notice = failure ??
+          'If an account exists for that email, a message was sent.';
+    });
   }
 
   @override
@@ -103,6 +101,17 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                         ),
                 ),
               ),
+              if (_notice != null) ...[
+                const SizedBox(height: 16),
+                Text(
+                  _notice!,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: _noticeIsError ? Colors.red : null,
+                  ),
+                ),
+              ],
             ],
           ),
         ),

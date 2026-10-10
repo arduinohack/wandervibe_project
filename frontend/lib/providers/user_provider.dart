@@ -344,26 +344,28 @@ class UserProvider extends ChangeNotifier {
     }
   }
 
-  // Forgot password (stub: POST /api/auth/forgot-password)
-  Future<void> forgotPassword(String email) async {
+  /// POST /api/auth/forgot-password. Null means the API accepted the request.
+  /// The caller must not say whether the email is registered.
+  Future<String?> forgotPassword(String email) async {
     try {
       final timeoutDuration = Duration(seconds: await AppConfig.timeoutSeconds);
       final response = await http
           .post(
             Uri.parse((backendBaseUrl) + apiAuthForgotPassword),
             headers: {'Content-Type': 'application/json'},
-            body: json.encode({'email': email}),
+            body: json.encode({'email': email.trim()}),
           )
           .timeout(timeoutDuration);
 
       if (response.statusCode == 200) {
-        logger.i('Forgot password email sent for $email');
-      } else {
-        throw Exception('Failed to send reset email: ${response.statusCode}');
+        logger.i('Forgot password request accepted');
+        return null;
       }
+      logger.e('Forgot password status ${response.statusCode}');
+      return 'Could not send the message. Try again.';
     } catch (e) {
       logger.e('Forgot password error: $e');
-      rethrow;
+      return 'Could not send the message. Try again.';
     }
   }
 }

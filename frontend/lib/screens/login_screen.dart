@@ -205,7 +205,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       );
                     },
-                    child: const Text('Forgot Password?'),
+                    child: const Text('Forgot password'),
                   ),
                 ],
               ),
