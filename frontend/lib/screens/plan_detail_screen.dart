@@ -61,7 +61,8 @@ bool canAddActivity(String? storedRole) {
 }
 
 bool canEditPlan(String? storedRole) {
-  return storedRole?.trim() == 'Owner';
+  final role = storedRole?.trim();
+  return role == 'Owner' || role == 'Collaborator';
 }
 
 String _twoDigits(int number) => number.toString().padLeft(2, '0');
@@ -1099,10 +1100,13 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     }
   }
 
-  Future<void> _openPlanEdit(Plan plan) async {
+  Future<void> _openPlanEdit(Plan plan, String? storedRole) async {
     final removed = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
-        builder: (context) => _PlanEditScreen(plan: plan),
+        builder: (context) => _PlanEditScreen(
+          plan: plan,
+          canDelete: storedRole?.trim() == 'Owner',
+        ),
       ),
     );
     if (removed == true && mounted) Navigator.of(context).pop();
@@ -1217,7 +1221,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                             IconButton(
                               tooltip: 'Edit plan',
                               icon: const Icon(Icons.edit),
-                              onPressed: () => _openPlanEdit(shown),
+                              onPressed: () => _openPlanEdit(shown, storedRole),
                             ),
                         ],
                       ),
@@ -2073,8 +2077,9 @@ class _PrintOrientationDialogState extends State<_PrintOrientationDialog> {
 
 class _PlanEditScreen extends StatefulWidget {
   final Plan plan;
+  final bool canDelete;
 
-  const _PlanEditScreen({required this.plan});
+  const _PlanEditScreen({required this.plan, required this.canDelete});
 
   @override
   State<_PlanEditScreen> createState() => _PlanEditScreenState();
@@ -2083,6 +2088,7 @@ class _PlanEditScreen extends StatefulWidget {
 class _PlanEditScreenState extends State<_PlanEditScreen> {
   late final TextEditingController _nameController;
   late final TextEditingController _destinationController;
+  late final TextEditingController _budgetController;
   late final TextEditingController _timeZoneController;
   late bool _autoStart;
   late bool _autoEnd;
@@ -2096,6 +2102,7 @@ class _PlanEditScreenState extends State<_PlanEditScreen> {
     final plan = widget.plan;
     _nameController = TextEditingController(text: plan.name);
     _destinationController = TextEditingController(text: plan.destination);
+    _budgetController = TextEditingController(text: _costBoxText(plan.budget));
     _start = plan.startDate;
     _end = plan.endDate;
     _timeZoneController = TextEditingController(text: plan.timeZone);
@@ -2107,6 +2114,7 @@ class _PlanEditScreenState extends State<_PlanEditScreen> {
   void dispose() {
     _nameController.dispose();
     _destinationController.dispose();
+    _budgetController.dispose();
     _timeZoneController.dispose();
     super.dispose();
   }
@@ -2128,10 +2136,15 @@ class _PlanEditScreenState extends State<_PlanEditScreen> {
     final name = _nameController.text.trim();
     final destination = _destinationController.text.trim();
     final timeZone = _timeZoneController.text.trim();
+    final budget = double.tryParse(_budgetController.text.trim());
     final start = _start;
     final end = _end;
     if (name.isEmpty || timeZone.isEmpty) {
       setState(() => _error = 'Enter a name and a time zone');
+      return;
+    }
+    if (budget == null || budget.isNaN || budget.isInfinite) {
+      setState(() => _error = 'Enter a budget');
       return;
     }
     if (widget.plan.type == 'trip' && destination.isEmpty) {
@@ -2149,6 +2162,7 @@ class _PlanEditScreenState extends State<_PlanEditScreen> {
       planId: widget.plan.id,
       name: name,
       destination: destination,
+      budget: budget,
       startDate: start,
       endDate: end,
       timeZone: timeZone,
@@ -2166,7 +2180,7 @@ class _PlanEditScreenState extends State<_PlanEditScreen> {
       return;
     }
     if (result.status != 200 || result.plan == null) {
-      setState(() => _error = 'Could not update plan');
+      setState(() => _error = result.error ?? 'Could not update plan');
       return;
     }
     Navigator.pop(context);
@@ -2243,11 +2257,12 @@ class _PlanEditScreenState extends State<_PlanEditScreen> {
         title: const Text('Edit plan'),
         backgroundColor: Colors.blue,
         actions: [
-          IconButton(
-            tooltip: 'Delete plan',
-            icon: const Icon(Icons.delete),
-            onPressed: _delete,
-          ),
+          if (widget.canDelete)
+            IconButton(
+              tooltip: 'Delete plan',
+              icon: const Icon(Icons.delete),
+              onPressed: _delete,
+            ),
         ],
       ),
       body: ListView(
@@ -2261,6 +2276,12 @@ class _PlanEditScreenState extends State<_PlanEditScreen> {
           TextField(
             controller: _destinationController,
             decoration: const InputDecoration(labelText: 'Destination'),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _budgetController,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(labelText: 'Budget'),
           ),
           _UtcDateTimePicker(
             label: 'Start',

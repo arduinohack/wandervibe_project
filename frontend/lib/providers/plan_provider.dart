@@ -170,8 +170,9 @@ class PlanDeleteResult {
 class PlanUpdateResult {
   final int? status;
   final Plan? plan;
+  final String? error;
 
-  const PlanUpdateResult({this.status, this.plan});
+  const PlanUpdateResult({this.status, this.plan, this.error});
 }
 
 class PlanInviteResult {
@@ -216,6 +217,36 @@ Plan _planWithOwner(Plan plan, String ownerId) {
     createdAt: plan.createdAt,
     earliestStart: plan.earliestStart,
     latestEnd: plan.latestEnd,
+  );
+}
+
+/// PUT /api/plans/:planId does not return the activity date span that GET adds.
+/// Keep the previous span when the saved plan has none, so the list date line stays.
+Plan _planKeepingActivitySpan(Plan updated, Plan previous) {
+  final earliestStart = updated.earliestStart ?? previous.earliestStart;
+  final latestEnd = updated.latestEnd ?? previous.latestEnd;
+  if (earliestStart == updated.earliestStart && latestEnd == updated.latestEnd) {
+    return updated;
+  }
+  return Plan(
+    id: updated.id,
+    type: updated.type,
+    name: updated.name,
+    destination: updated.destination,
+    startDate: updated.startDate,
+    endDate: updated.endDate,
+    autoCalculateStartDate: updated.autoCalculateStartDate,
+    autoCalculateEndDate: updated.autoCalculateEndDate,
+    location: updated.location,
+    budget: updated.budget,
+    planningState: updated.planningState,
+    timeZone: updated.timeZone,
+    participants: updated.participants,
+    ownerId: updated.ownerId,
+    activityIds: updated.activityIds,
+    createdAt: updated.createdAt,
+    earliestStart: earliestStart,
+    latestEnd: latestEnd,
   );
 }
 
@@ -931,12 +962,13 @@ class PlanProvider extends ChangeNotifier {
     }
   }
 
-  /// PUT /api/plans/:planId with name, destination, dates, time zone, and the
-  /// auto-calculate flags. On 200 that plan in the loaded list is replaced.
+  /// PUT /api/plans/:planId with name, destination, budget, dates, time zone,
+  /// and the auto-calculate flags. On 200 that plan in the loaded list is replaced.
   Future<PlanUpdateResult> updatePlan({
     required String planId,
     required String name,
     required String destination,
+    required double budget,
     required DateTime? startDate,
     required DateTime? endDate,
     required String timeZone,
@@ -957,6 +989,7 @@ class PlanProvider extends ChangeNotifier {
         body: json.encode({
           'name': name,
           'destination': destination,
+          'budget': budget,
           'startDate': startDate?.toUtc().toIso8601String(),
           'endDate': endDate?.toUtc().toIso8601String(),
           'timeZone': timeZone,
@@ -965,7 +998,10 @@ class PlanProvider extends ChangeNotifier {
         }),
       );
       if (response.statusCode != 200) {
-        return PlanUpdateResult(status: response.statusCode);
+        return PlanUpdateResult(
+          status: response.statusCode,
+          error: _apiErrorMessage(response.body),
+        );
       }
       final data = json.decode(response.body);
       final planJson = data is Map ? data['plan'] : null;
@@ -973,7 +1009,10 @@ class PlanProvider extends ChangeNotifier {
       final updated = Plan.fromJson(Map<String, dynamic>.from(planJson));
       _plans = [
         for (final plan in _plans)
-          if (plan.id == planId) updated else plan,
+          if (plan.id == planId)
+            _planKeepingActivitySpan(updated, plan)
+          else
+            plan,
       ];
       notifyListeners();
       return PlanUpdateResult(status: 200, plan: updated);

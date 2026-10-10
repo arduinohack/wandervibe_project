@@ -10,7 +10,7 @@ const { compareStoredOrder } = require('../utils/activityTimes');
 const authMiddleware = require('../middleware/auth.js');  // Add this line for token verification
 const { checkPermission } = require('../utils/permissions');
 const { roleCheck, canonicalMembershipRole } = require('../middleware/roleCheck');
-const { DateTime } = require('luxon');  // For time zone/DST in Day Numbers
+const { DateTime, IANAZone } = require('luxon');  // For time zone/DST in Day Numbers
 const { v4: uuidv4 } = require('uuid');
 const { notifyUsers } = require('../utils/notifications');
 const { logSupport } = require('../utils/logSupport');
@@ -816,8 +816,18 @@ function dateField(body, key) {
   return { present: true, value: date };
 }
 
+function budgetField(body) {
+  if (!Object.prototype.hasOwnProperty.call(body, 'budget')) return { present: false };
+  const value = body.budget;
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return { present: true, invalid: true };
+  }
+  return { present: true, value };
+}
+
 // PUT /api/plans/:planId
-// The Owner may edit name, destination, dates, and time zone. Type and ownerId stay as stored.
+// Owner or Collaborator may edit name, destination, budget, dates, and time zone.
+// Type and ownerId stay as stored. A Guest is 403.
 router.put('/:planId', authMiddleware, async (req, res) => {
   const planId = String(req.params.planId || '');
   try {
@@ -828,8 +838,8 @@ router.put('/:planId', authMiddleware, async (req, res) => {
 
     const callerId = req.user.userId || req.user.id;
     const role = await callerPlanRole(plan, callerId);
-    if (role !== 'Owner') {
-      return res.status(403).json({ message: 'Only the Owner can edit a plan' });
+    if (role !== 'Owner' && role !== 'Collaborator') {
+      return res.status(403).json({ message: 'Only Owner or Collaborator can edit a plan' });
     }
 
     const body = req.body && typeof req.body === 'object' ? req.body : {};
@@ -847,6 +857,11 @@ router.put('/:planId', authMiddleware, async (req, res) => {
       return res.status(400).json({ message: 'Destination is required' });
     }
 
+    const budget = budgetField(body);
+    if (budget.invalid) {
+      return res.status(400).json({ message: 'Budget must be a number' });
+    }
+
     const startDate = dateField(body, 'startDate');
     const endDate = dateField(body, 'endDate');
     if (startDate.invalid || endDate.invalid) {
@@ -856,6 +871,9 @@ router.put('/:planId', authMiddleware, async (req, res) => {
     const timeZone = textField(body, 'timeZone');
     if (timeZone.invalid) {
       return res.status(400).json({ message: 'Time zone must be text' });
+    }
+    if (timeZone.present && !IANAZone.isValidZone(timeZone.value)) {
+      return res.status(400).json({ message: 'Time zone must be an IANA name' });
     }
 
     const autoStart = boolField(body, 'autoCalculateStartDate');
@@ -869,6 +887,7 @@ router.put('/:planId', authMiddleware, async (req, res) => {
 
     if (name.present) plan.name = name.value;
     if (destination.present) plan.destination = destination.value;
+    if (budget.present) plan.budget = budget.value;
     if (startDate.present) plan.startDate = startDate.value;
     if (endDate.present) plan.endDate = endDate.value;
     if (timeZone.present) plan.timeZone = timeZone.value;

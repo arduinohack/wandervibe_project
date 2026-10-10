@@ -192,6 +192,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     [
                       'Type: ${plan.type}',
                       if (roleText != null) 'Role: $roleText',
+                      'Destination: ${plan.destination}',
+                      'Budget: ${formatPlanMoney(plan.budget)}',
                       if (dateLine != null) dateLine,
                     ].join('\n'),
                   ),

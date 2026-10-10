@@ -94,6 +94,7 @@ describe('owner plan update', () => {
         startDate: '2026-07-01T00:00:00.000Z',
         endDate: '2026-07-08T00:00:00.000Z',
         timeZone: 'Europe/Paris',
+        budget: 2400,
         type: 'plan',
         ownerId: 'someone-else',
       });
@@ -101,6 +102,7 @@ describe('owner plan update', () => {
     expect(updated.body.plan.name).toBe('Lyon');
     expect(updated.body.plan.destination).toBe('Lyon');
     expect(updated.body.plan.timeZone).toBe('Europe/Paris');
+    expect(updated.body.plan.budget).toBe(2400);
     expect(updated.body.plan.type).toBe('trip');
     expect(updated.body.plan.ownerId).toBe(ada.userId);
 
@@ -108,13 +110,14 @@ describe('owner plan update', () => {
     expect(stored.name).toBe('Lyon');
     expect(stored.destination).toBe('Lyon');
     expect(stored.timeZone).toBe('Europe/Paris');
+    expect(stored.budget).toBe(2400);
     expect(stored.startDate.toISOString()).toBe('2026-07-01T00:00:00.000Z');
     expect(stored.endDate.toISOString()).toBe('2026-07-08T00:00:00.000Z');
     expect(stored.type).toBe('trip');
     expect(stored.ownerId).toBe(ada.userId);
   });
 
-  test('a collaborator cannot edit the plan', async () => {
+  test('a collaborator can edit name, destination, budget, and time zone', async () => {
     const ada = await registerAndLogin({
       firstName: 'Ada',
       lastName: 'Lovelace',
@@ -128,21 +131,30 @@ describe('owner plan update', () => {
     const planId = await createPlan(ada.token);
     await acceptRole(ada.token, grace.token, planId, 'grace@example.com', 'Collaborator');
 
-    const denied = await request(app)
+    const updated = await request(app)
       .put(`/api/plans/${planId}`)
       .set('Authorization', `Bearer ${grace.token}`)
       .send({
-        name: 'Taken',
+        name: 'Rome',
         destination: 'Rome',
+        budget: 80.5,
         timeZone: 'Europe/Rome',
+        ownerId: grace.userId,
+        type: 'plan',
       });
-    expect(denied.status).toBe(403);
-    expect(denied.body.message).toBe('Only the Owner can edit a plan');
+    expect(updated.status).toBe(200);
+    expect(updated.body.plan.name).toBe('Rome');
+    expect(updated.body.plan.destination).toBe('Rome');
+    expect(updated.body.plan.budget).toBe(80.5);
+    expect(updated.body.plan.timeZone).toBe('Europe/Rome');
+    expect(updated.body.plan.ownerId).toBe(ada.userId);
+    expect(updated.body.plan.type).toBe('trip');
 
     const stored = await Plan.findById(planId);
-    expect(stored.name).toBe('Paris');
-    expect(stored.destination).toBe('Paris');
-    expect(stored.timeZone).toBe('UTC');
+    expect(stored.name).toBe('Rome');
+    expect(stored.destination).toBe('Rome');
+    expect(stored.budget).toBe(80.5);
+    expect(stored.timeZone).toBe('Europe/Rome');
     expect(stored.ownerId).toBe(ada.userId);
   });
 
@@ -165,8 +177,43 @@ describe('owner plan update', () => {
       .set('Authorization', `Bearer ${alan.token}`)
       .send({ name: 'Taken' });
     expect(denied.status).toBe(403);
-    expect(denied.body.message).toBe('Only the Owner can edit a plan');
+    expect(denied.body.message).toBe('Only Owner or Collaborator can edit a plan');
     expect((await Plan.findById(planId)).name).toBe('Paris');
+  });
+
+  test('an empty name is 400 and a bad budget or time zone is 400', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+    });
+    const planId = await createPlan(ada.token);
+
+    const blank = await request(app)
+      .put(`/api/plans/${planId}`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ name: '   ' });
+    expect(blank.status).toBe(400);
+    expect(blank.body.message).toBe('Name is required');
+
+    const budget = await request(app)
+      .put(`/api/plans/${planId}`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ budget: '12' });
+    expect(budget.status).toBe(400);
+    expect(budget.body.message).toBe('Budget must be a number');
+
+    const zone = await request(app)
+      .put(`/api/plans/${planId}`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ timeZone: 'Not a zone' });
+    expect(zone.status).toBe(400);
+    expect(zone.body.message).toBe('Time zone must be an IANA name');
+
+    const stored = await Plan.findById(planId);
+    expect(stored.name).toBe('Paris');
+    expect(stored.budget).toBe(0);
+    expect(stored.timeZone).toBe('UTC');
   });
 
   test('an unknown plan is 404', async () => {
