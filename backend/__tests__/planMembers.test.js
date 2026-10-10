@@ -10,6 +10,7 @@ const User = require('../models/User');
 const Plan = require('../models/Plan');
 const PlanUser = require('../models/PlanUser');
 const Invitation = require('../models/Invitation');
+const { notifyUsers } = require('../utils/notifications');
 
 jest.setTimeout(30000);
 
@@ -218,5 +219,186 @@ describe('GET /api/plans/:planId/members', () => {
       .get(`/api/plans/${planId}/members`)
       .set('Authorization', `Bearer ${eve.token}`);
     expect(outsider.status).toBe(403);
+  });
+});
+
+describe('DELETE /api/plans/:planId/members', () => {
+  test('no token is 401', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+    });
+    const planId = await createPlan(ada.token);
+
+    const res = await request(app)
+      .delete(`/api/plans/${planId}/members`)
+      .send({ email: 'grace@example.com' });
+    expect(res.status).toBe(401);
+  });
+
+  test('a Guest is 403 and the Owner cannot be removed', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+    });
+    const grace = await registerAndLogin({
+      firstName: 'Grace',
+      lastName: 'Hopper',
+      email: 'grace@example.com',
+    });
+    const alan = await registerAndLogin({
+      firstName: 'Alan',
+      lastName: 'Turing',
+      email: 'alan@example.com',
+    });
+    const planId = await createPlan(ada.token);
+
+    const collaboratorInvite = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'grace@example.com', role: 'Collaborator' });
+    expect(collaboratorInvite.status).toBe(201);
+    expect((await request(app)
+      .post(`/api/invites/invitations/${collaboratorInvite.body.invitation._id}/respond`)
+      .set('Authorization', `Bearer ${grace.token}`)
+      .send({ status: 'accepted' })).status).toBe(200);
+
+    const guestInvite = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'alan@example.com', role: 'Guest' });
+    expect(guestInvite.status).toBe(201);
+    expect((await request(app)
+      .post(`/api/invites/invitations/${guestInvite.body.invitation._id}/respond`)
+      .set('Authorization', `Bearer ${alan.token}`)
+      .send({ status: 'accepted' })).status).toBe(200);
+
+    const guestRemove = await request(app)
+      .delete(`/api/plans/${planId}/members`)
+      .set('Authorization', `Bearer ${alan.token}`)
+      .send({ email: 'grace@example.com' });
+    expect(guestRemove.status).toBe(403);
+
+    const ownerRemove = await request(app)
+      .delete(`/api/plans/${planId}/members`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'ada@example.com' });
+    expect(ownerRemove.status).toBe(400);
+
+    const collaboratorRemovesOwner = await request(app)
+      .delete(`/api/plans/${planId}/members`)
+      .set('Authorization', `Bearer ${grace.token}`)
+      .send({ email: 'ada@example.com' });
+    expect(collaboratorRemovesOwner.status).toBe(400);
+
+    expect(await PlanUser.findOne({ planId, userId: ada.userId })).toBeTruthy();
+    expect(await User.findById(ada.userId)).toBeTruthy();
+  });
+
+  test('Owner may remove a Collaborator or a pending Guest; Collaborator may remove a Guest only', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+    });
+    const grace = await registerAndLogin({
+      firstName: 'Grace',
+      lastName: 'Hopper',
+      email: 'grace@example.com',
+    });
+    const alan = await registerAndLogin({
+      firstName: 'Alan',
+      lastName: 'Turing',
+      email: 'alan@example.com',
+    });
+    const planId = await createPlan(ada.token);
+
+    const collaboratorInvite = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'grace@example.com', role: 'Collaborator' });
+    expect((await request(app)
+      .post(`/api/invites/invitations/${collaboratorInvite.body.invitation._id}/respond`)
+      .set('Authorization', `Bearer ${grace.token}`)
+      .send({ status: 'accepted' })).status).toBe(200);
+
+    const guestInvite = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'alan@example.com', role: 'Guest' });
+    expect((await request(app)
+      .post(`/api/invites/invitations/${guestInvite.body.invitation._id}/respond`)
+      .set('Authorization', `Bearer ${alan.token}`)
+      .send({ status: 'accepted' })).status).toBe(200);
+
+    const pending = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'new.person@example.com', role: 'Guest' });
+    expect(pending.status).toBe(201);
+
+    const otherCollaborator = await registerAndLogin({
+      firstName: 'Eve',
+      lastName: 'Example',
+      email: 'eve@example.com',
+    });
+    const otherInvite = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'eve@example.com', role: 'Collaborator' });
+    expect((await request(app)
+      .post(`/api/invites/invitations/${otherInvite.body.invitation._id}/respond`)
+      .set('Authorization', `Bearer ${otherCollaborator.token}`)
+      .send({ status: 'accepted' })).status).toBe(200);
+
+    const collaboratorDenied = await request(app)
+      .delete(`/api/plans/${planId}/members`)
+      .set('Authorization', `Bearer ${grace.token}`)
+      .send({ email: 'eve@example.com' });
+    expect(collaboratorDenied.status).toBe(403);
+    expect(await PlanUser.findOne({ planId, userId: otherCollaborator.userId })).toBeTruthy();
+
+    notifyUsers.mockClear();
+    const collaboratorRemovesGuest = await request(app)
+      .delete(`/api/plans/${planId}/members`)
+      .set('Authorization', `Bearer ${grace.token}`)
+      .send({ email: 'alan@example.com' });
+    expect(collaboratorRemovesGuest.status).toBe(200);
+    expect(await PlanUser.findOne({ planId, userId: alan.userId })).toBeNull();
+    expect(await User.findById(alan.userId)).toBeTruthy();
+    expect(notifyUsers).toHaveBeenCalledWith(
+      [alan.userId],
+      expect.stringContaining('removed'),
+      'email',
+    );
+
+    notifyUsers.mockClear();
+    const ownerRemovesCollaborator = await request(app)
+      .delete(`/api/plans/${planId}/members`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'grace@example.com' });
+    expect(ownerRemovesCollaborator.status).toBe(200);
+    expect(await PlanUser.findOne({ planId, userId: grace.userId })).toBeNull();
+    expect(await User.findById(grace.userId)).toBeTruthy();
+
+    notifyUsers.mockClear();
+    const ownerCancelsPending = await request(app)
+      .delete(`/api/plans/${planId}/members`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'new.person@example.com' });
+    expect(ownerCancelsPending.status).toBe(200);
+    expect(await Invitation.findOne({
+      planId,
+      email: 'new.person@example.com',
+      status: 'pending',
+    })).toBeNull();
+    expect(await User.findOne({ email: 'new.person@example.com' })).toBeNull();
+    expect(notifyUsers).toHaveBeenCalledWith(
+      ['new.person@example.com'],
+      expect.stringContaining('removed'),
+      'email',
+    );
   });
 });

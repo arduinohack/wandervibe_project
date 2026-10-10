@@ -36,3 +36,18 @@ List<String> inviteStoredRoles(String? storedRole) {
   if (role == 'Collaborator') return const ['Guest'];
   return const [];
 }
+
+/// Owner may remove Collaborator or Guest. Collaborator may remove Guest.
+/// Guest may remove none. Owner is never removable.
+bool canRemoveStoredRole(String? callerStoredRole, String targetStoredRole) {
+  switch (targetStoredRole.trim().toLowerCase()) {
+    case 'collaborator':
+    case 'vibeplanner':
+      return inviteStoredRoles(callerStoredRole).contains('Collaborator');
+    case 'guest':
+    case 'wanderer':
+      return inviteStoredRoles(callerStoredRole).contains('Guest');
+    default:
+      return false;
+  }
+}

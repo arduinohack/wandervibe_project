@@ -180,6 +180,13 @@ class PlanInviteResult {
   const PlanInviteResult({this.status, this.error});
 }
 
+class PlanMemberRemoveResult {
+  final int? status;
+  final String? error;
+
+  const PlanMemberRemoveResult({this.status, this.error});
+}
+
 String _trimmed(dynamic value) {
   if (value == null) return '';
   return value.toString().trim();
@@ -921,6 +928,42 @@ class PlanProvider extends ChangeNotifier {
     } catch (e) {
       logger.e('Error updating plan: $e');
       return const PlanUpdateResult();
+    }
+  }
+
+  /// DELETE /api/plans/:planId/members with { email }. 200 is success.
+  Future<PlanMemberRemoveResult> removePlanMember({
+    required String planId,
+    required String email,
+    required String? token,
+  }) async {
+    try {
+      if (token == null || token.isEmpty) {
+        return const PlanMemberRemoveResult(status: 401);
+      }
+      final response = await http.delete(
+        Uri.parse(
+          backendBaseUrl + apiPlanMembers.replaceAll('{planId}', planId),
+        ),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode({'email': email}),
+      );
+      if (response.statusCode == 200) {
+        return const PlanMemberRemoveResult(status: 200);
+      }
+      if (response.statusCode == 401) {
+        return const PlanMemberRemoveResult(status: 401);
+      }
+      return PlanMemberRemoveResult(
+        status: response.statusCode,
+        error: _apiErrorMessage(response.body),
+      );
+    } catch (e) {
+      logger.e('Error removing plan member: $e');
+      return const PlanMemberRemoveResult();
     }
   }
 

@@ -23,6 +23,7 @@ class _PlanPeopleScreenState extends State<PlanPeopleScreen> {
   String _role = 'Guest';
   String? _error;
   bool _sending = false;
+  String? _removingEmail;
 
   @override
   void initState() {
@@ -121,17 +122,90 @@ class _PlanPeopleScreenState extends State<PlanPeopleScreen> {
     });
   }
 
-  Widget _memberTile(PlanMember member, String planType) {
+  Future<void> _removeMember(PlanMember member) async {
+    final email = member.email.trim();
+    if (email.isEmpty) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove'),
+        content: Text(
+          'Remove ${member.name.isNotEmpty ? member.name : email} from this plan?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _removingEmail = email);
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final result = await planProvider.removePlanMember(
+      planId: widget.plan.id,
+      email: email,
+      token: userProvider.token,
+    );
+    if (!mounted) return;
+    if (result.status == 401) {
+      await _endSession(userProvider, planProvider, navigator);
+      return;
+    }
+    if (result.status == 200) {
+      await planProvider.fetchPlanMembers(widget.plan.id, userProvider.token);
+      if (!mounted) return;
+      setState(() => _removingEmail = null);
+      return;
+    }
+    setState(() => _removingEmail = null);
+    if (result.status == 400 || result.status == 403) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(result.error ?? 'Could not remove')),
+      );
+    }
+  }
+
+  Widget _memberTile(
+    PlanMember member,
+    String planType,
+    String? callerRole,
+  ) {
     final title = member.name.isNotEmpty ? member.name : member.email;
+    final canRemove = canRemoveStoredRole(callerRole, member.role);
+    final removing = _removingEmail == member.email.trim();
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: Column(
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: const TextStyle(fontSize: 16)),
-          if (member.name.isNotEmpty && member.email.isNotEmpty)
-            Text(member.email),
-          Text(planMemberRoleLine(planType, member.role, member.status)),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: const TextStyle(fontSize: 16)),
+                if (member.name.isNotEmpty && member.email.isNotEmpty)
+                  Text(member.email),
+                Text(planMemberRoleLine(planType, member.role, member.status)),
+              ],
+            ),
+          ),
+          if (canRemove)
+            TextButton(
+              onPressed: removing || _sending
+                  ? null
+                  : () => _removeMember(member),
+              child: const Text('Remove'),
+            ),
         ],
       ),
     );
@@ -193,6 +267,7 @@ class _PlanPeopleScreenState extends State<PlanPeopleScreen> {
     required List<PlanMember> members,
     required String planType,
     required List<String> roles,
+    required String? callerRole,
   }) {
     if (!_loaded) {
       return const Center(child: CircularProgressIndicator());
@@ -223,7 +298,8 @@ class _PlanPeopleScreenState extends State<PlanPeopleScreen> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        for (final member in members) _memberTile(member, planType),
+        for (final member in members)
+          _memberTile(member, planType, callerRole),
         if (roles.isNotEmpty) ...[
           if (members.isNotEmpty) const SizedBox(height: 8),
           _inviteForm(planType, roles),
@@ -252,7 +328,12 @@ class _PlanPeopleScreenState extends State<PlanPeopleScreen> {
         title: const Text('People'),
         backgroundColor: Colors.blue,
       ),
-      body: _body(members: members, planType: planType, roles: roles),
+      body: _body(
+        members: members,
+        planType: planType,
+        roles: roles,
+        callerRole: storedRole,
+      ),
     );
   }
 }

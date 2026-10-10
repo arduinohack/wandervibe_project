@@ -42,6 +42,17 @@ void main() {
     expect(planMemberRoleLine('plan', 'Guest', 'pending'), 'Guest Pending');
   });
 
+  test('Owner may remove Collaborator or Guest; Collaborator may remove Guest', () {
+    expect(canRemoveStoredRole('Owner', 'Collaborator'), isTrue);
+    expect(canRemoveStoredRole('Owner', 'Guest'), isTrue);
+    expect(canRemoveStoredRole('Owner', 'Owner'), isFalse);
+    expect(canRemoveStoredRole('Collaborator', 'Guest'), isTrue);
+    expect(canRemoveStoredRole('Collaborator', 'Collaborator'), isFalse);
+    expect(canRemoveStoredRole('Collaborator', 'Owner'), isFalse);
+    expect(canRemoveStoredRole('Guest', 'Guest'), isFalse);
+    expect(canRemoveStoredRole('Guest', 'Collaborator'), isFalse);
+  });
+
   test('people screen lists the Owner once at the top', () {
     const extraOwner = PlanMember(
       name: 'Other',

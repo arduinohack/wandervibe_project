@@ -195,6 +195,25 @@ function memberDisplayName(user) {
   return `${user.firstName || ''} ${user.lastName || ''}`.trim();
 }
 
+function normalizeMemberEmail(value) {
+  if (typeof value !== 'string') return '';
+  return value.trim().toLowerCase();
+}
+
+function escapeMemberEmailRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function memberEmailMatch(email) {
+  return { email: { $regex: `^${escapeMemberEmailRegex(email)}$`, $options: 'i' } };
+}
+
+function pendingInviteFilter(planId, email, userId) {
+  const matchers = [memberEmailMatch(email)];
+  if (userId) matchers.push({ userId: String(userId) });
+  return { planId, status: 'pending', $or: matchers };
+}
+
 // GET /api/plans/:planId/members
 // Owner, Collaborator, or Guest. Accepted people plus pending invitations.
 router.get('/:planId/members', roleCheck(['Owner', 'Collaborator', 'Guest']), async (req, res) => {
@@ -249,6 +268,72 @@ router.get('/:planId/members', roleCheck(['Owner', 'Collaborator', 'Guest']), as
     res.json({ members });
   } catch (err) {
     console.error('List members error:', err);
+    res.status(500).json({ msg: 'Server error' });
+  }
+});
+
+// DELETE /api/plans/:planId/members with { email }
+// Owner may remove Collaborator or Guest. Collaborator may remove Guest.
+// Guest is 403. Owner cannot be removed (400).
+router.delete('/:planId/members', roleCheck(['Owner', 'Collaborator', 'Guest']), async (req, res) => {
+  const { planId } = req.params;
+  const email = normalizeMemberEmail(req.body && req.body.email);
+  logger.info('In Delete /api/plans/{planId}/members - remove a member or pending invite');
+
+  if (!email) {
+    return res.status(400).json({ msg: 'Missing email' });
+  }
+
+  const callerRole = canonicalMembershipRole(req.planUser && req.planUser.role);
+  if (callerRole === 'Guest') {
+    return res.status(403).json({ msg: 'Access denied: insufficient plan role' });
+  }
+
+  try {
+    const user = await User.findOne(memberEmailMatch(email)).select('firstName lastName email').lean();
+    const userId = user ? String(user._id) : '';
+    const [plan, membership, pending] = await Promise.all([
+      Plan.findById(planId).select('name ownerId').lean(),
+      userId ? PlanUser.findOne({ planId, userId }).lean() : null,
+      Invitation.find(pendingInviteFilter(planId, email, userId)).select('role userId email').lean(),
+    ]);
+
+    const membershipRole = canonicalMembershipRole(membership && membership.role);
+    const pendingRole = canonicalMembershipRole(pending[0] && pending[0].role);
+    const isOwner = membershipRole === 'Owner'
+      || pendingRole === 'Owner'
+      || (userId && plan && String(plan.ownerId) === userId);
+
+    if (isOwner) {
+      return res.status(400).json({ msg: 'Cannot remove Owner' });
+    }
+
+    if (!membership && pending.length === 0) {
+      return res.status(404).json({ msg: 'Member not found' });
+    }
+
+    const targetRole = membershipRole || pendingRole;
+    if (callerRole === 'Collaborator' && targetRole !== 'Guest') {
+      return res.status(403).json({ msg: 'Collaborators can only remove Guests' });
+    }
+
+    if (membership) {
+      await PlanUser.deleteOne({ planId, userId: membership.userId });
+    }
+    if (pending.length) {
+      await Invitation.deleteMany(pendingInviteFilter(planId, email, userId));
+    }
+
+    const planName = (plan && plan.name) || 'a plan';
+    await notifyUsers(
+      [userId || email],
+      `You've been removed from "${planName}".`,
+      'email',
+    );
+
+    res.status(200).json({ msg: 'Member removed' });
+  } catch (err) {
+    console.error('Remove member error:', err);
     res.status(500).json({ msg: 'Server error' });
   }
 });
