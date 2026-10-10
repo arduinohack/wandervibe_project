@@ -19,6 +19,8 @@ class PlanPdfRow {
   final String baggageClaim;
   final String roomNumber;
   final String serviceProvider;
+  final String googlePlaceId;
+  final Uint8List? mapImage;
 
   /// False opens [dayHeader] with no activity row.
   final bool includeRow;
@@ -38,6 +40,8 @@ class PlanPdfRow {
     required this.baggageClaim,
     required this.roomNumber,
     required this.serviceProvider,
+    this.googlePlaceId = '',
+    this.mapImage,
     this.includeRow = true,
   });
 }
@@ -207,6 +211,47 @@ pw.Table _dayTable(
   );
 }
 
+String _mapCaption(PlanPdfRow row) {
+  final name = row.name.trim();
+  final location = row.location.trim();
+  if (name.isNotEmpty && location.isNotEmpty && name != location) {
+    return '$name - $location';
+  }
+  if (name.isNotEmpty) return name;
+  if (location.isNotEmpty) return location;
+  return 'Map';
+}
+
+/// One Google Map per Place ID on this day, in itinerary order.
+List<pw.Widget> _dayMaps(List<PlanPdfRow> activities, double maxWidth) {
+  final blocks = <pw.Widget>[];
+  final seen = <String>{};
+  for (final row in activities) {
+    final image = row.mapImage;
+    if (image == null || image.isEmpty) continue;
+    final placeId = row.googlePlaceId.trim();
+    if (placeId.isNotEmpty && !seen.add(placeId)) continue;
+    blocks
+      ..add(pw.SizedBox(height: 12))
+      ..add(
+        pw.Text(
+          _mapCaption(row),
+          style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold),
+        ),
+      )
+      ..add(pw.SizedBox(height: 6))
+      ..add(
+        pw.Image(
+          pw.MemoryImage(image),
+          width: maxWidth,
+          height: 220,
+          fit: pw.BoxFit.cover,
+        ),
+      );
+  }
+  return blocks;
+}
+
 /// PDF of the plan header and one table for each day, in the order given.
 /// A day header with no activity rows is still drawn, with an empty table.
 Future<Uint8List> buildPlanPdf({
@@ -288,6 +333,7 @@ Future<Uint8List> buildPlanPdf({
           if (columns.isNotEmpty) {
             blocks.add(_dayTable(day.activities, columns, columnWidths));
           }
+          blocks.addAll(_dayMaps(day.activities, format.availableWidth));
         }
         return blocks;
       },

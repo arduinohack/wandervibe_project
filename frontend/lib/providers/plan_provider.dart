@@ -2,6 +2,7 @@
 import 'package:http/http.dart'
     as http; // For API calls (add to pubspec.yaml if not there)
 import 'dart:convert'; // For JSON
+import 'dart:typed_data';
 // Added for Provider.of (token from UserProvider)
 import '../config/constants.dart'; // Add this line for backendBaseUrl
 // Add this line for UserProvider (token)
@@ -185,6 +186,13 @@ class PlanMemberRemoveResult {
   final String? error;
 
   const PlanMemberRemoveResult({this.status, this.error});
+}
+
+class PlanPlaceMapResult {
+  final int? status;
+  final Uint8List? bytes;
+
+  const PlanPlaceMapResult({this.status, this.bytes});
 }
 
 String _trimmed(dynamic value) {
@@ -928,6 +936,35 @@ class PlanProvider extends ChangeNotifier {
     } catch (e) {
       logger.e('Error updating plan: $e');
       return const PlanUpdateResult();
+    }
+  }
+
+  /// GET /api/plans/:planId/place-map?placeId=. 200 is a PNG around that place.
+  Future<PlanPlaceMapResult> fetchPlanPlaceMap({
+    required String planId,
+    required String placeId,
+    required String? token,
+  }) async {
+    try {
+      if (token == null || token.isEmpty) {
+        return const PlanPlaceMapResult(status: 401);
+      }
+      final response = await http.get(
+        Uri.parse(
+          backendBaseUrl + apiPlanPlaceMap.replaceAll('{planId}', planId),
+        ).replace(queryParameters: {'placeId': placeId}),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (response.statusCode == 401) {
+        return const PlanPlaceMapResult(status: 401);
+      }
+      if (response.statusCode != 200 || response.bodyBytes.isEmpty) {
+        return PlanPlaceMapResult(status: response.statusCode);
+      }
+      return PlanPlaceMapResult(status: 200, bytes: response.bodyBytes);
+    } catch (e) {
+      logger.e('Error fetching place map: $e');
+      return const PlanPlaceMapResult();
     }
   }
 

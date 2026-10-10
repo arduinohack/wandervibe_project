@@ -27,6 +27,7 @@ const {
   uploadKind,
 } = require('../utils/csvPlanImport');
 const { readExportQuery, buildPlanExport } = require('../utils/planExport');
+const { fetchPlaceMapPng } = require('../utils/placeMap');
 const router = express.Router();
 const csvUpload = multer({
   storage: multer.memoryStorage(),
@@ -334,6 +335,35 @@ router.delete('/:planId/members', roleCheck(['Owner', 'Collaborator', 'Guest']),
     res.status(200).json({ msg: 'Member removed' });
   } catch (err) {
     console.error('Remove member error:', err);
+    res.status(500).json({ msg: 'Server error' });
+  }
+});
+
+// GET /api/plans/:planId/place-map?placeId=
+// Member-only PNG of a Google Map around a Place ID stored on this plan.
+router.get('/:planId/place-map', roleCheck(['Owner', 'Collaborator', 'Guest']), async (req, res) => {
+  const { planId } = req.params;
+  const placeId = String((req.query && req.query.placeId) || '').trim();
+  logger.info('In Get /api/plans/{planId}/place-map - Google Map around a stored Place ID');
+
+  if (!placeId) {
+    return res.status(400).json({ msg: 'Missing placeId' });
+  }
+
+  try {
+    const onPlan = await Event.findOne({ planId, googlePlaceId: placeId }).select('_id').lean();
+    if (!onPlan) {
+      return res.status(404).json({ msg: 'Place not found on plan' });
+    }
+
+    const result = await fetchPlaceMapPng(placeId);
+    if (result.status !== 200) {
+      return res.status(result.status).json({ msg: result.msg });
+    }
+    res.set('Content-Type', result.contentType || 'image/png');
+    return res.status(200).send(result.png);
+  } catch (err) {
+    console.error('Place map error:', err);
     res.status(500).json({ msg: 'Server error' });
   }
 });

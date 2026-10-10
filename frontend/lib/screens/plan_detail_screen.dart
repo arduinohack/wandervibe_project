@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
@@ -853,39 +855,76 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
   }
 
   Future<void> _printPlan(Plan plan) async {
-    final landscape = await showDialog<bool>(
+    final options = await showDialog<_PrintPlanOptions>(
       context: context,
       builder: (context) => const _PrintOrientationDialog(),
     );
-    if (landscape == null || !mounted) return;
+    if (options == null || !mounted) return;
     final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
     final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
     final activities = planProvider.itineraryActivities;
-    final shownTimes = _shownActivityTimes(activities);
-    final dayHeaders = _dayHeaders(activities, shownTimes, plan.timeZone);
-    final rows = <PlanPdfRow>[
-      for (var index = 0; index < activities.length; index++)
-        _pdfActivityRow(
-          activities[index],
-          shownTimes[index],
-          dayHeaders[index],
-          plan.timeZone,
-        ),
-    ];
+    var progressShown = false;
+    if (options.includeMaps) {
+      progressShown = true;
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(child: CircularProgressIndicator()),
+      );
+    }
     try {
+      final mapsByPlace = <String, Uint8List>{};
+      if (options.includeMaps) {
+        for (final activity in activities) {
+          final placeId = activity.googlePlaceId.trim();
+          if (placeId.isEmpty || mapsByPlace.containsKey(placeId)) continue;
+          final result = await planProvider.fetchPlanPlaceMap(
+            planId: plan.id,
+            placeId: placeId,
+            token: userProvider.token,
+          );
+          if (!mounted) return;
+          if (result.status == 401) {
+            if (progressShown) navigator.pop();
+            await _endSession(userProvider, planProvider, navigator);
+            return;
+          }
+          final image = result.bytes;
+          if (image != null && image.isNotEmpty) {
+            mapsByPlace[placeId] = image;
+          }
+        }
+      }
+      final shownTimes = _shownActivityTimes(activities);
+      final dayHeaders = _dayHeaders(activities, shownTimes, plan.timeZone);
+      final rows = <PlanPdfRow>[
+        for (var index = 0; index < activities.length; index++)
+          _pdfActivityRow(
+            activities[index],
+            shownTimes[index],
+            dayHeaders[index],
+            plan.timeZone,
+            mapImage: mapsByPlace[activities[index].googlePlaceId.trim()],
+          ),
+      ];
       final bytes = await buildPlanPdf(
         name: plan.name,
         destination: plan.destination,
         start: formatPlanDate(plan.startDate),
         end: formatPlanDate(plan.endDate),
         rows: rows,
-        landscape: landscape,
+        landscape: options.landscape,
       );
+      if (progressShown && mounted) navigator.pop();
+      progressShown = false;
       await Printing.sharePdf(
         bytes: bytes,
         filename: planPdfFilename(plan.name),
       );
     } catch (_) {
+      if (progressShown && mounted) navigator.pop();
       if (!mounted) return;
       messenger.showSnackBar(
         const SnackBar(content: Text('Could not print plan')),
@@ -1276,8 +1315,9 @@ PlanPdfRow _pdfActivityRow(
   Activity activity,
   _ShownActivityTimes times,
   String? dayHeader,
-  String planZone,
-) {
+  String planZone, {
+  Uint8List? mapImage,
+}) {
   final storedType = activity.typeLabel.trim().isEmpty
       ? activity.type.name
       : activity.typeLabel.trim();
@@ -1296,6 +1336,8 @@ PlanPdfRow _pdfActivityRow(
     baggageClaim: activity.baggageClaim?.trim() ?? '',
     roomNumber: activity.roomNumber?.trim() ?? '',
     serviceProvider: activity.serviceProvider?.trim() ?? '',
+    googlePlaceId: activity.googlePlaceId,
+    mapImage: mapImage,
   );
 }
 
@@ -1951,6 +1993,16 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
   }
 }
 
+class _PrintPlanOptions {
+  final bool landscape;
+  final bool includeMaps;
+
+  const _PrintPlanOptions({
+    required this.landscape,
+    required this.includeMaps,
+  });
+}
+
 class _PrintOrientationDialog extends StatefulWidget {
   const _PrintOrientationDialog();
 
@@ -1961,21 +2013,40 @@ class _PrintOrientationDialog extends StatefulWidget {
 
 class _PrintOrientationDialogState extends State<_PrintOrientationDialog> {
   bool _landscape = true;
+  bool _includeMaps = false;
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
       title: const Text('Print'),
-      content: SegmentedButton<bool>(
-        showSelectedIcon: false,
-        segments: const [
-          ButtonSegment(value: false, label: Text('Portrait')),
-          ButtonSegment(value: true, label: Text('Landscape')),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SegmentedButton<bool>(
+            showSelectedIcon: false,
+            segments: const [
+              ButtonSegment(value: false, label: Text('Portrait')),
+              ButtonSegment(value: true, label: Text('Landscape')),
+            ],
+            selected: {_landscape},
+            onSelectionChanged: (next) {
+              setState(() => _landscape = next.first);
+            },
+          ),
+          CheckboxListTile(
+            contentPadding: EdgeInsets.zero,
+            controlAffinity: ListTileControlAffinity.leading,
+            value: _includeMaps,
+            onChanged: (next) {
+              setState(() => _includeMaps = next ?? false);
+            },
+            title: const Text('Include maps'),
+            subtitle: const Text(
+              'A Google Map around each destination that has a Place ID',
+            ),
+          ),
         ],
-        selected: {_landscape},
-        onSelectionChanged: (next) {
-          setState(() => _landscape = next.first);
-        },
       ),
       actions: [
         TextButton(
@@ -1983,7 +2054,13 @@ class _PrintOrientationDialogState extends State<_PrintOrientationDialog> {
           child: const Text('Cancel'),
         ),
         TextButton(
-          onPressed: () => Navigator.pop(context, _landscape),
+          onPressed: () => Navigator.pop(
+            context,
+            _PrintPlanOptions(
+              landscape: _landscape,
+              includeMaps: _includeMaps,
+            ),
+          ),
           child: const Text('Print'),
         ),
       ],
