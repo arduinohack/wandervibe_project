@@ -142,6 +142,9 @@ class Plan {
   final DateTime createdAt;
   final DateTime? earliestStart;
   final DateTime? latestEnd;
+  final String sourcePlanId;
+  final DateTime? linkStart;
+  final DateTime? linkEnd;
 
   Plan({
     required this.id, // planID?
@@ -162,6 +165,9 @@ class Plan {
     required this.createdAt,
     this.earliestStart,
     this.latestEnd,
+    this.sourcePlanId = '',
+    this.linkStart,
+    this.linkEnd,
   });
 
   factory Plan.fromJson(Map<String, dynamic> json) {
@@ -199,6 +205,9 @@ class Plan {
           _dateValue(json['createdAt']) ?? DateTime.fromMillisecondsSinceEpoch(0),
       earliestStart: _dateValue(json['earliestStart']),
       latestEnd: _dateValue(json['latestEnd']),
+      sourcePlanId: _stringValue(json['sourcePlanId']),
+      linkStart: _dateValue(json['linkStart']),
+      linkEnd: _dateValue(json['linkEnd']),
     );
   }
   /*

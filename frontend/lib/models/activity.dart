@@ -158,6 +158,7 @@ class Activity {
   final String? bookingReference;
   final Map<String, dynamic> extras;
   final DateTime? createdAt;
+  final bool linked;
 
   Activity({
     this.id,
@@ -191,6 +192,7 @@ class Activity {
     this.bookingReference,
     this.extras = const {},
     this.createdAt,
+    this.linked = false,
   });
 
   // NEW: Getters for effective times (Cases 1-3)
@@ -295,6 +297,7 @@ class Activity {
       createdAt: json['createdAt'] != null
           ? DateTime.parse(json['createdAt'])
           : null,
+      linked: json['linked'] == true,
     );
   }
 

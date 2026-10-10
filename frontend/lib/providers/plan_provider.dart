@@ -175,6 +175,14 @@ class PlanUpdateResult {
   const PlanUpdateResult({this.status, this.plan, this.error});
 }
 
+class PlanLinkResult {
+  final int? status;
+  final Plan? plan;
+  final String? error;
+
+  const PlanLinkResult({this.status, this.plan, this.error});
+}
+
 class PlanInviteResult {
   final int? status;
   final String? error;
@@ -217,6 +225,9 @@ Plan _planWithOwner(Plan plan, String ownerId) {
     createdAt: plan.createdAt,
     earliestStart: plan.earliestStart,
     latestEnd: plan.latestEnd,
+    sourcePlanId: plan.sourcePlanId,
+    linkStart: plan.linkStart,
+    linkEnd: plan.linkEnd,
   );
 }
 
@@ -247,6 +258,9 @@ Plan _planKeepingActivitySpan(Plan updated, Plan previous) {
     createdAt: updated.createdAt,
     earliestStart: earliestStart,
     latestEnd: latestEnd,
+    sourcePlanId: updated.sourcePlanId,
+    linkStart: updated.linkStart,
+    linkEnd: updated.linkEnd,
   );
 }
 
@@ -795,6 +809,50 @@ class PlanProvider extends ChangeNotifier {
     } catch (e) {
       logger.e('Error creating plan: $e');
       return null;
+    }
+  }
+
+  /// POST /api/plans/:planId/link. The new plan is owned by the caller.
+  Future<PlanLinkResult> linkPersonalPlan({
+    required String planId,
+    required DateTime start,
+    required DateTime end,
+    required String? token,
+  }) async {
+    try {
+      if (token == null || token.isEmpty) {
+        return const PlanLinkResult(status: 401);
+      }
+      final response = await http.post(
+        Uri.parse(
+          '$backendBaseUrl${apiPlanLink.replaceAll('{planId}', planId)}',
+        ),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode({
+          'start': start.toUtc().toIso8601String(),
+          'end': end.toUtc().toIso8601String(),
+        }),
+      );
+      if (response.statusCode != 201) {
+        return PlanLinkResult(
+          status: response.statusCode,
+          error: _apiErrorMessage(response.body),
+        );
+      }
+      final data = json.decode(response.body);
+      final planJson = data is Map ? data['plan'] : null;
+      if (planJson is! Map) return const PlanLinkResult(status: 201);
+      final created = Plan.fromJson(Map<String, dynamic>.from(planJson));
+      _plans = [..._plans, created];
+      _viewerRoles[created.id] = 'Owner';
+      notifyListeners();
+      return PlanLinkResult(status: 201, plan: created);
+    } catch (e) {
+      logger.e('Error linking a personal plan: $e');
+      return const PlanLinkResult();
     }
   }
 

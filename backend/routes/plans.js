@@ -521,6 +521,94 @@ router.post('/:planId/reassign-coordinator', authMiddleware, async (req, res) =>
   }
 });
 
+function windowInstant(value) {
+  if (value == null || value === '') return null;
+  if (typeof value !== 'string' && typeof value !== 'number' && !(value instanceof Date)) {
+    return null;
+  }
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function relevantZone(event, plan) {
+  return event.type === 'flight'
+    ? (event.destinationTimeZone || plan.timeZone)
+    : plan.timeZone;
+}
+
+function startMillis(value) {
+  if (value == null || value === '') return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.getTime();
+}
+
+function compareByStart(a, b) {
+  const aStart = startMillis(a.startTime);
+  const bStart = startMillis(b.startTime);
+  if (aStart == null && bStart == null) return String(a._id).localeCompare(String(b._id));
+  if (aStart == null) return 1;
+  if (bStart == null) return -1;
+  if (aStart !== bStart) return aStart - bStart;
+  return String(a._id).localeCompare(String(b._id));
+}
+
+// POST /api/plans/:planId/link { start, end }
+// A member, including Guest, creates a personal plan that points at this plan.
+// Activities and members stay on the source plan.
+router.post('/:planId/link', authMiddleware, async (req, res) => {
+  const { planId } = req.params;
+  try {
+    const source = await Plan.findById(planId);
+    if (!source) {
+      return res.status(404).json({ message: 'Plan not found' });
+    }
+
+    const callerId = req.user.userId || req.user.id;
+    const role = await callerPlanRole(source, callerId);
+    if (role !== 'Owner' && role !== 'Collaborator' && role !== 'Guest') {
+      return res.status(403).json({ message: 'Only a plan member can link a personal plan' });
+    }
+
+    const start = windowInstant(req.body && req.body.start);
+    const end = windowInstant(req.body && req.body.end);
+    if (!start || !end) {
+      return res.status(400).json({ message: 'start and end are required' });
+    }
+    if (end.getTime() < start.getTime()) {
+      return res.status(400).json({ message: 'end must be on or after start' });
+    }
+
+    const personalId = uuidv4();
+    const sourceName = typeof source.name === 'string' ? source.name.trim() : '';
+    const personal = new Plan({
+      _id: personalId,
+      type: source.type,
+      name: sourceName ? `My ${sourceName}` : 'My plan',
+      destination: source.destination,
+      location: source.location,
+      timeZone: source.timeZone,
+      budget: 0,
+      autoCalculateStartDate: false,
+      autoCalculateEndDate: false,
+      ownerId: callerId,
+      sourcePlanId: String(source._id),
+      linkStart: start,
+      linkEnd: end,
+    });
+    await personal.save();
+    await new PlanUser({
+      planId: personalId,
+      userId: callerId,
+      role: 'Owner',
+    }).save();
+
+    return res.status(201).json({ plan: personal });
+  } catch (err) {
+    console.error('Link plan error:', err);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // GET /api/plans/:planId/itinerary (Protected: Fetches sorted events with Day Numbers)
 // owners, assigned planners and assigned wanderers can get the plan itinierary
 router.get('/:planId/itinerary', authMiddleware, async (req, res) => {
@@ -544,10 +632,24 @@ router.get('/:planId/itinerary', authMiddleware, async (req, res) => {
     events.sort(compareStoredOrder);
     events = events.map(event => ({
       ...event.toObject(),
-      relevantTimeZone: event.type === 'flight'
-        ? (event.destinationTimeZone || plan.timeZone)
-        : plan.timeZone
+      relevantTimeZone: relevantZone(event, plan),
     }));
+
+    const sourcePlanId = typeof plan.sourcePlanId === 'string' ? plan.sourcePlanId.trim() : '';
+    if (sourcePlanId && plan.linkStart && plan.linkEnd) {
+      const linked = await Event.find({
+        planId: sourcePlanId,
+        startTime: { $gte: plan.linkStart, $lte: plan.linkEnd },
+      });
+      const own = events.map((event) => ({ ...event, linked: false }));
+      const fromSource = linked.map((event) => ({
+        ...event.toObject(),
+        relevantTimeZone: relevantZone(event, plan),
+        linked: true,
+      }));
+      events = [...own, ...fromSource];
+      events.sort(compareByStart);
+    }
 
     // Compute Day Numbers (loop, compare to previous). First event is day 1.
     let dayNumber = 1;

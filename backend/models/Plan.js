@@ -16,6 +16,9 @@ const planSchema = new mongoose.Schema({
   planningState: { type: String, enum: ['initial', 'reviewing', 'complete'], default: 'initial' },
   timeZone: { type: String, required: false },
   ownerId: { type: String, ref: 'User', required: true },
+  sourcePlanId: { type: String, default: '' },
+  linkStart: { type: Date, required: false },
+  linkEnd: { type: Date, required: false },
   participants: [{
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     role: { type: String, enum: ['VibePlanner', 'Wanderer'], required: true }

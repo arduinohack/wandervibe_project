@@ -400,6 +400,7 @@ Activity _activityWithTimes(Activity activity, DateTime? start, DateTime? end) {
     bookingReference: activity.bookingReference,
     extras: activity.extras,
     createdAt: activity.createdAt,
+    linked: activity.linked,
   );
 }
 
@@ -996,7 +997,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
               children: [
                 Row(
                   children: [
-                    if (dragIndex != null)
+                    if (dragIndex != null && !activity.linked)
                       ReorderableDragStartListener(
                         index: dragIndex,
                         child: const Tooltip(
@@ -1030,6 +1031,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                         onPressed: () => _openActivityHistory(activity),
                       ),
                     if (canChange &&
+                        !activity.linked &&
                         dragIndex != null &&
                         activityId != null &&
                         activityId.isNotEmpty) ...[
@@ -1138,6 +1140,47 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
       ),
     );
     if (removed == true && mounted) Navigator.of(context).pop();
+  }
+
+  Future<void> _linkMyPlan(Plan plan) async {
+    final window = await showDialog<_LinkWindowResult>(
+      context: context,
+      builder: (context) => const _LinkWindowDialog(),
+    );
+    if (window == null || !mounted) return;
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final result = await planProvider.linkPersonalPlan(
+      planId: plan.id,
+      start: window.start,
+      end: window.end,
+      token: userProvider.token,
+    );
+    if (!mounted) return;
+    if (result.status == 401) {
+      await _endSession(userProvider, planProvider, navigator);
+      return;
+    }
+    if (result.status == 403) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(result.error ?? 'Not allowed')),
+      );
+      return;
+    }
+    final created = result.plan;
+    if (result.status != 201 || created == null) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(result.error ?? 'Could not link a plan')),
+      );
+      return;
+    }
+    await navigator.push(
+      MaterialPageRoute(
+        builder: (context) => PlanDetailScreen(plan: created),
+      ),
+    );
   }
 
   Future<void> _openPeople(Plan plan) async {
@@ -1262,6 +1305,13 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                       ),
                       if (dateLine != null) Text(dateLine),
                       Text('State: ${shown.planningState}'),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton(
+                          onPressed: () => _linkMyPlan(shown),
+                          child: const Text('Link my plan'),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -2354,6 +2404,106 @@ class _PlanEditScreenState extends State<_PlanEditScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _LinkWindowResult {
+  final DateTime start;
+  final DateTime end;
+
+  const _LinkWindowResult({required this.start, required this.end});
+}
+
+class _LinkWindowDialog extends StatefulWidget {
+  const _LinkWindowDialog();
+
+  @override
+  State<_LinkWindowDialog> createState() => _LinkWindowDialogState();
+}
+
+class _LinkWindowDialogState extends State<_LinkWindowDialog> {
+  DateTime? _start;
+  DateTime? _end;
+  String? _error;
+
+  Future<void> _pick(bool start) async {
+    final current = start ? _start : _end;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _calendarDate(current),
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (picked == null) return;
+    final day = DateTime.utc(picked.year, picked.month, picked.day);
+    setState(() {
+      if (start) {
+        _start = day;
+      } else {
+        _end = day;
+      }
+      _error = null;
+    });
+  }
+
+  void _submit() {
+    final start = _start;
+    final endDay = _end;
+    if (start == null || endDay == null) {
+      setState(() => _error = 'Choose a start and end date');
+      return;
+    }
+    final end = DateTime.utc(
+      endDay.year,
+      endDay.month,
+      endDay.day,
+      23,
+      59,
+      59,
+      999,
+    );
+    if (end.isBefore(start)) {
+      setState(() => _error = 'End must be on or after start');
+      return;
+    }
+    Navigator.pop(context, _LinkWindowResult(start: start, end: end));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Link my plan'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextButton(
+            onPressed: () => _pick(true),
+            child: Text(
+              _start == null ? 'Start date' : 'Start: ${formatPlanDate(_start)}',
+            ),
+          ),
+          TextButton(
+            onPressed: () => _pick(false),
+            child: Text(
+              _end == null ? 'End date' : 'End: ${formatPlanDate(_end)}',
+            ),
+          ),
+          if (_error != null)
+            Text(_error!, style: const TextStyle(color: Colors.red)),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: _submit,
+          child: const Text('Link'),
+        ),
+      ],
     );
   }
 }
