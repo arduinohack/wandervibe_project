@@ -1,6 +1,7 @@
 const axios = require('axios');
 const logger = require('./logger');
 
+const GEOCODE_URL = 'https://maps.googleapis.com/maps/api/geocode/json';
 const STATIC_URL = 'https://maps.googleapis.com/maps/api/staticmap';
 const MAP_ZOOM = '15';
 const MAP_SIZE = '600x400';
@@ -50,18 +51,38 @@ function googleErrorMessage(text) {
   }
 }
 
-function logGoogleResponse(status, body, key) {
+function firstLatLng(text) {
+  try {
+    const data = JSON.parse(text);
+    const loc = data && data.results && data.results[0]
+      && data.results[0].geometry && data.results[0].geometry.location;
+    const lat = loc && loc.lat;
+    const lng = loc && loc.lng;
+    if (typeof lat === 'number' && typeof lng === 'number') return { lat, lng };
+    return null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function logGoogleResponse(label, status, body, key) {
   const snippet = redactKey(bodyText(body), key).slice(0, BODY_LOG_CHARS);
-  logger.info(`Google Static Map status ${status}`, {
+  logger.info(`Google ${label} status ${status}`, {
     event: 'GoogleStaticMap',
     context: { status, body: snippet },
   });
 }
 
-function staticMapUrl(placeId, key) {
+function geocodeUrl(placeId, key) {
+  const params = new URLSearchParams({ place_id: placeId, key });
+  return `${GEOCODE_URL}?${params.toString()}`;
+}
+
+function staticMapUrl(lat, lng, key) {
+  const center = `${lat},${lng}`;
   const params = new URLSearchParams({
-    center: `place_id:${placeId}`,
-    markers: `color:red|place_id:${placeId}`,
+    center,
+    markers: `color:red|${center}`,
     zoom: MAP_ZOOM,
     size: MAP_SIZE,
     format: 'png',
@@ -70,7 +91,7 @@ function staticMapUrl(placeId, key) {
   return `${STATIC_URL}?${params.toString()}`;
 }
 
-async function defaultGetStatic(url) {
+async function defaultGet(url) {
   const res = await axios.get(url, {
     timeout: 15000,
     responseType: 'arraybuffer',
@@ -83,8 +104,26 @@ async function defaultGetStatic(url) {
   };
 }
 
+async function requestGoogle(fetchUrl, url, label, key) {
+  try {
+    const res = await fetchUrl(url);
+    logGoogleResponse(label, res && res.status, res && res.body, key);
+    return res;
+  } catch (err) {
+    const status = (err.response && err.response.status) || 0;
+    const errBody = (err.response && err.response.data) || err.message || '';
+    logGoogleResponse(label, status, errBody, key);
+    const text = bodyText(errBody);
+    return {
+      status,
+      body: errBody,
+      error: googleErrorMessage(text) || 'Could not load map',
+    };
+  }
+}
+
 // PNG of a Google Map around a Place ID. Zoom 15 is neighborhood scale.
-async function fetchPlaceMapPng(placeId, { getStatic } = {}) {
+async function fetchPlaceMapPng(placeId, { get, getStatic } = {}) {
   const key = googleMapsKey();
   if (!key) {
     return { status: 503, msg: 'Google Maps is not configured' };
@@ -94,23 +133,30 @@ async function fetchPlaceMapPng(placeId, { getStatic } = {}) {
     return { status: 400, msg: 'Missing placeId' };
   }
 
-  const url = staticMapUrl(id, key);
-  const get = getStatic || defaultGetStatic;
-  let res;
-  try {
-    res = await get(url);
-  } catch (err) {
-    const status = (err.response && err.response.status) || 0;
-    const errBody = (err.response && err.response.data) || err.message || '';
-    logGoogleResponse(status, errBody, key);
-    return { status: 502, msg: 'Could not load map' };
+  const fetchUrl = get || getStatic || defaultGet;
+  const geoRes = await requestGoogle(fetchUrl, geocodeUrl(id, key), 'Geocode', key);
+  if (geoRes && geoRes.error) {
+    return { status: 502, msg: geoRes.error };
+  }
+  const geoText = bodyText(geoRes && geoRes.body);
+  const location = firstLatLng(geoText);
+  if (!location) {
+    return { status: 502, msg: googleErrorMessage(geoText) || 'Could not load map' };
   }
 
-  const status = res && res.status;
-  const body = res && res.body;
-  logGoogleResponse(status, body, key);
+  const mapRes = await requestGoogle(
+    fetchUrl,
+    staticMapUrl(location.lat, location.lng, key),
+    'Static Map',
+    key,
+  );
+  if (mapRes && mapRes.error) {
+    return { status: 502, msg: mapRes.error };
+  }
 
-  if (isPng(body, res && res.contentType)) {
+  const status = mapRes && mapRes.status;
+  const body = mapRes && mapRes.body;
+  if (isPng(body, mapRes && mapRes.contentType)) {
     return { status: 200, png: Buffer.from(body), contentType: 'image/png' };
   }
 
@@ -125,8 +171,10 @@ async function fetchPlaceMapPng(placeId, { getStatic } = {}) {
 module.exports = {
   fetchPlaceMapPng,
   googleMapsKey,
+  geocodeUrl,
   staticMapUrl,
   redactKey,
+  GEOCODE_URL,
   STATIC_URL,
   MAP_ZOOM,
   MAP_SIZE,
