@@ -138,6 +138,26 @@ router.get('/', authMiddleware, async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 });
+
+// GET /api/plans/:planId. A member may read the plan, including sourcePlanId.
+router.get('/:planId', authMiddleware, async (req, res) => {
+  const planId = String(req.params.planId || '');
+  try {
+    const plan = await Plan.findById(planId);
+    if (!plan) {
+      return res.status(404).json({ message: 'Plan not found' });
+    }
+    const callerId = req.user.userId || req.user.id;
+    const role = await callerPlanRole(plan, callerId);
+    if (!role) {
+      return res.status(403).json({ message: 'Not authorized to read plan' });
+    }
+    return res.json({ plan });
+  } catch (err) {
+    console.error('Get plan error:', err);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
 /*    try {
     // Find plans where user is owner
     const ownedPlans = await Plan.find({ ownerId: req.user.userId }).select('type name destination startDate endDate autoCalculateStartDate autoCalculateEndDate location budget planningState timeZone ownerId');

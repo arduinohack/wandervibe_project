@@ -588,7 +588,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
       _linkedPlanners = const [];
       return 200;
     }
-    final listed = await planProvider.readListedPlan(
+    final listed = await planProvider.readPlan(
       planId: sourceId,
       token: token,
     );
@@ -1201,9 +1201,8 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     if (removed == true && mounted) Navigator.of(context).pop();
   }
 
-  bool _showLinkMyPlan(Plan plan, String? storedRole) {
-    if (plan.sourcePlanId.trim().isEmpty) return true;
-    return storedRole?.trim() == 'Owner';
+  bool _showLinkMyPlan(Plan plan) {
+    return plan.sourcePlanId.trim().isEmpty;
   }
 
   List<Activity> _linkChoices(List<Activity> activities) {
@@ -1416,7 +1415,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                       ),
                       const SizedBox(height: 8),
                       if (_linkedSource != null) ...[
-                        Text('Linked plan: ${_linkedSource!.name}'),
+                        Text('Linked to: ${_linkedSource!.name}'),
                         for (final member in _linkedPlanners)
                           Text(
                             '${planRoleLabel(_linkedSource!.type, member.role)}: ${member.email.trim()}',
@@ -1433,7 +1432,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                         ),
                       if (dateLine != null) Text(dateLine),
                       Text('State: ${shown.planningState}'),
-                      if (_showLinkMyPlan(shown, storedRole))
+                      if (_showLinkMyPlan(shown))
                         Align(
                           alignment: Alignment.centerLeft,
                           child: TextButton(

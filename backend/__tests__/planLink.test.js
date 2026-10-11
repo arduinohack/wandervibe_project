@@ -390,4 +390,68 @@ describe('personal plan link', () => {
     expect((await Event.findById(lunchId).lean()).eventNum).toBe(lunchBefore.eventNum);
     expect((await Plan.findById(planId).lean()).name).toBe('Paris');
   });
+
+  test('a linked plan includes its source plan id', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+    });
+    const sam = await registerAndLogin({
+      firstName: 'Sam',
+      lastName: 'Guest',
+      email: 'sam@example.com',
+    });
+    const outsider = await registerAndLogin({
+      firstName: 'Otto',
+      lastName: 'Outsider',
+      email: 'otto@example.com',
+    });
+    const planId = await createPlan(ada.token);
+    await acceptRole(ada.token, sam.token, planId, 'sam@example.com', 'Guest');
+    const lunchId = await addActivity(ada.token, planId, 'Lunch', '2026-07-02T12:00:00.000Z');
+    const linked = await request(app)
+      .post(`/api/plans/${planId}/link`)
+      .set('Authorization', `Bearer ${sam.token}`)
+      .send({ activityIds: [lunchId] });
+    expect(linked.status).toBe(201);
+    const personalId = linked.body.plan._id;
+
+    const list = await request(app)
+      .get('/api/plans')
+      .set('Authorization', `Bearer ${sam.token}`);
+    expect(list.status).toBe(200);
+    const listed = list.body.plans.find((plan) => plan._id === personalId);
+    expect(listed.sourcePlanId).toBe(planId);
+
+    const one = await request(app)
+      .get(`/api/plans/${personalId}`)
+      .set('Authorization', `Bearer ${sam.token}`);
+    expect(one.status).toBe(200);
+    expect(one.body.plan.sourcePlanId).toBe(planId);
+    expect(one.body.plan.name).toBe('My Paris');
+
+    const source = await request(app)
+      .get(`/api/plans/${planId}`)
+      .set('Authorization', `Bearer ${sam.token}`);
+    expect(source.status).toBe(200);
+    expect(source.body.plan.name).toBe('Paris');
+    expect(source.body.plan.sourcePlanId || '').toBe('');
+
+    const denied = await request(app)
+      .get(`/api/plans/${planId}`)
+      .set('Authorization', `Bearer ${outsider.token}`);
+    expect(denied.status).toBe(403);
+    expect(denied.body.message).toBe('Not authorized to read plan');
+
+    const missingToken = await request(app).get(`/api/plans/${planId}`);
+    expect(missingToken.status).toBe(401);
+    expect(missingToken.body.message).toBe('No token, authorization denied');
+
+    const missing = await request(app)
+      .get('/api/plans/missing-plan')
+      .set('Authorization', `Bearer ${ada.token}`);
+    expect(missing.status).toBe(404);
+    expect(missing.body.message).toBe('Plan not found');
+  });
 });

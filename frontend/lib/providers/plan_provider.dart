@@ -183,12 +183,12 @@ class PlanLinkResult {
   const PlanLinkResult({this.status, this.plan, this.error});
 }
 
-class ListedPlanRead {
+class PlanRead {
   final int? status;
   final Plan? plan;
   final String? error;
 
-  const ListedPlanRead({this.status, this.plan, this.error});
+  const PlanRead({this.status, this.plan, this.error});
 }
 
 class PlanMembersRead {
@@ -851,38 +851,35 @@ class PlanProvider extends ChangeNotifier {
     }
   }
 
-  /// GET /api/plans and return the plan with [planId]. Does not replace the
-  /// open plan list or the itinerary.
-  Future<ListedPlanRead> readListedPlan({
+  /// GET /api/plans/:planId. Does not replace the open plan list or itinerary.
+  Future<PlanRead> readPlan({
     required String planId,
     required String? token,
   }) async {
     try {
       if (token == null || token.isEmpty) {
-        return const ListedPlanRead(status: 401);
+        return const PlanRead(status: 401);
       }
       final response = await http.get(
-        Uri.parse('$backendBaseUrl$apiPlans'),
+        Uri.parse('$backendBaseUrl$apiPlans/$planId'),
         headers: {'Authorization': 'Bearer $token'},
       );
       if (response.statusCode != 200) {
-        return ListedPlanRead(
+        return PlanRead(
           status: response.statusCode,
           error: _apiErrorMessage(response.body),
         );
       }
       final data = json.decode(response.body);
-      final plans = data is Map ? data['plans'] : null;
-      if (plans is! List) return ListedPlanRead(status: response.statusCode);
-      for (final item in plans) {
-        if (item is! Map) continue;
-        final plan = Plan.fromJson(Map<String, dynamic>.from(item));
-        if (plan.id == planId) return ListedPlanRead(status: 200, plan: plan);
-      }
-      return const ListedPlanRead(status: 200);
+      final planJson = data is Map ? data['plan'] : null;
+      if (planJson is! Map) return PlanRead(status: response.statusCode);
+      return PlanRead(
+        status: 200,
+        plan: Plan.fromJson(Map<String, dynamic>.from(planJson)),
+      );
     } catch (e) {
-      logger.e('Error reading listed plan: $e');
-      return const ListedPlanRead();
+      logger.e('Error reading plan: $e');
+      return const PlanRead();
     }
   }
 
