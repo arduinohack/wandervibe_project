@@ -973,6 +973,34 @@ function dateField(body, key) {
   return { present: true, value: date };
 }
 
+const HIDDEN_FIELD_NAMES = new Set([
+  'destination',
+  'budget',
+  'cost',
+  'bookingReference',
+  'details',
+]);
+
+function hiddenFieldsField(body) {
+  if (!Object.prototype.hasOwnProperty.call(body, 'hiddenFields')) {
+    return { present: false };
+  }
+  const value = body.hiddenFields;
+  if (!Array.isArray(value)) return { present: true, invalid: true };
+  const names = [];
+  const seen = new Set();
+  for (const item of value) {
+    if (typeof item !== 'string') return { present: true, invalid: true };
+    const name = item.trim();
+    if (!HIDDEN_FIELD_NAMES.has(name) || seen.has(name)) {
+      return { present: true, invalid: true };
+    }
+    seen.add(name);
+    names.push(name);
+  }
+  return { present: true, value: names };
+}
+
 function budgetIsBlank(value) {
   if (value == null) return true;
   return typeof value === 'string' && value.trim() === '';
@@ -1048,6 +1076,11 @@ router.put('/:planId', authMiddleware, async (req, res) => {
       return res.status(400).json({ message: 'Auto-calculate end must be true or false' });
     }
 
+    const hiddenFields = hiddenFieldsField(body);
+    if (hiddenFields.invalid) {
+      return res.status(400).json({ message: 'Hidden fields are not valid' });
+    }
+
     if (name.present) plan.name = name.value;
     if (destination.present) plan.destination = destination.value;
     if (budget.present) plan.budget = budget.value;
@@ -1056,6 +1089,7 @@ router.put('/:planId', authMiddleware, async (req, res) => {
     if (timeZone.present) plan.timeZone = timeZone.value;
     if (autoStart.present) plan.autoCalculateStartDate = autoStart.value;
     if (autoEnd.present) plan.autoCalculateEndDate = autoEnd.value;
+    if (hiddenFields.present) plan.hiddenFields = hiddenFields.value;
 
     await plan.save();
     return res.json({ plan });

@@ -19,6 +19,16 @@ double? _parsedCost(String text) {
   return double.tryParse(trimmed);
 }
 
+List<ActivityType> _sortedActivityTypes() {
+  final types = List<ActivityType>.of(ActivityType.values);
+  types.sort(
+    (left, right) => _activityScreenTypeLabel(left).compareTo(
+      _activityScreenTypeLabel(right),
+    ),
+  );
+  return types;
+}
+
 String _activityScreenTypeLabel(ActivityType type) {
   switch (type) {
     case ActivityType.flight:
@@ -498,7 +508,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
               DropdownButtonFormField<ActivityType>(
                 initialValue: _type,
                 decoration: const InputDecoration(labelText: 'Type'),
-                items: ActivityType.values
+                items: _sortedActivityTypes()
                     .map(
                       (type) => DropdownMenuItem(
                         value: type,

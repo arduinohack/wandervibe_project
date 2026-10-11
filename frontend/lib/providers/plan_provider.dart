@@ -241,6 +241,7 @@ Plan _planWithOwner(Plan plan, String ownerId) {
     linkedActivityIds: plan.linkedActivityIds,
     linkStart: plan.linkStart,
     linkEnd: plan.linkEnd,
+    hiddenFields: plan.hiddenFields,
   );
 }
 
@@ -275,6 +276,7 @@ Plan _planKeepingActivitySpan(Plan updated, Plan previous) {
     linkedActivityIds: updated.linkedActivityIds,
     linkStart: updated.linkStart,
     linkEnd: updated.linkEnd,
+    hiddenFields: updated.hiddenFields,
   );
 }
 
@@ -1156,7 +1158,8 @@ class PlanProvider extends ChangeNotifier {
   }
 
   /// PUT /api/plans/:planId with name, destination, budget, dates, time zone,
-  /// and the auto-calculate flags. A null budget clears the stored amount.
+  /// the auto-calculate flags, and the fields hidden from guests.
+  /// A null budget clears the stored amount.
   /// On 200 that plan is replaced, then reloaded from GET /api/plans.
   Future<PlanUpdateResult> updatePlan({
     required String planId,
@@ -1168,6 +1171,7 @@ class PlanProvider extends ChangeNotifier {
     required String timeZone,
     required bool autoCalculateStartDate,
     required bool autoCalculateEndDate,
+    required List<String> hiddenFields,
     required String? token,
   }) async {
     try {
@@ -1189,6 +1193,7 @@ class PlanProvider extends ChangeNotifier {
           'timeZone': timeZone,
           'autoCalculateStartDate': autoCalculateStartDate,
           'autoCalculateEndDate': autoCalculateEndDate,
+          'hiddenFields': hiddenFields,
         }),
       );
       if (response.statusCode != 200) {

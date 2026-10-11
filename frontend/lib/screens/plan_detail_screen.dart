@@ -260,8 +260,9 @@ void _addCardLine(List<Widget> lines, String label, String? value) {
 List<Widget> _activityCardLines(
   Activity activity,
   _ShownActivityTimes times,
-  String planZone,
-) {
+  String planZone, {
+  Set<String> hiddenFields = const {},
+}) {
   final lines = <Widget>[];
   final storedType = activity.typeLabel.trim().isEmpty
       ? activity.type.name
@@ -283,11 +284,15 @@ List<Widget> _activityCardLines(
   }
   _addCardLine(lines, 'Duration', _cardDurationLabel(activity));
   _addCardLine(lines, 'Location', activity.location);
-  _addCardLine(lines, 'Details', activity.details);
+  if (!hiddenFields.contains('details')) {
+    _addCardLine(lines, 'Details', activity.details);
+  }
   _addCardLine(lines, 'Google Place ID', activity.googlePlaceId);
-  _addCardLine(lines, 'Booking reference', activity.bookingReference);
+  if (!hiddenFields.contains('bookingReference')) {
+    _addCardLine(lines, 'Booking reference', activity.bookingReference);
+  }
   final cost = activity.cost;
-  if (cost != null) {
+  if (cost != null && !hiddenFields.contains('cost')) {
     final mark = activity.costType == CostType.actual ? 'act' : 'est';
     _addCardLine(lines, 'Cost($mark)', formatPlanMoney(cost));
   }
@@ -884,6 +889,11 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
       }
       final shownTimes = _shownActivityTimes(activities);
       final dayHeaders = _dayHeaders(shownTimes, plan.timeZone);
+      final storedRole = planProvider.viewerStoredRole(
+        plan.id,
+        userProvider.currentUserId,
+      );
+      final hiddenFields = _guestHiddenFields(plan, storedRole);
       final rows = <PlanPdfRow>[
         for (var index = 0; index < activities.length; index++)
           _pdfActivityRow(
@@ -891,6 +901,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
             shownTimes[index],
             dayHeaders[index],
             plan.timeZone,
+            hiddenFields: hiddenFields,
             mapImage: mapsByPlace[activities[index].googlePlaceId.trim()],
           ),
       ];
@@ -901,6 +912,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
         end: formatPlanDate(plan.endDate),
         rows: rows,
         landscape: options.landscape,
+        showDestination: !hiddenFields.contains('destination'),
       );
       if (progressShown && mounted) navigator.pop();
       progressShown = false;
@@ -949,12 +961,18 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     required String? dayHeader,
     required String planZone,
     required bool canChange,
+    required Set<String> hiddenFields,
     int? dragIndex,
   }) {
     final activityId = activity.id;
     final startZone = _activityStartZone(activity, planZone);
     final endZone = _activityEndZone(activity, planZone);
-    final lines = _activityCardLines(activity, times, planZone);
+    final lines = _activityCardLines(
+      activity,
+      times,
+      planZone,
+      hiddenFields: hiddenFields,
+    );
     return Column(
       key: blockKey,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1290,6 +1308,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
           final canChange = canAddActivity(storedRole);
           final shownTimes = _shownActivityTimes(activities);
           final dayHeaders = _dayHeaders(shownTimes, shown.timeZone);
+          final hiddenFields = _guestHiddenFields(shown, storedRole);
           final dateLine = planHeaderDateLine(
             activities,
             planTimeZone: shown.timeZone,
@@ -1333,12 +1352,15 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                         ],
                       ),
                       const SizedBox(height: 8),
-                      Text('Destination: ${shown.destination}'),
+                      if (!hiddenFields.contains('destination'))
+                        Text('Destination: ${shown.destination}'),
                       if (roleText != null) Text('Role: $roleText'),
-                      Text('Budget: ${formatPlanBudget(shown.budget)}'),
-                      Text(
-                        'Activity costs: ${formatPlanMoney(_planActualCost(activities))}',
-                      ),
+                      if (!hiddenFields.contains('budget'))
+                        Text('Budget: ${formatPlanBudget(shown.budget)}'),
+                      if (!hiddenFields.contains('cost'))
+                        Text(
+                          'Activity costs: ${formatPlanMoney(_planActualCost(activities))}',
+                        ),
                       if (dateLine != null) Text(dateLine),
                       Text('State: ${shown.planningState}'),
                       if (_showLinkMyPlan(shown, storedRole))
@@ -1401,6 +1423,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                       dayHeader: dayHeaders[index],
                       planZone: shown.timeZone,
                       canChange: true,
+                      hiddenFields: hiddenFields,
                       dragIndex: index,
                     );
                   },
@@ -1414,6 +1437,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                     dayHeader: dayHeaders[index],
                     planZone: shown.timeZone,
                     canChange: false,
+                    hiddenFields: hiddenFields,
                   ),
             ],
           );
@@ -1433,11 +1457,17 @@ String _pdfCostCell(Activity activity) {
   return 'Cost($mark):\n$money';
 }
 
+Set<String> _guestHiddenFields(Plan plan, String? storedRole) {
+  if (storedRole?.trim() != 'Guest') return const {};
+  return plan.hiddenFields.toSet();
+}
+
 PlanPdfRow _pdfActivityRow(
   Activity activity,
   _ShownActivityTimes times,
   String? dayHeader,
   String planZone, {
+  Set<String> hiddenFields = const {},
   Uint8List? mapImage,
 }) {
   final storedType = activity.typeLabel.trim().isEmpty
@@ -1451,9 +1481,11 @@ PlanPdfRow _pdfActivityRow(
     end: _pdfClock(times.end, _activityEndZone(activity, planZone)),
     duration: _durationLabel(activity),
     location: activity.location?.trim() ?? '',
-    details: _detailsLabel(activity),
-    bookingReference: activity.bookingReference?.trim() ?? '',
-    cost: _pdfCostCell(activity),
+    details: hiddenFields.contains('details') ? '' : _detailsLabel(activity),
+    bookingReference: hiddenFields.contains('bookingReference')
+        ? ''
+        : activity.bookingReference?.trim() ?? '',
+    cost: hiddenFields.contains('cost') ? '' : _pdfCostCell(activity),
     gate: activity.gate?.trim() ?? '',
     baggageClaim: activity.baggageClaim?.trim() ?? '',
     roomNumber: activity.roomNumber?.trim() ?? '',
@@ -1553,9 +1585,12 @@ String _storedActivityType(Activity? activity) {
   return stored;
 }
 
-List<String> _activityTypeChoices(String selected) {
-  if (activityTypes.contains(selected)) return activityTypes;
-  return [selected, ...activityTypes];
+List<String> activityTypeChoices(String selected) {
+  final sorted = [...activityTypes]..sort(
+    (left, right) => activityTypeLabel(left).compareTo(activityTypeLabel(right)),
+  );
+  if (sorted.contains(selected)) return sorted;
+  return [selected, ...sorted];
 }
 
 class _ActivityFormDialog extends StatefulWidget {
@@ -2018,7 +2053,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
           initialValue: _type,
           decoration: const InputDecoration(labelText: 'Type'),
           items: [
-            for (final type in _activityTypeChoices(_type))
+            for (final type in activityTypeChoices(_type))
               DropdownMenuItem(value: type, child: Text(activityTypeLabel(type))),
           ],
           onChanged: (value) {
@@ -2212,6 +2247,7 @@ class _PlanEditScreenState extends State<_PlanEditScreen> {
   late final TextEditingController _timeZoneController;
   late bool _autoStart;
   late bool _autoEnd;
+  late final Set<String> _hiddenFields;
   DateTime? _start;
   DateTime? _end;
   String? _error;
@@ -2228,6 +2264,10 @@ class _PlanEditScreenState extends State<_PlanEditScreen> {
     _timeZoneController = TextEditingController(text: plan.timeZone);
     _autoStart = plan.autoCalculateStartDate;
     _autoEnd = plan.autoCalculateEndDate;
+    _hiddenFields = {
+      for (final name in plan.hiddenFields)
+        if (guestHiddenFieldNames.contains(name)) name,
+    };
   }
 
   @override
@@ -2295,6 +2335,10 @@ class _PlanEditScreenState extends State<_PlanEditScreen> {
       timeZone: timeZone,
       autoCalculateStartDate: _autoStart,
       autoCalculateEndDate: _autoEnd,
+      hiddenFields: [
+        for (final name in guestHiddenFieldNames)
+          if (_hiddenFields.contains(name)) name,
+      ],
       token: userProvider.token,
     );
     if (!mounted) return;
@@ -2440,6 +2484,29 @@ class _PlanEditScreenState extends State<_PlanEditScreen> {
             value: _autoEnd,
             onChanged: (value) => setState(() => _autoEnd = value),
           ),
+          const Padding(
+            padding: EdgeInsets.only(top: 12),
+            child: Text(
+              'Hidden from guests',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+          for (final name in guestHiddenFieldNames)
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              controlAffinity: ListTileControlAffinity.leading,
+              title: Text(guestHiddenFieldLabels[name] ?? name),
+              value: _hiddenFields.contains(name),
+              onChanged: (checked) {
+                setState(() {
+                  if (checked == true) {
+                    _hiddenFields.add(name);
+                  } else {
+                    _hiddenFields.remove(name);
+                  }
+                });
+              },
+            ),
           if (_error != null) ...[
             const SizedBox(height: 12),
             Text(_error!, style: const TextStyle(color: Colors.red)),

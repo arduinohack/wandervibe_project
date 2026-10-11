@@ -330,6 +330,7 @@ Future<Uint8List> buildPlanPdf({
   required String end,
   required List<PlanPdfRow> rows,
   bool landscape = true,
+  bool showDestination = true,
 }) async {
   final document = pw.Document();
   final days = _daysInOrder(rows);
@@ -373,10 +374,11 @@ Future<Uint8List> buildPlanPdf({
             style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
           ),
           pw.SizedBox(height: 8),
-          pw.Text(
-            'Destination: $destination',
-            style: const pw.TextStyle(fontSize: 10),
-          ),
+          if (showDestination)
+            pw.Text(
+              'Destination: $destination',
+              style: const pw.TextStyle(fontSize: 10),
+            ),
           pw.Text('Start: $start', style: const pw.TextStyle(fontSize: 10)),
           pw.Text('End: $end', style: const pw.TextStyle(fontSize: 10)),
           pw.SizedBox(height: 16),

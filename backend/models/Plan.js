@@ -13,6 +13,7 @@ const planSchema = new mongoose.Schema({
   autoCalculateEndDate: { type: Boolean, default: false },  // NEW: Opt-in for auto from latest event
   location: { type: String, required: function() { return this.type === 'plan'; } },  // Venue for events
   budget: { type: Number, default: 0 },
+  hiddenFields: { type: [String], default: [] },
   planningState: { type: String, enum: ['initial', 'reviewing', 'complete'], default: 'initial' },
   timeZone: { type: String, required: false },
   ownerId: { type: String, ref: 'User', required: true },

@@ -134,6 +134,28 @@ List<String?> planItineraryDayHeaders(
   return headers;
 }
 
+const guestHiddenFieldNames = <String>[
+  'destination',
+  'budget',
+  'cost',
+  'bookingReference',
+  'details',
+];
+
+const guestHiddenFieldLabels = <String, String>{
+  'destination': 'Destination',
+  'budget': 'Budget',
+  'cost': 'Cost',
+  'bookingReference': 'Booking reference',
+  'details': 'Details',
+};
+
+/// True when a Guest should not see [field]. Owner and Collaborator still see it.
+bool guestCannotSeeField(String? storedRole, List<String> hiddenFields, String field) {
+  if (storedRole?.trim() != 'Guest') return false;
+  return hiddenFields.contains(field);
+}
+
 String _stringValue(dynamic value, {String fallback = ''}) {
   if (value == null) return fallback;
   if (value is Map) {
@@ -194,6 +216,7 @@ class Plan {
   final List<String> linkedActivityIds;
   final DateTime? linkStart;
   final DateTime? linkEnd;
+  final List<String> hiddenFields;
 
   Plan({
     required this.id, // planID?
@@ -218,6 +241,7 @@ class Plan {
     this.linkedActivityIds = const [],
     this.linkStart,
     this.linkEnd,
+    this.hiddenFields = const [],
   });
 
   factory Plan.fromJson(Map<String, dynamic> json) {
@@ -259,6 +283,7 @@ class Plan {
       linkedActivityIds: _stringList(json['linkedActivityIds']),
       linkStart: _dateValue(json['linkStart']),
       linkEnd: _dateValue(json['linkEnd']),
+      hiddenFields: _stringList(json['hiddenFields']),
     );
   }
   /*

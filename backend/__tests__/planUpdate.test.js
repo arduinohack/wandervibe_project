@@ -10,6 +10,7 @@ const User = require('../models/User');
 const Plan = require('../models/Plan');
 const PlanUser = require('../models/PlanUser');
 const Invitation = require('../models/Invitation');
+const { Event } = require('../models/Event');
 
 jest.setTimeout(30000);
 
@@ -68,6 +69,7 @@ afterEach(async () => {
     Plan.deleteMany({}),
     PlanUser.deleteMany({}),
     Invitation.deleteMany({}),
+    Event.deleteMany({}),
   ]);
 });
 
@@ -298,6 +300,106 @@ describe('owner plan update', () => {
     expect(zero.status).toBe(200);
     expect(zero.body.plan.budget).toBe(0);
     expect((await Plan.findById(planId).lean()).budget).toBe(0);
+  });
+
+  test('an owner or collaborator can hide fields and a guest cannot', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+    });
+    const grace = await registerAndLogin({
+      firstName: 'Grace',
+      lastName: 'Hopper',
+      email: 'grace@example.com',
+    });
+    const alan = await registerAndLogin({
+      firstName: 'Alan',
+      lastName: 'Turing',
+      email: 'alan@example.com',
+    });
+    const planId = await createPlan(ada.token);
+    await acceptRole(ada.token, grace.token, planId, 'grace@example.com', 'Collaborator');
+    await acceptRole(ada.token, alan.token, planId, 'alan@example.com', 'Guest');
+    const activity = await request(app)
+      .post('/api/activities')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({
+        name: 'Dinner',
+        type: 'dining',
+        planId,
+        details: 'Window seat',
+        bookingReference: 'ABC123',
+        cost: 40,
+        startTime: '2026-07-01T18:00:00.000Z',
+        endTime: '2026-07-01T19:00:00.000Z',
+      });
+    expect(activity.status).toBe(201);
+
+    const hidden = await request(app)
+      .put(`/api/plans/${planId}`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({
+        hiddenFields: ['details', 'budget', 'destination', 'cost', 'bookingReference'],
+      });
+    expect(hidden.status).toBe(200);
+    expect(hidden.body.plan.hiddenFields).toEqual([
+      'details',
+      'budget',
+      'destination',
+      'cost',
+      'bookingReference',
+    ]);
+    expect(hidden.body.plan.destination).toBe('Paris');
+    expect(hidden.body.plan.budget).toBe(0);
+    const storedActivity = await Event.findById(activity.body._id).lean();
+    expect(storedActivity.details).toBe('Window seat');
+    expect(storedActivity.bookingReference).toBe('ABC123');
+    expect(storedActivity.cost).toBe(40);
+
+    const replaced = await request(app)
+      .put(`/api/plans/${planId}`)
+      .set('Authorization', `Bearer ${grace.token}`)
+      .send({ hiddenFields: ['cost'] });
+    expect(replaced.status).toBe(200);
+    expect(replaced.body.plan.hiddenFields).toEqual(['cost']);
+    expect(replaced.body.plan.destination).toBe('Paris');
+
+    const denied = await request(app)
+      .put(`/api/plans/${planId}`)
+      .set('Authorization', `Bearer ${alan.token}`)
+      .send({ hiddenFields: ['details'] });
+    expect(denied.status).toBe(403);
+    expect(denied.body.message).toBe('Only Owner or Collaborator can edit a plan');
+    expect((await Plan.findById(planId).lean()).hiddenFields).toEqual(['cost']);
+
+    const bad = await request(app)
+      .put(`/api/plans/${planId}`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ hiddenFields: ['name'] });
+    expect(bad.status).toBe(400);
+    expect(bad.body.message).toBe('Hidden fields are not valid');
+    expect((await Plan.findById(planId).lean()).hiddenFields).toEqual(['cost']);
+
+    const cleared = await request(app)
+      .put(`/api/plans/${planId}`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ hiddenFields: [] });
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.plan.hiddenFields).toEqual([]);
+
+    const kept = await request(app)
+      .put(`/api/plans/${planId}`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ hiddenFields: ['details'] });
+    expect(kept.status).toBe(200);
+    const omitted = await request(app)
+      .put(`/api/plans/${planId}`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ name: 'Paris' });
+    expect(omitted.status).toBe(200);
+    expect(omitted.body.plan.hiddenFields).toEqual(['details']);
+    expect((await Event.findById(activity.body._id).lean()).details).toBe('Window seat');
   });
 
   test('an unknown plan is 404', async () => {
