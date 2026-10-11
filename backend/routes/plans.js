@@ -629,6 +629,7 @@ router.post('/:planId/link', authMiddleware, async (req, res) => {
       sourcePlanId: String(source._id),
       linkedActivityIds: selected.ids,
     });
+    personal.sourcePlanId = String(source._id);
     await personal.save();
     await new PlanUser({
       planId: personalId,
@@ -636,7 +637,8 @@ router.post('/:planId/link', authMiddleware, async (req, res) => {
       role: 'Owner',
     }).save();
 
-    return res.status(201).json({ plan: personal });
+    const saved = await Plan.findById(personalId).lean();
+    return res.status(201).json({ plan: saved });
   } catch (err) {
     console.error('Link plan error:', err);
     return res.status(500).json({ message: 'Server error' });

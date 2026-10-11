@@ -422,6 +422,7 @@ describe('personal plan link', () => {
       .set('Authorization', `Bearer ${sam.token}`)
       .send({ activityIds: [lunchId] });
     expect(linked.status).toBe(201);
+    expect(linked.body.plan.sourcePlanId).toBe(planId);
     const personalId = linked.body.plan._id;
 
     const list = await request(app)
@@ -435,7 +436,7 @@ describe('personal plan link', () => {
       .get(`/api/plans/${personalId}`)
       .set('Authorization', `Bearer ${sam.token}`);
     expect(one.status).toBe(200);
-    expect(one.body.plan.sourcePlanId).toBe(planId);
+    expect(one.body.plan.sourcePlanId).toBe(linked.body.plan.sourcePlanId);
     expect(one.body.plan.name).toBe('My Paris');
 
     const source = await request(app)

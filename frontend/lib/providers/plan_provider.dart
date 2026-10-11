@@ -237,6 +237,35 @@ class PlanReassignResult {
   const PlanReassignResult({this.status, this.error, this.ownerId});
 }
 
+Plan _planWithSourceId(Plan plan, String sourcePlanId) {
+  if (plan.sourcePlanId == sourcePlanId) return plan;
+  return Plan(
+    id: plan.id,
+    type: plan.type,
+    name: plan.name,
+    destination: plan.destination,
+    startDate: plan.startDate,
+    endDate: plan.endDate,
+    autoCalculateStartDate: plan.autoCalculateStartDate,
+    autoCalculateEndDate: plan.autoCalculateEndDate,
+    location: plan.location,
+    budget: plan.budget,
+    planningState: plan.planningState,
+    timeZone: plan.timeZone,
+    participants: plan.participants,
+    ownerId: plan.ownerId,
+    activityIds: plan.activityIds,
+    createdAt: plan.createdAt,
+    earliestStart: plan.earliestStart,
+    latestEnd: plan.latestEnd,
+    sourcePlanId: sourcePlanId,
+    linkedActivityIds: plan.linkedActivityIds,
+    linkStart: plan.linkStart,
+    linkEnd: plan.linkEnd,
+    hiddenFields: plan.hiddenFields,
+  );
+}
+
 Plan _planWithOwner(Plan plan, String ownerId) {
   return Plan(
     id: plan.id,
@@ -992,11 +1021,14 @@ class PlanProvider extends ChangeNotifier {
       final data = json.decode(response.body);
       final planJson = data is Map ? data['plan'] : null;
       if (planJson is! Map) return const PlanLinkResult(status: 201);
-      final created = Plan.fromJson(Map<String, dynamic>.from(planJson));
-      _plans = [..._plans, created];
+      final parsed = Plan.fromJson(Map<String, dynamic>.from(planJson));
+      final sourceId = parsed.sourcePlanId.trim().isNotEmpty
+          ? parsed.sourcePlanId
+          : planId;
+      final created = _planWithSourceId(parsed, sourceId);
       _viewerRoles[created.id] = 'Owner';
-      notifyListeners();
-      return PlanLinkResult(status: 201, plan: created);
+      final stored = storeReturnedPlan(created);
+      return PlanLinkResult(status: 201, plan: stored);
     } catch (e) {
       logger.e('Error linking a personal plan: $e');
       return const PlanLinkResult();

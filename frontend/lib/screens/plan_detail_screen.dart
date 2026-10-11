@@ -597,10 +597,20 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     return 200;
   }
 
+  /// Source id from the open plan. The plan passed in at creation wins when the
+  /// list copy has not kept the id from the 201 body.
+  String _linkedSourceId(PlanProvider planProvider) {
+    final shown = _shownPlan(planProvider).sourcePlanId.trim();
+    if (shown.isNotEmpty) return shown;
+    final opened = widget.plan.sourcePlanId.trim();
+    if (opened.isNotEmpty) return opened;
+    return _plan.sourcePlanId.trim();
+  }
+
   /// Loads the source plan and its members. Returns 401 when the session ends.
   /// People come from the source plan, not this plan.
   Future<int?> _readLinkedPlan(PlanProvider planProvider, String? token) async {
-    final sourceId = _shownPlan(planProvider).sourcePlanId.trim();
+    final sourceId = _linkedSourceId(planProvider);
     if (sourceId.isEmpty) {
       _linkedSource = null;
       _linkedPlanners = const [];
@@ -1220,7 +1230,12 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
   }
 
   bool _showLinkMyPlan(Plan plan) {
-    return plan.sourcePlanId.trim().isEmpty;
+    if (plan.sourcePlanId.trim().isNotEmpty) return false;
+    if (plan.id == widget.plan.id &&
+        widget.plan.sourcePlanId.trim().isNotEmpty) {
+      return false;
+    }
+    return true;
   }
 
   List<Activity> _linkChoices(List<Activity> activities) {
