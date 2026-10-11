@@ -1733,6 +1733,9 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
   late final TextEditingController _googlePlaceIdController;
   late final TextEditingController _detailsController;
   late final TextEditingController _bookingReferenceController;
+  late final TextEditingController _confirmationController;
+  late final TextEditingController _originController;
+  late final TextEditingController _destinationController;
   late final TextEditingController _costController;
   late String _costType;
   late final TextEditingController _gateController;
@@ -1746,6 +1749,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
   DateTime? _end;
   bool _startChanged = false;
   bool _endChanged = false;
+  bool _parsingConfirmation = false;
   String? _error;
 
   String _storedDurationText(Activity? activity) {
@@ -1787,6 +1791,9 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     _bookingReferenceController = TextEditingController(
       text: (activity?.bookingReference ?? '').trim(),
     );
+    _confirmationController = TextEditingController();
+    _originController = TextEditingController();
+    _destinationController = TextEditingController();
     _costController = TextEditingController(text: _costBoxText(activity?.cost));
     _costType = _storedCostType(activity);
     _gateController = TextEditingController(text: activity?.gate ?? '');
@@ -1847,6 +1854,9 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     _googlePlaceIdController.dispose();
     _detailsController.dispose();
     _bookingReferenceController.dispose();
+    _confirmationController.dispose();
+    _originController.dispose();
+    _destinationController.dispose();
     _costController.dispose();
     _gateController.dispose();
     _baggageController.dispose();
@@ -2006,6 +2016,132 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     );
   }
 
+  void _syncFlightLocation() {
+    final origin = _originController.text.trim();
+    final destination = _destinationController.text.trim();
+    if (origin.isEmpty && destination.isEmpty) return;
+    if (origin.isNotEmpty && destination.isNotEmpty) {
+      _locationController.text = '$origin to $destination';
+      return;
+    }
+    _locationController.text = origin.isNotEmpty ? origin : destination;
+  }
+
+  DateTime? _wallFromParsed(String raw, String zone, DateTime? existing) {
+    final text = raw.trim();
+    final timed = RegExp(
+      r'^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$',
+    ).firstMatch(text);
+    final dated = RegExp(r'^(\d{4})-(\d{2})-(\d{2})$').firstMatch(text);
+    final match = timed ?? dated;
+    if (match == null) return null;
+    final year = int.parse(match.group(1)!);
+    final month = int.parse(match.group(2)!);
+    final day = int.parse(match.group(3)!);
+    var hour = 0;
+    var minute = 0;
+    if (timed != null) {
+      hour = int.parse(timed.group(4)!);
+      minute = int.parse(timed.group(5)!);
+    } else if (existing != null) {
+      final clock = clockInZone(existing, zone);
+      hour = clock.hour;
+      minute = clock.minute;
+    }
+    return _instantFromWall(DateTime.utc(year, month, day, hour, minute), zone);
+  }
+
+  void _applyConfirmation(Map<String, String> values) {
+    final booking = values['bookingReference'];
+    if (booking != null && booking.isNotEmpty) {
+      _bookingReferenceController.text = booking;
+    }
+    final parsedName = values['name'];
+    if (parsedName != null && parsedName.isNotEmpty) {
+      _nameController.text = parsedName;
+    }
+    if (_type == 'flight') {
+      final origin = values['origin'];
+      final destination = values['destination'];
+      if (origin != null && origin.isNotEmpty) {
+        _originController.text = origin;
+      }
+      if (destination != null && destination.isNotEmpty) {
+        _destinationController.text = destination;
+      }
+      _syncFlightLocation();
+      if (_nameController.text.trim().isEmpty) {
+        final place = _locationController.text.trim();
+        if (place.isNotEmpty) _nameController.text = place;
+      }
+    }
+    final startText = values['start'];
+    if (startText != null && startText.isNotEmpty) {
+      final next = _wallFromParsed(startText, _startZone, _start);
+      if (next != null) {
+        _start = next;
+        _startChanged = true;
+      }
+    }
+    final endText = values['end'];
+    if (endText != null && endText.isNotEmpty) {
+      final next = _wallFromParsed(endText, _endZone, _end);
+      if (next != null) {
+        _end = next;
+        _endChanged = true;
+      }
+    }
+    final start = _start;
+    final end = _end;
+    if (start != null && end != null && !end.isBefore(start)) {
+      _durationController.text = end.difference(start).inMinutes.toString();
+    }
+    _error = null;
+  }
+
+  Future<void> _fillFromConfirmation() async {
+    final text = _confirmationController.text;
+    if (text.trim().isEmpty || _parsingConfirmation) return;
+    setState(() => _parsingConfirmation = true);
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final messenger = ScaffoldMessenger.of(context);
+    final result = await planProvider.parseConfirmation(
+      text: text,
+      type: _type,
+      token: userProvider.token,
+    );
+    if (!mounted) return;
+    if (result.status == 401) {
+      setState(() => _parsingConfirmation = false);
+      await _endSession();
+      return;
+    }
+    if (result.status == 403) {
+      setState(() => _parsingConfirmation = false);
+      messenger.showSnackBar(const SnackBar(content: Text('Not allowed')));
+      return;
+    }
+    if (result.status != 200) {
+      setState(() {
+        _parsingConfirmation = false;
+        _error = result.error ?? 'Could not read the confirmation';
+      });
+      return;
+    }
+    if (result.values.isEmpty) {
+      setState(() {
+        _parsingConfirmation = false;
+        _error = 'No fields found in the text';
+      });
+      return;
+    }
+    setState(() {
+      _parsingConfirmation = false;
+      _applyConfirmation(result.values);
+    });
+  }
+
   Future<void> _endSession() async {
     final userProvider = Provider.of<UserProvider>(context, listen: false);
     final planProvider = Provider.of<PlanProvider>(context, listen: false);
@@ -2144,10 +2280,29 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
   }
 
   Widget _fieldsColumn() {
+    final pastesConfirmation = _type == 'flight' || _type == 'hotel';
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (pastesConfirmation) ...[
+          TextField(
+            controller: _confirmationController,
+            minLines: 3,
+            maxLines: 6,
+            decoration: const InputDecoration(
+              labelText: 'Confirmation',
+              alignLabelWithHint: true,
+            ),
+          ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              onPressed: _parsingConfirmation ? null : _fillFromConfirmation,
+              child: const Text('Fill from confirmation'),
+            ),
+          ),
+        ],
         TextField(
           controller: _nameController,
           decoration: const InputDecoration(labelText: 'Name'),
@@ -2205,6 +2360,22 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
           },
         ),
         if (_usesFlightFields) ...[
+          _textField(
+            _originController,
+            'Origin',
+            onChanged: (_) {
+              _syncFlightLocation();
+              setState(() => _error = null);
+            },
+          ),
+          _textField(
+            _destinationController,
+            'Destination',
+            onChanged: (_) {
+              _syncFlightLocation();
+              setState(() => _error = null);
+            },
+          ),
           _textField(_gateController, 'Gate'),
           _textField(_baggageController, 'Baggage claim'),
         ],

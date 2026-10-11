@@ -377,6 +377,18 @@ class ActivityRestoreResult {
   const ActivityRestoreResult({this.status, this.error});
 }
 
+class ConfirmationParse {
+  final int? status;
+  final String? error;
+  final Map<String, String> values;
+
+  const ConfirmationParse({
+    this.status,
+    this.error,
+    this.values = const {},
+  });
+}
+
 String _trimmed(dynamic value) {
   if (value == null) return '';
   return value.toString().trim();
@@ -1131,6 +1143,55 @@ class PlanProvider extends ChangeNotifier {
       notifyListeners();
     } catch (e) {
       logger.e('Error reloading plan: $e');
+    }
+  }
+
+  /// POST /api/activities/parse-confirmation. Reads pasted text and does not save.
+  Future<ConfirmationParse> parseConfirmation({
+    required String text,
+    required String type,
+    required String? token,
+  }) async {
+    try {
+      if (token == null || token.isEmpty) {
+        return const ConfirmationParse(status: 401);
+      }
+      final response = await http.post(
+        Uri.parse('$backendBaseUrl$apiActivities/parse-confirmation'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode({'text': text, 'type': type}),
+      );
+      if (response.statusCode != 200) {
+        return ConfirmationParse(
+          status: response.statusCode,
+          error: _apiErrorMessage(response.body),
+        );
+      }
+      final data = json.decode(response.body);
+      if (data is! Map) return ConfirmationParse(status: response.statusCode);
+      const keys = [
+        'bookingReference',
+        'origin',
+        'destination',
+        'name',
+        'start',
+        'end',
+      ];
+      final values = <String, String>{};
+      for (final key in keys) {
+        final value = data[key];
+        if (value is! String) continue;
+        final trimmed = value.trim();
+        if (trimmed.isEmpty) continue;
+        values[key] = trimmed;
+      }
+      return ConfirmationParse(status: 200, values: values);
+    } catch (e) {
+      logger.e('Error parsing confirmation: $e');
+      return const ConfirmationParse();
     }
   }
 

@@ -10,6 +10,7 @@ const { applyTypeChange, assertTypeRequirements } = require('../utils/activityTy
 const { recordActivityRevision } = require('../utils/recordActivityRevision');
 const { syncPlanDates } = require('../utils/syncPlanDates');
 const { resolveActivitySchedule, resolveActivityZones, compareStoredOrder } = require('../utils/activityTimes');
+const { parseConfirmation } = require('../utils/parseConfirmation');
 
 function applySchedule(target, schedule) {
   if (schedule.startTime) target.startTime = schedule.startTime;
@@ -33,6 +34,18 @@ async function membershipRole(planId, callerId) {
 async function callerMayEditActivities(planId, callerId) {
   const role = await membershipRole(planId, callerId);
   return role === 'Owner' || role === 'Collaborator';
+}
+
+async function callerMayParseConfirmation(callerId) {
+  if (!callerId) return false;
+  const id = String(callerId);
+  const owned = await Plan.exists({ ownerId: id });
+  if (owned) return true;
+  const rows = await PlanUser.find({ userId: id }).select('role').lean();
+  return rows.some((row) => {
+    const role = canonicalMembershipRole(row.role);
+    return role === 'Owner' || role === 'Collaborator';
+  });
 }
 
 async function callerMayReadHistory(planId, callerId) {
@@ -218,6 +231,30 @@ router.put('/order', authMiddleware, async (req, res) => {
     res.json({ activityIds });
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Fixed path. It reads pasted text and does not create or update an activity.
+router.post('/parse-confirmation', authMiddleware, async (req, res) => {
+  try {
+    const callerId = req.user.userId || req.user.id;
+    const allowed = await callerMayParseConfirmation(callerId);
+    if (!allowed) {
+      return res.status(403).json({
+        message: 'Only Owner or Collaborator can parse a confirmation',
+      });
+    }
+    const type = typeof req.body?.type === 'string' ? req.body.type.trim().toLowerCase() : '';
+    if (type !== 'flight' && type !== 'hotel') {
+      return res.status(400).json({ message: 'Type must be flight or hotel' });
+    }
+    if (typeof req.body?.text !== 'string') {
+      return res.status(400).json({ message: 'Text is required' });
+    }
+    return res.json(parseConfirmation(req.body.text, type));
+  } catch (error) {
+    console.error('Parse confirmation error:', error);
+    return res.status(500).json({ message: 'Server error' });
   }
 });
 
