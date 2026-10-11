@@ -86,6 +86,54 @@ String? planHeaderDateLine(
   );
 }
 
+DateTime _ymdDate(String value) {
+  return DateTime.utc(
+    int.parse(value.substring(0, 4)),
+    int.parse(value.substring(5, 7)),
+    int.parse(value.substring(8, 10)),
+  );
+}
+
+/// Day headers for an itinerary. The first activity that has a start is Day 1.
+/// A later calendar day keeps the gap, so six days later is Day 7. The same
+/// calendar day keeps that number and does not repeat the header. Dates use
+/// [planTimeZone]. An empty plan zone uses [deviceTimeZone], then the device zone.
+List<String?> planItineraryDayHeaders(
+  List<DateTime?> starts, {
+  String planTimeZone = '',
+  String? deviceTimeZone,
+}) {
+  final headers = List<String?>.filled(starts.length, null);
+  final dayKeys = <String?>[
+    for (final start in starts)
+      start == null
+          ? null
+          : formatPlanHeaderDate(
+              start,
+              planTimeZone: planTimeZone,
+              deviceTimeZone: deviceTimeZone,
+            ),
+  ];
+  String? origin;
+  for (final key in dayKeys) {
+    if (key != null) {
+      origin = key;
+      break;
+    }
+  }
+  String? previousDay;
+  for (var index = 0; index < starts.length; index++) {
+    final dayKey = dayKeys[index];
+    if (index != 0 && dayKey == previousDay) continue;
+    previousDay = dayKey;
+    final number = origin == null || dayKey == null
+        ? 1
+        : _ymdDate(dayKey).difference(_ymdDate(origin)).inDays + 1;
+    headers[index] = dayKey == null ? 'Day $number' : 'Day $number · $dayKey';
+  }
+  return headers;
+}
+
 String _stringValue(dynamic value, {String fallback = ''}) {
   if (value == null) return fallback;
   if (value is Map) {

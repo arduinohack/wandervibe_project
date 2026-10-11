@@ -188,15 +188,6 @@ List<_ShownActivityTimes> _shownActivityTimes(List<Activity> activities) {
   return shown;
 }
 
-String? _localDayKey(DateTime? instant, String zone) {
-  if (instant == null) return null;
-  final clock = clockInZone(instant, zone);
-  final year = clock.year.toString().padLeft(4, '0');
-  final month = clock.month.toString().padLeft(2, '0');
-  final day = clock.day.toString().padLeft(2, '0');
-  return '$year-$month-$day';
-}
-
 String _pdfClock(DateTime? instant, String zone) {
   if (instant == null) return 'not set';
   final abbreviation = zoneAbbreviation(instant, zone).trim();
@@ -405,26 +396,13 @@ Activity _activityWithTimes(Activity activity, DateTime? start, DateTime? end) {
 }
 
 List<String?> _dayHeaders(
-  List<Activity> activities,
   List<_ShownActivityTimes> times,
   String planZone,
 ) {
-  final headers = List<String?>.filled(activities.length, null);
-  String? previousDay;
-  var dayNumber = 0;
-  for (var index = 0; index < activities.length; index++) {
-    final activity = activities[index];
-    final dayKey = _localDayKey(
-      times[index].start,
-      _activityStartZone(activity, planZone),
-    );
-    if (index == 0 || dayKey != previousDay) {
-      dayNumber += 1;
-      headers[index] = dayKey == null ? 'Day $dayNumber' : 'Day $dayNumber · $dayKey';
-      previousDay = dayKey;
-    }
-  }
-  return headers;
+  return planItineraryDayHeaders(
+    [for (final time in times) time.start],
+    planTimeZone: planZone,
+  );
 }
 
 int? _wholeMinutes(String text) {
@@ -905,7 +883,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
         }
       }
       final shownTimes = _shownActivityTimes(activities);
-      final dayHeaders = _dayHeaders(activities, shownTimes, plan.timeZone);
+      final dayHeaders = _dayHeaders(shownTimes, plan.timeZone);
       final rows = <PlanPdfRow>[
         for (var index = 0; index < activities.length; index++)
           _pdfActivityRow(
@@ -1311,7 +1289,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
           final activities = planProvider.itineraryActivities;
           final canChange = canAddActivity(storedRole);
           final shownTimes = _shownActivityTimes(activities);
-          final dayHeaders = _dayHeaders(activities, shownTimes, shown.timeZone);
+          final dayHeaders = _dayHeaders(shownTimes, shown.timeZone);
           final dateLine = planHeaderDateLine(
             activities,
             planTimeZone: shown.timeZone,
