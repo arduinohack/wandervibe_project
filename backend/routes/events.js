@@ -177,19 +177,41 @@ router.put('/order', authMiddleware, async (req, res) => {
     if (!allowed) {
       return res.status(403).json({ message: 'Only Owner or Collaborator can change activities' });
     }
-    const rows = await Event.find({ planId }).select('_id').lean();
-    if (activityIds.length !== rows.length || new Set(activityIds.map(String)).size !== activityIds.length) {
-      return res.status(400).json({ message: 'activityIds must list each activity once' });
-    }
-    const known = new Set(rows.map((row) => String(row._id)));
+    const [plan, rows] = await Promise.all([
+      Plan.findById(planId).select('sourcePlanId linkedActivityIds').lean(),
+      Event.find({ planId }).select('_id').lean(),
+    ]);
+    const sourcePlanId = plan && typeof plan.sourcePlanId === 'string'
+      ? plan.sourcePlanId.trim()
+      : '';
+    const linkedIds = new Set(
+      sourcePlanId && Array.isArray(plan.linkedActivityIds)
+        ? plan.linkedActivityIds.map((id) => String(id))
+        : [],
+    );
+    const ownIds = new Set(rows.map((row) => String(row._id)));
+    const seen = new Set();
+    const ownInOrder = [];
     for (const id of activityIds) {
-      if (!known.has(String(id))) {
+      const key = String(id);
+      if (!key || seen.has(key)) {
+        return res.status(400).json({ message: 'activityIds must list each activity once' });
+      }
+      seen.add(key);
+      if (ownIds.has(key)) {
+        ownInOrder.push(key);
+      } else if (!(sourcePlanId && linkedIds.has(key))) {
         return res.status(400).json({ message: 'activityIds must list each activity once' });
       }
     }
+    if (ownInOrder.length !== ownIds.size || (!sourcePlanId && activityIds.length !== rows.length)) {
+      return res.status(400).json({ message: 'activityIds must list each activity once' });
+    }
     for (let index = 0; index < activityIds.length; index += 1) {
+      const key = String(activityIds[index]);
+      if (!ownIds.has(key)) continue;
       await Event.updateOne(
-        { _id: activityIds[index], planId },
+        { _id: key, planId },
         { $set: { eventNum: index } },
       );
     }

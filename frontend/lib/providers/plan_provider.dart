@@ -493,8 +493,11 @@ class PlanProvider extends ChangeNotifier {
         if (item is! Map) continue;
         parsed.add(Activity.fromJson(_itineraryActivityJson(item)));
       }
-      _itinerary = parsed;
-      _activities = List<Activity>.from(parsed);
+      final ordered = parsed.any((activity) => activity.linked)
+          ? _sortedByStartTime(parsed)
+          : parsed;
+      _itinerary = ordered;
+      _activities = List<Activity>.from(ordered);
       _itineraryError = null;
       logger.i('Fetched ${_itinerary.length} activities for plan $planId');
       return 200;
@@ -1043,14 +1046,19 @@ class PlanProvider extends ChangeNotifier {
       final dynamic data = json.decode(response.body);
       if (data is! Map) return 201;
       final created = Activity.fromJson(_itineraryActivityJson(data));
+      final mixesLinked = _itinerary.any((activity) => activity.linked) ||
+          _plans.any(
+            (plan) => plan.id == planId && plan.linkedActivityIds.isNotEmpty,
+          );
       final next = List<Activity>.from(_itinerary);
       if (insertIndex == null || insertIndex < 0 || insertIndex > next.length) {
         next.add(created);
       } else {
         next.insert(insertIndex, created);
       }
-      _itinerary = next;
-      _activities = List<Activity>.from(next);
+      final shown = mixesLinked ? _sortedByStartTime(next) : next;
+      _itinerary = shown;
+      _activities = List<Activity>.from(shown);
       notifyListeners();
       await _reloadPlan(planId, token);
       return 201;
@@ -1132,8 +1140,11 @@ class PlanProvider extends ChangeNotifier {
           for (final activity in _itinerary)
             if (activity.id == activityId) updated else activity,
         ];
-        _itinerary = next;
-        _activities = List<Activity>.from(next);
+        final shown = next.any((activity) => activity.linked)
+            ? _sortedByStartTime(next)
+            : next;
+        _itinerary = shown;
+        _activities = List<Activity>.from(shown);
         notifyListeners();
       }
       if (planId.isNotEmpty) await _reloadPlan(planId, token);

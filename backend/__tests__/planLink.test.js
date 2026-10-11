@@ -328,4 +328,66 @@ describe('personal plan link', () => {
     expect(missingToken.status).toBe(401);
     expect(missingToken.body.message).toBe('No token, authorization denied');
   });
+
+  test('own and linked activities stay in one list sorted by start time', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+    });
+    const sam = await registerAndLogin({
+      firstName: 'Sam',
+      lastName: 'Guest',
+      email: 'sam@example.com',
+    });
+    const planId = await createPlan(ada.token);
+    await acceptRole(ada.token, sam.token, planId, 'sam@example.com', 'Guest');
+    const lunchId = await addActivity(ada.token, planId, 'Lunch', '2026-07-02T12:00:00.000Z');
+    const linked = await request(app)
+      .post(`/api/plans/${planId}/link`)
+      .set('Authorization', `Bearer ${sam.token}`)
+      .send({ activityIds: [lunchId] });
+    const personalId = linked.body.plan._id;
+    const earlyId = await addActivity(sam.token, personalId, 'Early note', '2026-06-01T08:00:00.000Z');
+    const lateId = await addActivity(sam.token, personalId, 'Late note', '2026-09-01T08:00:00.000Z');
+    const lunchBefore = await Event.findById(lunchId).lean();
+
+    const itinerary = await request(app)
+      .get(`/api/plans/${personalId}/itinerary`)
+      .set('Authorization', `Bearer ${sam.token}`);
+    expect(itinerary.body.events.map((row) => row._id)).toEqual([earlyId, lunchId, lateId]);
+    expect(itinerary.body.events.map((row) => row.linked)).toEqual([false, true, false]);
+
+    const resorted = await request(app)
+      .put('/api/activities/order')
+      .set('Authorization', `Bearer ${sam.token}`)
+      .send({ planId: personalId, activityIds: [earlyId, lunchId, lateId] });
+    expect(resorted.status).toBe(200);
+    const lunch = await Event.findById(lunchId).lean();
+    expect(lunch.planId).toBe(planId);
+    expect(lunch.name).toBe('Lunch');
+    expect(lunch.eventNum).toBe(lunchBefore.eventNum);
+    expect((await Event.findById(earlyId).lean()).eventNum).toBe(0);
+    expect((await Event.findById(lateId).lean()).eventNum).toBe(2);
+
+    const reversed = await request(app)
+      .put('/api/activities/order')
+      .set('Authorization', `Bearer ${sam.token}`)
+      .send({ planId: personalId, activityIds: [lateId, lunchId, earlyId] });
+    expect(reversed.status).toBe(200);
+    const stillSorted = await request(app)
+      .get(`/api/plans/${personalId}/itinerary`)
+      .set('Authorization', `Bearer ${sam.token}`);
+    expect(stillSorted.body.events.map((row) => row._id)).toEqual([earlyId, lunchId, lateId]);
+    expect((await Event.findById(lunchId).lean()).eventNum).toBe(lunchBefore.eventNum);
+
+    const unknown = await request(app)
+      .put('/api/activities/order')
+      .set('Authorization', `Bearer ${sam.token}`)
+      .send({ planId: personalId, activityIds: [earlyId, lateId, 'not-on-this-plan'] });
+    expect(unknown.status).toBe(400);
+    expect(unknown.body.message).toBe('activityIds must list each activity once');
+    expect((await Event.findById(lunchId).lean()).eventNum).toBe(lunchBefore.eventNum);
+    expect((await Plan.findById(planId).lean()).name).toBe('Paris');
+  });
 });
