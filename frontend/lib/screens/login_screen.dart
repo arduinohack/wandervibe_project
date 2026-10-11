@@ -81,6 +81,12 @@ class _LoginScreenState extends State<LoginScreen> {
     return condition ? _login : null; // Return _login if true, null if false
   }
 
+  void _submitFromField(String _) {
+    final submit = _getOnPressed();
+    if (submit == null) return;
+    submit();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -119,6 +125,8 @@ class _LoginScreenState extends State<LoginScreen> {
                       prefixIcon: Icon(Icons.email),
                     ),
                     keyboardType: TextInputType.emailAddress,
+                    textInputAction: TextInputAction.done,
+                    onFieldSubmitted: _submitFromField,
                     validator: (value) {
                       if (value == null || value.isEmpty) {
                         return 'Email required';
@@ -143,6 +151,8 @@ class _LoginScreenState extends State<LoginScreen> {
                       prefixIcon: Icon(Icons.lock),
                     ),
                     obscureText: true,
+                    textInputAction: TextInputAction.done,
+                    onFieldSubmitted: _submitFromField,
                     validator: (value) {
                       final trimmedValue = value?.trim();
                       if (trimmedValue == null || trimmedValue.isEmpty) {
