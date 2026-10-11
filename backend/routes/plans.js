@@ -674,6 +674,7 @@ router.put('/:planId/link', authMiddleware, async (req, res) => {
     }
 
     plan.linkedActivityIds = selected.ids;
+    plan.sourcePlanId = sourcePlanId;
     await plan.save();
     return res.json({ plan });
   } catch (err) {

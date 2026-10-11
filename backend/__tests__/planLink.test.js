@@ -271,6 +271,12 @@ describe('personal plan link', () => {
       .send({ activityIds: [dinnerId] });
     expect(replaced.status).toBe(200);
     expect(replaced.body.plan.linkedActivityIds).toEqual([dinnerId]);
+    expect(replaced.body.plan.sourcePlanId).toBe(planId);
+    const savedPlan = await request(app)
+      .get(`/api/plans/${personalId}`)
+      .set('Authorization', `Bearer ${sam.token}`);
+    expect(savedPlan.status).toBe(200);
+    expect(savedPlan.body.plan.sourcePlanId).toBe(planId);
     const afterUncheck = await request(app)
       .get(`/api/plans/${personalId}/itinerary`)
       .set('Authorization', `Bearer ${sam.token}`);
@@ -294,6 +300,7 @@ describe('personal plan link', () => {
       .send({ activityIds: [] });
     expect(cleared.status).toBe(200);
     expect(cleared.body.plan.linkedActivityIds).toEqual([]);
+    expect(cleared.body.plan.sourcePlanId).toBe(planId);
     const none = await request(app)
       .get(`/api/plans/${personalId}/itinerary`)
       .set('Authorization', `Bearer ${sam.token}`);

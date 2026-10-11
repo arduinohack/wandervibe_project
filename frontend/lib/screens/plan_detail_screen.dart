@@ -557,6 +557,16 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
       });
       return;
     }
+    final saved = await _storeOpenPlan(planProvider, userProvider.token);
+    if (!mounted) return;
+    if (saved == 401) {
+      setState(() {
+        _loaded = true;
+        _status = status;
+      });
+      await _endSession(userProvider, planProvider, navigator);
+      return;
+    }
     final linked = await _readLinkedPlan(planProvider, userProvider.token);
     if (!mounted) return;
     if (linked == 401) {
@@ -573,16 +583,24 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     });
   }
 
-  Plan _openPlan(PlanProvider planProvider) {
-    for (final plan in planProvider.plans) {
-      if (plan.id == widget.plan.id) return plan;
-    }
-    return widget.plan;
+  /// GET /api/plans/:planId stores sourcePlanId from the saved plan.
+  /// Returns 401 when the session ends. A missing plan leaves the saved id.
+  Future<int?> _storeOpenPlan(PlanProvider planProvider, String? token) async {
+    final read = await planProvider.readPlan(
+      planId: widget.plan.id,
+      token: token,
+    );
+    if (read.status == 401) return 401;
+    final fresh = read.plan;
+    if (fresh == null) return read.status;
+    _plan = planProvider.storeReturnedPlan(fresh);
+    return 200;
   }
 
   /// Loads the source plan and its members. Returns 401 when the session ends.
+  /// People come from the source plan, not this plan.
   Future<int?> _readLinkedPlan(PlanProvider planProvider, String? token) async {
-    final sourceId = _openPlan(planProvider).sourcePlanId.trim();
+    final sourceId = _shownPlan(planProvider).sourcePlanId.trim();
     if (sourceId.isEmpty) {
       _linkedSource = null;
       _linkedPlanners = const [];
@@ -1266,6 +1284,8 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
         );
         return;
       }
+      final saved = result.plan;
+      if (saved != null) _plan = saved;
       await _load();
       return;
     }

@@ -267,10 +267,18 @@ Plan _planWithOwner(Plan plan, String ownerId) {
 
 /// PUT /api/plans/:planId does not return the activity date span that GET adds.
 /// Keep the previous span when the saved plan has none, so the list date line stays.
-Plan _planKeepingActivitySpan(Plan updated, Plan previous) {
+/// [sourcePlanId] keeps a saved link when the new payload leaves that field blank.
+Plan _planKeepingActivitySpan(
+  Plan updated,
+  Plan previous, {
+  String? sourcePlanId,
+}) {
   final earliestStart = updated.earliestStart ?? previous.earliestStart;
   final latestEnd = updated.latestEnd ?? previous.latestEnd;
-  if (earliestStart == updated.earliestStart && latestEnd == updated.latestEnd) {
+  final source = sourcePlanId ?? updated.sourcePlanId;
+  if (earliestStart == updated.earliestStart &&
+      latestEnd == updated.latestEnd &&
+      source == updated.sourcePlanId) {
     return updated;
   }
   return Plan(
@@ -292,7 +300,7 @@ Plan _planKeepingActivitySpan(Plan updated, Plan previous) {
     createdAt: updated.createdAt,
     earliestStart: earliestStart,
     latestEnd: latestEnd,
-    sourcePlanId: updated.sourcePlanId,
+    sourcePlanId: source,
     linkedActivityIds: updated.linkedActivityIds,
     linkStart: updated.linkStart,
     linkEnd: updated.linkEnd,
@@ -995,6 +1003,38 @@ class PlanProvider extends ChangeNotifier {
     }
   }
 
+  /// Keeps [updated] on the open plan list. A blank sourcePlanId leaves the
+  /// saved link in place. A plan that was not in the list is added.
+  Plan storeReturnedPlan(Plan updated) {
+    Plan? previous;
+    for (final plan in _plans) {
+      if (plan.id == updated.id) {
+        previous = plan;
+        break;
+      }
+    }
+    final keptSource = updated.sourcePlanId.trim().isNotEmpty
+        ? updated.sourcePlanId
+        : (previous?.sourcePlanId ?? '');
+    final stored = previous == null
+        ? updated
+        : _planKeepingActivitySpan(
+            updated,
+            previous,
+            sourcePlanId: keptSource,
+          );
+    if (previous == null) {
+      _plans = [..._plans, stored];
+    } else {
+      _plans = [
+        for (final plan in _plans)
+          if (plan.id == updated.id) stored else plan,
+      ];
+    }
+    notifyListeners();
+    return stored;
+  }
+
   /// PUT /api/plans/:planId/link. Replaces the selected source activities.
   Future<PlanLinkResult> updateLinkedActivities({
     required String planId,
@@ -1025,15 +1065,8 @@ class PlanProvider extends ChangeNotifier {
       final planJson = data is Map ? data['plan'] : null;
       if (planJson is! Map) return const PlanLinkResult(status: 200);
       final updated = Plan.fromJson(Map<String, dynamic>.from(planJson));
-      _plans = [
-        for (final plan in _plans)
-          if (plan.id == planId)
-            _planKeepingActivitySpan(updated, plan)
-          else
-            plan,
-      ];
-      notifyListeners();
-      return PlanLinkResult(status: 200, plan: updated);
+      final stored = storeReturnedPlan(updated);
+      return PlanLinkResult(status: 200, plan: stored);
     } catch (e) {
       logger.e('Error updating linked activities: $e');
       return const PlanLinkResult();
