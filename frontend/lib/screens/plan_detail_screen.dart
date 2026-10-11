@@ -2507,6 +2507,26 @@ class _LinkActivitiesDialogState extends State<_LinkActivitiesDialog> {
     };
   }
 
+  bool get _allChecked {
+    if (widget.activities.isEmpty) return false;
+    for (final activity in widget.activities) {
+      final id = activity.id;
+      if (id == null || id.isEmpty || !_checked.contains(id)) return false;
+    }
+    return true;
+  }
+
+  void _setAll(bool checked) {
+    setState(() {
+      _checked.clear();
+      if (!checked) return;
+      for (final activity in widget.activities) {
+        final id = activity.id;
+        if (id != null && id.isNotEmpty) _checked.add(id);
+      }
+    });
+  }
+
   void _submit() {
     Navigator.pop(context, [
       for (final activity in widget.activities)
@@ -2523,29 +2543,41 @@ class _LinkActivitiesDialogState extends State<_LinkActivitiesDialog> {
         height: 360,
         child: widget.activities.isEmpty
             ? const Text('No activities yet')
-            : ListView(
+            : Column(
                 children: [
-                  for (final activity in widget.activities)
-                    CheckboxListTile(
-                      value: _checked.contains(activity.id),
-                      controlAffinity: ListTileControlAffinity.leading,
-                      title: Text(
-                        activity.name.trim().isEmpty
-                            ? 'Unnamed activity'
-                            : activity.name.trim(),
-                      ),
-                      onChanged: (checked) {
-                        final id = activity.id;
-                        if (id == null || id.isEmpty) return;
-                        setState(() {
-                          if (checked == true) {
-                            _checked.add(id);
-                          } else {
-                            _checked.remove(id);
-                          }
-                        });
-                      },
+                  CheckboxListTile(
+                    value: _allChecked,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    title: const Text('Select all'),
+                    onChanged: (checked) => _setAll(checked == true),
+                  ),
+                  Expanded(
+                    child: ListView(
+                      children: [
+                        for (final activity in widget.activities)
+                          CheckboxListTile(
+                            value: _checked.contains(activity.id),
+                            controlAffinity: ListTileControlAffinity.leading,
+                            title: Text(
+                              activity.name.trim().isEmpty
+                                  ? 'Unnamed activity'
+                                  : activity.name.trim(),
+                            ),
+                            onChanged: (checked) {
+                              final id = activity.id;
+                              if (id == null || id.isEmpty) return;
+                              setState(() {
+                                if (checked == true) {
+                                  _checked.add(id);
+                                } else {
+                                  _checked.remove(id);
+                                }
+                              });
+                            },
+                          ),
+                      ],
                     ),
+                  ),
                 ],
               ),
       ),
