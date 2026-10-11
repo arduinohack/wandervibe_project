@@ -37,6 +37,36 @@ bool _isStoredOwner(String role) {
   }
 }
 
+bool _isAcceptedMember(PlanMember member) {
+  return member.status.trim().toLowerCase() == 'accepted';
+}
+
+bool _isCollaboratorRole(String role) {
+  switch (role.trim().toLowerCase()) {
+    case 'collaborator':
+    case 'vibeplanner':
+      return true;
+    default:
+      return false;
+  }
+}
+
+/// Accepted owner, then accepted co-planners. Pending people, guests, and
+/// attendees are left out. An empty email is left out.
+List<PlanMember> linkedPlanPlanners(List<PlanMember> members) {
+  final owners = <PlanMember>[];
+  final planners = <PlanMember>[];
+  for (final member in members) {
+    if (!_isAcceptedMember(member) || member.email.trim().isEmpty) continue;
+    if (_isStoredOwner(member.role)) {
+      owners.add(member);
+    } else if (_isCollaboratorRole(member.role)) {
+      planners.add(member);
+    }
+  }
+  return [...owners, ...planners];
+}
+
 /// Owner once at the top, then accepted Collaborators and Guests plus pending invites.
 List<PlanMember> peopleScreenMembers(List<PlanMember> members) {
   PlanMember? owner;

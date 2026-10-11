@@ -97,4 +97,65 @@ void main() {
     expect(listed.first.role, 'Owner');
     expect(listed.where((row) => row.role == 'Owner'), hasLength(1));
   });
+
+  test('a linked plan lists the owner and co-planners only', () {
+    const owner = PlanMember(
+      name: 'Ada',
+      email: 'ada@example.com',
+      role: 'Owner',
+      status: 'accepted',
+    );
+    const planner = PlanMember(
+      name: 'Grace',
+      email: 'grace@example.com',
+      role: 'Collaborator',
+      status: 'accepted',
+    );
+    const legacyPlanner = PlanMember(
+      name: 'Ken',
+      email: 'ken@example.com',
+      role: 'VibePlanner',
+      status: 'accepted',
+    );
+    const guest = PlanMember(
+      name: 'Alan',
+      email: 'alan@example.com',
+      role: 'Guest',
+      status: 'accepted',
+    );
+    const attendee = PlanMember(
+      name: 'Mary',
+      email: 'mary@example.com',
+      role: 'Wanderer',
+      status: 'accepted',
+    );
+    const pending = PlanMember(
+      name: '',
+      email: 'pending@example.com',
+      role: 'Collaborator',
+      status: 'pending',
+    );
+    const blank = PlanMember(
+      name: 'No Mail',
+      email: '   ',
+      role: 'Collaborator',
+      status: 'accepted',
+    );
+
+    final listed = linkedPlanPlanners([
+      planner,
+      guest,
+      pending,
+      owner,
+      attendee,
+      legacyPlanner,
+      blank,
+    ]);
+
+    expect(listed, [owner, planner, legacyPlanner]);
+    expect(planRoleLabel('trip', listed[0].role), 'Organizer');
+    expect(planRoleLabel('trip', listed[1].role), 'Co-Planner');
+    expect(planRoleLabel('plan', listed[0].role), 'Host');
+    expect(planRoleLabel('plan', listed[2].role), 'Planner');
+  });
 }

@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/activity.dart';
 import '../models/plan.dart';
+import '../models/plan_member.dart';
 import '../models/plan_role_label.dart';
 import '../providers/plan_provider.dart';
 import '../providers/user_provider.dart';
@@ -522,6 +523,8 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
   bool _loaded = false;
   int? _status;
   late Plan _plan;
+  Plan? _linkedSource;
+  List<PlanMember> _linkedPlanners = const [];
 
   @override
   void initState() {
@@ -539,13 +542,73 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
       userProvider.token,
     );
     if (!mounted) return;
+    if (status == 401) {
+      setState(() {
+        _loaded = true;
+        _status = status;
+      });
+      await _endSession(userProvider, planProvider, navigator);
+      return;
+    }
+    if (status != 200) {
+      setState(() {
+        _loaded = true;
+        _status = status;
+      });
+      return;
+    }
+    final linked = await _readLinkedPlan(planProvider, userProvider.token);
+    if (!mounted) return;
+    if (linked == 401) {
+      setState(() {
+        _loaded = true;
+        _status = status;
+      });
+      await _endSession(userProvider, planProvider, navigator);
+      return;
+    }
     setState(() {
       _loaded = true;
       _status = status;
     });
-    if (status == 401) {
-      await _endSession(userProvider, planProvider, navigator);
+  }
+
+  Plan _openPlan(PlanProvider planProvider) {
+    for (final plan in planProvider.plans) {
+      if (plan.id == widget.plan.id) return plan;
     }
+    return widget.plan;
+  }
+
+  /// Loads the source plan and its members. Returns 401 when the session ends.
+  Future<int?> _readLinkedPlan(PlanProvider planProvider, String? token) async {
+    final sourceId = _openPlan(planProvider).sourcePlanId.trim();
+    if (sourceId.isEmpty) {
+      _linkedSource = null;
+      _linkedPlanners = const [];
+      return 200;
+    }
+    final listed = await planProvider.readListedPlan(
+      planId: sourceId,
+      token: token,
+    );
+    if (listed.status == 401) return 401;
+    final source = listed.plan;
+    if (source == null) {
+      _linkedSource = null;
+      _linkedPlanners = const [];
+      return listed.status;
+    }
+    final members = await planProvider.readPlanMembers(
+      planId: sourceId,
+      token: token,
+    );
+    if (members.status == 401) return 401;
+    _linkedSource = source;
+    _linkedPlanners = members.status == 200
+        ? linkedPlanPlanners(members.members)
+        : const [];
+    return members.status;
   }
 
   Future<void> _endSession(
@@ -1352,6 +1415,13 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                         ],
                       ),
                       const SizedBox(height: 8),
+                      if (_linkedSource != null) ...[
+                        Text('Linked plan: ${_linkedSource!.name}'),
+                        for (final member in _linkedPlanners)
+                          Text(
+                            '${planRoleLabel(_linkedSource!.type, member.role)}: ${member.email.trim()}',
+                          ),
+                      ],
                       if (!hiddenFields.contains('destination'))
                         Text('Destination: ${shown.destination}'),
                       if (roleText != null) Text('Role: $roleText'),
