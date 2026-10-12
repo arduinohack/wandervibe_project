@@ -16,6 +16,7 @@ const adminOrigins = new Set([
   'http://192.168.1.140:8081',
   'http://192.168.1.140:5501',
   'https://planitvibe.com',
+  'https://www.planitvibe.com',
 ]);
 
 const devLocalOrigin = /^http:\/\/(?:localhost|127\.0\.0\.1):\d+$/;
