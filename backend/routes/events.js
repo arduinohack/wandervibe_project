@@ -10,7 +10,7 @@ const { applyTypeChange, assertTypeRequirements } = require('../utils/activityTy
 const { recordActivityRevision } = require('../utils/recordActivityRevision');
 const { syncPlanDates } = require('../utils/syncPlanDates');
 const { resolveActivitySchedule, resolveActivityZones, compareStoredOrder } = require('../utils/activityTimes');
-const { applyFlightLegs } = require('../utils/flightLegs');
+const { applyFlightLegs, activityZoneError, zoneNameError } = require('../utils/flightLegs');
 const { parseConfirmation } = require('../utils/parseConfirmation');
 
 function applySchedule(target, schedule) {
@@ -145,7 +145,25 @@ router.post('/', authMiddleware, async (req, res) => {
       if (anchor) source = { ...req.body, startTime: new Date(anchor).toISOString() };
     }
     const legged = applyFlightLegs(source, source && source.type);
+    if (legged.error) {
+      return res.status(400).json({ message: legged.error });
+    }
+    const sentZoneError = activityZoneError(req.body);
+    if (sentZoneError) {
+      return res.status(400).json({ message: sentZoneError });
+    }
     source = legged.body;
+    const zones = await resolveActivityZones({
+      isCreate: true,
+      planId,
+      body: source,
+    });
+    const resolvedZoneError = zoneNameError(zones.startTimeZone)
+      || zoneNameError(zones.endTimeZone)
+      || zoneNameError(zones.timeZone);
+    if (resolvedZoneError) {
+      return res.status(400).json({ message: resolvedZoneError });
+    }
     const schedule = await resolveActivitySchedule({
       isCreate: true,
       planId,
@@ -161,11 +179,6 @@ router.post('/', authMiddleware, async (req, res) => {
     applySchedule(payload, schedule);
     if (insertAfterId || insertBeforeId) await shiftEventNums(planId, placement.eventNum);
     payload.eventNum = placement.eventNum;
-    const zones = await resolveActivityZones({
-      isCreate: true,
-      planId,
-      body: req.body,
-    });
     payload.startTimeZone = zones.startTimeZone;
     payload.endTimeZone = zones.endTimeZone;
     payload.timeZone = zones.timeZone;
@@ -324,7 +337,11 @@ router.post('/:id/restore', authMiddleware, async (req, res) => {
 
     const fields = applyTypeChange(event ? event.toObject({ virtuals: false }) : {}, snapshot.type, snapshot);
     const snapshotLegs = Array.isArray(snapshot.legs) ? snapshot.legs : [];
-    fields.legs = applyFlightLegs({ legs: snapshotLegs }, snapshot.type).legs;
+    const restoredLegs = applyFlightLegs({ legs: snapshotLegs }, snapshot.type);
+    if (restoredLegs.error) {
+      return res.status(400).json({ message: restoredLegs.error });
+    }
+    fields.legs = restoredLegs.legs;
     fields.planId = planId;
 
     let saved;
@@ -368,13 +385,26 @@ router.put('/:id', authMiddleware, async (req, res) => {
     const nextType = Object.prototype.hasOwnProperty.call(body, 'type') ? body.type : event.type;
     const fields = applyTypeChange(event.toObject(), nextType, body);
     const legged = applyFlightLegs(body, nextType);
+    if (legged.error) {
+      return res.status(400).json({ message: legged.error });
+    }
+    const sentZoneError = activityZoneError(body);
+    if (sentZoneError) {
+      return res.status(400).json({ message: sentZoneError });
+    }
     if (legged.assignLegs) fields.legs = legged.legs;
     const zones = await resolveActivityZones({
       isCreate: false,
       planId: event.planId,
-      body,
+      body: legged.body,
       existing: event.toObject(),
     });
+    const resolvedZoneError = zoneNameError(zones.startTimeZone)
+      || zoneNameError(zones.endTimeZone)
+      || zoneNameError(zones.timeZone);
+    if (resolvedZoneError) {
+      return res.status(400).json({ message: resolvedZoneError });
+    }
     fields.startTimeZone = zones.startTimeZone;
     fields.endTimeZone = zones.endTimeZone;
     fields.timeZone = zones.timeZone;

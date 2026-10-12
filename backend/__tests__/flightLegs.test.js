@@ -350,4 +350,234 @@ describe('flight legs', () => {
       },
     ]);
   });
+
+  test('leg time zones are IANA names and set the activity zones', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada-zones@example.com',
+    });
+    const sam = await registerAndLogin({
+      firstName: 'Sam',
+      lastName: 'Guest',
+      email: 'sam-zones@example.com',
+    });
+    const planId = await createPlan(ada.token);
+    await acceptRole(ada.token, sam.token, planId, 'sam-zones@example.com', 'Guest');
+
+    const created = await request(app)
+      .post('/api/activities')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({
+        name: 'DL 961',
+        type: 'flight',
+        planId,
+        startTime: '2026-01-01T00:00:00.000Z',
+        endTime: '2026-01-01T01:00:00.000Z',
+        durationMinutes: 5,
+        startTimeZone: 'UTC',
+        endTimeZone: 'UTC',
+        timeZone: 'UTC',
+        legs: [
+          {
+            origin: 'ATL',
+            originTimeZone: '  America/New_York ',
+            destination: 'DFW',
+            destinationTimeZone: 'America/Chicago',
+            departure: firstDeparture,
+            arrival: firstArrival,
+          },
+          {
+            origin: 'ORD',
+            originTimeZone: 'America/Chicago',
+            destination: 'SEA',
+            destinationTimeZone: 'America/Los_Angeles',
+            departure: secondDeparture,
+            arrival: lastArrival,
+          },
+        ],
+      });
+
+    expect(created.status).toBe(201);
+    expect(created.body.startTimeZone).toBe('America/New_York');
+    expect(created.body.endTimeZone).toBe('America/Los_Angeles');
+    expect(created.body.timeZone).toBe('America/New_York');
+    expect(iso(created.body.startTime)).toBe(firstDeparture);
+    expect(iso(created.body.endTime)).toBe(lastArrival);
+    expect(created.body.legs[0].originTimeZone).toBe('America/New_York');
+    expect(created.body.legs[0].destinationTimeZone).toBe('America/Chicago');
+    expect(created.body.legs[1].originTimeZone).toBe('America/Chicago');
+    expect(created.body.legs[1].destinationTimeZone).toBe('America/Los_Angeles');
+
+    const itinerary = await request(app)
+      .get(`/api/plans/${planId}/itinerary`)
+      .set('Authorization', `Bearer ${sam.token}`);
+    expect(itinerary.status).toBe(200);
+    const row = itinerary.body.events.find((event) => event._id === created.body._id);
+    expect(row.legs[0].originTimeZone).toBe('America/New_York');
+    expect(row.legs[1].destinationTimeZone).toBe('America/Los_Angeles');
+    expect(row.startTimeZone).toBe('America/New_York');
+    expect(row.endTimeZone).toBe('America/Los_Angeles');
+
+    const renamed = await request(app)
+      .put(`/api/activities/${created.body._id}`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ name: 'DL 962' });
+    expect(renamed.status).toBe(200);
+    expect(renamed.body.startTimeZone).toBe('America/New_York');
+    expect(renamed.body.endTimeZone).toBe('America/Los_Angeles');
+    expect(renamed.body.legs[0].originTimeZone).toBe('America/New_York');
+    expect(renamed.body.legs[1].destinationTimeZone).toBe('America/Los_Angeles');
+
+    const blankLegZones = await request(app)
+      .put(`/api/activities/${created.body._id}`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({
+        startTimeZone: 'Europe/Paris',
+        endTimeZone: 'Asia/Tokyo',
+        legs: [
+          {
+            origin: 'ATL',
+            originTimeZone: '',
+            destination: 'DFW',
+            destinationTimeZone: ' ',
+            departure: firstDeparture,
+            arrival: firstArrival,
+          },
+        ],
+      });
+    expect(blankLegZones.status).toBe(200);
+    expect(blankLegZones.body.startTimeZone).toBe('Europe/Paris');
+    expect(blankLegZones.body.endTimeZone).toBe('Asia/Tokyo');
+    expect(blankLegZones.body.legs[0].originTimeZone).toBe('');
+    expect(blankLegZones.body.legs[0].destinationTimeZone).toBe('');
+  });
+
+  test('a fixed offset or a daylight label is rejected and not stored', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada-zone-reject@example.com',
+    });
+    const planId = await createPlan(ada.token);
+
+    const offsetLeg = await request(app)
+      .post('/api/activities')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({
+        name: 'DL 961',
+        type: 'flight',
+        planId,
+        startTimeZone: 'UTC',
+        endTimeZone: 'UTC',
+        legs: [
+          {
+            origin: 'ATL',
+            originTimeZone: '-05:00',
+            destination: 'DFW',
+            destinationTimeZone: 'America/Chicago',
+            departure: firstDeparture,
+            arrival: firstArrival,
+          },
+        ],
+      });
+    expect(offsetLeg.status).toBe(400);
+    expect(offsetLeg.body.message).toBe('Time zone must be an IANA name');
+    expect(await Event.countDocuments({ planId })).toBe(0);
+
+    const created = await request(app)
+      .post('/api/activities')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({
+        name: 'DL 961',
+        type: 'flight',
+        planId,
+        startTimeZone: 'America/New_York',
+        endTimeZone: 'America/Chicago',
+        legs: [
+          {
+            origin: 'ATL',
+            originTimeZone: 'America/New_York',
+            destination: 'DFW',
+            destinationTimeZone: 'America/Chicago',
+            departure: firstDeparture,
+            arrival: firstArrival,
+          },
+        ],
+      });
+    expect(created.status).toBe(201);
+
+    const daylightLabel = await request(app)
+      .put(`/api/activities/${created.body._id}`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({
+        name: 'Changed',
+        legs: [
+          {
+            origin: 'ATL',
+            originTimeZone: 'America/New_York',
+            destination: 'DFW',
+            destinationTimeZone: 'Eastern DT',
+            departure: firstDeparture,
+            arrival: firstArrival,
+          },
+        ],
+      });
+    expect(daylightLabel.status).toBe(400);
+    expect(daylightLabel.body.message).toBe('Time zone must be an IANA name');
+    const storedFlight = await Event.findById(created.body._id).lean();
+    expect(storedFlight.name).toBe('DL 961');
+    expect(storedFlight.startTimeZone).toBe('America/New_York');
+    expect(storedFlight.legs[0].destinationTimeZone).toBe('America/Chicago');
+
+    const dinner = await request(app)
+      .post('/api/activities')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({
+        name: 'Dinner',
+        type: 'dining',
+        planId,
+        startTime: firstDeparture,
+        endTime: firstArrival,
+        timeZone: '-05:00',
+      });
+    expect(dinner.status).toBe(400);
+    expect(dinner.body.message).toBe('Time zone must be an IANA name');
+    expect(await Event.countDocuments({ planId, type: 'dining' })).toBe(0);
+
+    const keptDinner = await request(app)
+      .post('/api/activities')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({
+        name: 'Dinner',
+        type: 'dining',
+        planId,
+        startTime: firstDeparture,
+        endTime: firstArrival,
+        timeZone: 'Europe/Paris',
+        legs: [
+          {
+            origin: 'ATL',
+            originTimeZone: '-05:00',
+            destination: 'DFW',
+            destinationTimeZone: 'Eastern DT',
+            departure: firstDeparture,
+            arrival: firstArrival,
+          },
+        ],
+      });
+    expect(keptDinner.status).toBe(201);
+    expect(keptDinner.body.legs).toEqual([]);
+    expect(keptDinner.body.timeZone).toBe('Europe/Paris');
+
+    const rejectedDinner = await request(app)
+      .put(`/api/activities/${keptDinner.body._id}`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ name: 'Late dinner', timeZone: '-05:00' });
+    expect(rejectedDinner.status).toBe(400);
+    expect(rejectedDinner.body.message).toBe('Time zone must be an IANA name');
+    const storedDinner = await Event.findById(keptDinner.body._id).lean();
+    expect(storedDinner.name).toBe('Dinner');
+    expect(storedDinner.timeZone).toBe('Europe/Paris');
+  });
 });

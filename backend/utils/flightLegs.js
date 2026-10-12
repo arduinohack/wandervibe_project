@@ -1,5 +1,51 @@
+const { IANAZone } = require('luxon');
+
+const ZONE_ERROR = 'Time zone must be an IANA name';
+
 function hasOwn(source, key) {
   return !!source && Object.prototype.hasOwnProperty.call(source, key);
+}
+
+function isIanaName(zone) {
+  if (!IANAZone.isValidZone(zone)) return false;
+  if (zone === 'UTC') return true;
+  // Intl accepts numeric offsets and some abbreviations. Those are not stored.
+  if (!zone.includes('/')) return false;
+  if (/^[+-]\d/.test(zone)) return false;
+  return true;
+}
+
+function zoneNameError(value) {
+  if (value == null) return null;
+  if (typeof value !== 'string') return ZONE_ERROR;
+  const zone = value.trim();
+  if (!zone) return null;
+  if (!isIanaName(zone)) return ZONE_ERROR;
+  return null;
+}
+
+function activityZoneError(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
+  const keys = [
+    'timeZone',
+    'startTimeZone',
+    'endTimeZone',
+    'originTimeZone',
+    'destinationTimeZone',
+  ];
+  for (const key of keys) {
+    if (!hasOwn(body, key)) continue;
+    const error = zoneNameError(body[key]);
+    if (error) return error;
+  }
+  return null;
+}
+
+function readIanaZone(value) {
+  const error = zoneNameError(value);
+  if (error) return { error };
+  if (typeof value !== 'string') return { zone: '' };
+  return { zone: value.trim() };
 }
 
 function legText(value) {
@@ -19,9 +65,15 @@ function legInstant(value) {
 
 function normalizeLeg(raw) {
   const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  const originTimeZone = readIanaZone(source.originTimeZone);
+  if (originTimeZone.error) return { error: originTimeZone.error };
+  const destinationTimeZone = readIanaZone(source.destinationTimeZone);
+  if (destinationTimeZone.error) return { error: destinationTimeZone.error };
   return {
     origin: legText(source.origin),
+    originTimeZone: originTimeZone.zone,
     destination: legText(source.destination),
+    destinationTimeZone: destinationTimeZone.zone,
     departure: legInstant(source.departure),
     arrival: legInstant(source.arrival),
   };
@@ -47,7 +99,14 @@ function applyFlightLegs(body, type) {
     delete source.legs;
     return { body: source, legs: undefined, assignLegs: false };
   }
-  const legs = source.legs.map(normalizeLeg);
+  const legs = [];
+  for (const raw of source.legs) {
+    const leg = normalizeLeg(raw);
+    if (leg.error) {
+      return { error: leg.error, body: source, legs: undefined, assignLegs: false };
+    }
+    legs.push(leg);
+  }
   source.legs = legs;
   if (legs.length === 0) {
     return { body: source, legs, assignLegs: true };
@@ -56,6 +115,13 @@ function applyFlightLegs(body, type) {
   const last = legs[legs.length - 1];
   source.startTime = first.departure;
   source.endTime = last.arrival;
+  if (first.originTimeZone) {
+    source.startTimeZone = first.originTimeZone;
+    source.timeZone = first.originTimeZone;
+  }
+  if (last.destinationTimeZone) {
+    source.endTimeZone = last.destinationTimeZone;
+  }
   if (first.departure && last.arrival) {
     const minutes = Math.round((last.arrival.getTime() - first.departure.getTime()) / 60000);
     if (Number.isInteger(minutes) && minutes >= 0) source.durationMinutes = minutes;
@@ -66,4 +132,4 @@ function applyFlightLegs(body, type) {
   return { body: source, legs, assignLegs: true };
 }
 
-module.exports = { applyFlightLegs };
+module.exports = { applyFlightLegs, activityZoneError, zoneNameError };

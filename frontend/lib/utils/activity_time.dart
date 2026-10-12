@@ -17,6 +17,21 @@ const activityZoneChoices = <String>[
   'Australia/Sydney',
 ];
 
+const _zoneRegionNames = <String, String>{
+  'America/New_York': 'Eastern',
+  'America/Chicago': 'Central',
+  'America/Denver': 'Mountain',
+  'America/Phoenix': 'Arizona',
+  'America/Los_Angeles': 'Pacific',
+  'America/Anchorage': 'Alaska',
+  'Pacific/Honolulu': 'Hawaii',
+  'Europe/London': 'British',
+  'Europe/Paris': 'Central European',
+  'Europe/Rome': 'Central European',
+  'Asia/Tokyo': 'Japan',
+  'Australia/Sydney': 'Australian Eastern',
+};
+
 bool _zonesReady = false;
 
 void _ensureZones() {
@@ -89,8 +104,25 @@ DateTime? wallValue(DateTime? instant, String zone) {
   return DateTime.utc(clock.year, clock.month, clock.day, clock.hour, clock.minute);
 }
 
+String _regionFromZoneId(String zone) {
+  final slash = zone.lastIndexOf('/');
+  final last = slash >= 0 ? zone.substring(slash + 1) : zone;
+  return last.replaceAll('_', ' ');
+}
+
+/// Region plus ST or DT for this instant. UTC stays UTC. The stored zone is the IANA name.
+String zoneDaylightLabel(DateTime instant, String zone) {
+  final name = zone.trim();
+  if (name.isEmpty || name.toUpperCase() == 'UTC') return 'UTC';
+  final location = _location(name);
+  if (location == tz.UTC) return 'UTC';
+  final zoned = tz.TZDateTime.from(instant.toUtc(), location);
+  final region = _zoneRegionNames[location.name] ?? _regionFromZoneId(location.name);
+  return '$region ${zoned.timeZone.isDst ? 'DT' : 'ST'}';
+}
+
 String zoneAbbreviation(DateTime instant, String zone) {
-  return clockInZone(instant, zone).abbreviation;
+  return zoneDaylightLabel(instant, zone);
 }
 
 /// Wall clock in [zone] as m/d HH:mm. A missing instant is "not set".

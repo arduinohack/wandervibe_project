@@ -3,8 +3,10 @@ const { v4: uuidv4 } = require('uuid');
 
 const flightLegSchema = new mongoose.Schema({
   origin: { type: String, default: '' },
+  originTimeZone: { type: String, default: '' },
   departure: { type: Date },
   destination: { type: String, default: '' },
+  destinationTimeZone: { type: String, default: '' },
   arrival: { type: Date },
 }, { _id: false });
 

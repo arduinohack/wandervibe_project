@@ -69,24 +69,8 @@ bool canEditPlan(String? storedRole) {
 
 String _twoDigits(int number) => number.toString().padLeft(2, '0');
 
-String _utcDateLabel(DateTime? value) {
-  if (value == null) return 'Choose date';
-  final utc = value.toUtc();
-  final year = utc.year.toString().padLeft(4, '0');
-  return '$year-${_twoDigits(utc.month)}-${_twoDigits(utc.day)}';
-}
-
-String _clockLabel(DateTime? value, String suffix) {
-  if (value == null) return 'Choose time';
-  final utc = value.toUtc();
-  final clock = '${_twoDigits(utc.hour)}:${_twoDigits(utc.minute)}';
-  if (suffix.isEmpty) return clock;
-  return '$clock $suffix';
-}
-
-DateTime _calendarDate(DateTime? value) {
-  final utc = (value ?? DateTime.now()).toUtc();
-  final date = DateTime(utc.year, utc.month, utc.day);
+DateTime _clampCalendarDate(int year, int month, int day) {
+  final date = DateTime(year, month, day);
   final first = DateTime(2000);
   final last = DateTime(2100);
   if (date.isBefore(first)) return first;
@@ -94,33 +78,34 @@ DateTime _calendarDate(DateTime? value) {
   return date;
 }
 
-Future<DateTime?> _pickUtcDate(BuildContext context, DateTime? current) async {
-  final picked = await showDatePicker(
-    context: context,
-    initialDate: _calendarDate(current),
-    firstDate: DateTime(2000),
-    lastDate: DateTime(2100),
-  );
-  if (picked == null) return null;
-  final clock = current?.toUtc();
-  return DateTime.utc(
-    picked.year,
-    picked.month,
-    picked.day,
-    clock?.hour ?? 0,
-    clock?.minute ?? 0,
-  );
+String _dateTimeButtonLabel(DateTime? instant, String? zone) {
+  if (instant == null) return 'Choose date and time';
+  final named = zone?.trim() ?? '';
+  if (named.isEmpty) return '${itineraryClockLabel(instant, 'UTC')} UTC';
+  return itineraryClockLabel(instant, named);
 }
 
-Future<DateTime?> _pickUtcTime(BuildContext context, DateTime? current) async {
-  final clock = current?.toUtc();
-  final picked = await showTimePicker(
+Future<DateTime?> _pickDateAndTime(
+  BuildContext context, {
+  required String label,
+  required DateTime? instant,
+  required String? zone,
+}) {
+  final named = zone?.trim() ?? '';
+  final clockZone = named.isEmpty ? 'UTC' : named;
+  final seeded = instant ?? DateTime.now().toUtc();
+  final wall = wallValue(seeded, clockZone);
+  final clock = wall ?? seeded.toUtc();
+  return showDialog<DateTime>(
     context: context,
-    initialTime: TimeOfDay(hour: clock?.hour ?? 0, minute: clock?.minute ?? 0),
+    builder: (context) => _ZoneDateTimeDialog(
+      title: label,
+      zone: clockZone,
+      date: _clampCalendarDate(clock.year, clock.month, clock.day),
+      hour: clock.hour,
+      minute: clock.minute,
+    ),
   );
-  if (picked == null) return null;
-  final day = current?.toUtc() ?? DateTime.now().toUtc();
-  return DateTime.utc(day.year, day.month, day.day, picked.hour, picked.minute);
 }
 
 /// Last itinerary row that has a time. Its end, or its start when the end is empty.
@@ -191,10 +176,10 @@ List<_ShownActivityTimes> _shownActivityTimes(List<Activity> activities) {
 
 String _pdfClock(DateTime? instant, String zone) {
   if (instant == null) return 'not set';
-  final abbreviation = zoneAbbreviation(instant, zone).trim();
+  final label = zoneDaylightLabel(instant, zone).trim();
   final clock = itineraryClockLabel(instant, zone);
-  if (abbreviation.isEmpty) return clock;
-  return '$clock $abbreviation';
+  if (label.isEmpty) return clock;
+  return '$clock $label';
 }
 
 String _durationLabel(Activity activity) {
@@ -261,14 +246,20 @@ void _addCardLine(List<Widget> lines, String label, String? value) {
 String _flightLegCardText(FlightLeg leg, String startZone, String endZone) {
   final parts = <String>[];
   final origin = leg.origin.trim();
+  final departureZone = leg.originTimeZone.trim().isNotEmpty
+      ? leg.originTimeZone.trim()
+      : startZone;
+  final arrivalZone = leg.destinationTimeZone.trim().isNotEmpty
+      ? leg.destinationTimeZone.trim()
+      : endZone;
   if (origin.isNotEmpty) parts.add(origin);
   if (leg.departure != null) {
-    parts.add(_pdfClock(leg.departure, startZone));
+    parts.add(_pdfClock(leg.departure, departureZone));
   }
   final destination = leg.destination.trim();
   if (destination.isNotEmpty) parts.add(destination);
   if (leg.arrival != null) {
-    parts.add(_pdfClock(leg.arrival, endZone));
+    parts.add(_pdfClock(leg.arrival, arrivalZone));
   }
   return parts.where((part) => part.trim().isNotEmpty && part.trim() != 'not set').join(', ');
 }
@@ -434,7 +425,147 @@ int? _wholeMinutes(String text) {
   return int.tryParse(trimmed);
 }
 
+class _ZoneDateTimeDialog extends StatefulWidget {
+  final String title;
+  final String zone;
+  final DateTime date;
+  final int hour;
+  final int minute;
+
+  const _ZoneDateTimeDialog({
+    required this.title,
+    required this.zone,
+    required this.date,
+    required this.hour,
+    required this.minute,
+  });
+
+  @override
+  State<_ZoneDateTimeDialog> createState() => _ZoneDateTimeDialogState();
+}
+
+class _ZoneDateTimeDialogState extends State<_ZoneDateTimeDialog> {
+  late DateTime _date;
+  late int _hour;
+  late int _minute;
+
+  @override
+  void initState() {
+    super.initState();
+    _date = widget.date;
+    _hour = widget.hour;
+    _minute = widget.minute;
+  }
+
+  String get _zoneLabel {
+    final instant = instantFromWall(
+      year: _date.year,
+      month: _date.month,
+      day: _date.day,
+      hour: _hour,
+      minute: _minute,
+      zone: widget.zone,
+    );
+    return zoneDaylightLabel(instant, widget.zone);
+  }
+
+  void _confirm() {
+    final instant = instantFromWall(
+      year: _date.year,
+      month: _date.month,
+      day: _date.day,
+      hour: _hour,
+      minute: _minute,
+      zone: widget.zone,
+    );
+    Navigator.pop(context, instant);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.title),
+      content: SizedBox(
+        width: 360,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(_zoneLabel, style: const TextStyle(fontWeight: FontWeight.w600)),
+              SizedBox(
+                height: 340,
+                child: CalendarDatePicker(
+                  initialDate: _date,
+                  firstDate: DateTime(2000),
+                  lastDate: DateTime(2100),
+                  onDateChanged: (picked) {
+                    setState(() {
+                      _date = _clampCalendarDate(picked.year, picked.month, picked.day);
+                    });
+                  },
+                ),
+              ),
+              Row(
+                children: [
+                  Expanded(
+                    child: DropdownButtonFormField<int>(
+                      key: ValueKey('hour-$_hour'),
+                      initialValue: _hour,
+                      isExpanded: true,
+                      decoration: const InputDecoration(labelText: 'Hour'),
+                      items: [
+                        for (var hour = 0; hour < 24; hour++)
+                          DropdownMenuItem(
+                            value: hour,
+                            child: Text(_twoDigits(hour)),
+                          ),
+                      ],
+                      onChanged: (value) {
+                        if (value == null) return;
+                        setState(() => _hour = value);
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: DropdownButtonFormField<int>(
+                      key: ValueKey('minute-$_minute'),
+                      initialValue: _minute,
+                      isExpanded: true,
+                      decoration: const InputDecoration(labelText: 'Minute'),
+                      items: [
+                        for (var minute = 0; minute < 60; minute++)
+                          DropdownMenuItem(
+                            value: minute,
+                            child: Text(_twoDigits(minute)),
+                          ),
+                      ],
+                      onChanged: (value) {
+                        if (value == null) return;
+                        setState(() => _minute = value);
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        TextButton(onPressed: _confirm, child: const Text('OK')),
+      ],
+    );
+  }
+}
+
 class _UtcDateTimePicker extends StatelessWidget {
+  final String id;
   final String label;
   final DateTime? value;
   final ValueChanged<DateTime> onChanged;
@@ -443,6 +574,7 @@ class _UtcDateTimePicker extends StatelessWidget {
   final ValueChanged<String>? onZoneChanged;
 
   const _UtcDateTimePicker({
+    required this.id,
     required this.label,
     required this.value,
     required this.onChanged,
@@ -456,8 +588,6 @@ class _UtcDateTimePicker extends StatelessWidget {
     final instant = value;
     final selectedZone = zone;
     final changeZone = onZoneChanged;
-    final display = selectedZone == null ? instant : wallValue(instant, selectedZone);
-    final timeSuffix = selectedZone == null ? 'UTC' : '';
     final zoneAnchor = instant ?? DateTime.now().toUtc();
     final zoneChoices = selectedZone == null
         ? const <String>[]
@@ -476,19 +606,16 @@ class _UtcDateTimePicker extends StatelessWidget {
             children: [
               OutlinedButton(
                 onPressed: () async {
-                  final next = await _pickUtcDate(context, display);
+                  final next = await _pickDateAndTime(
+                    context,
+                    label: label,
+                    instant: instant,
+                    zone: selectedZone,
+                  );
                   if (next == null || !context.mounted) return;
                   onChanged(next);
                 },
-                child: Text(_utcDateLabel(display)),
-              ),
-              OutlinedButton(
-                onPressed: () async {
-                  final next = await _pickUtcTime(context, display);
-                  if (next == null || !context.mounted) return;
-                  onChanged(next);
-                },
-                child: Text(_clockLabel(display, timeSuffix)),
+                child: Text(_dateTimeButtonLabel(instant, selectedZone)),
               ),
               if (onClear != null && instant != null)
                 TextButton(onPressed: onClear, child: const Text('Clear')),
@@ -497,7 +624,7 @@ class _UtcDateTimePicker extends StatelessWidget {
           if (selectedZone != null && changeZone != null) ...[
             const SizedBox(height: 8),
             DropdownButtonFormField<String>(
-              key: ValueKey('$label|$selectedZone'),
+              key: ValueKey('$id|$selectedZone'),
               initialValue: selectedZone,
               isExpanded: true,
               decoration: const InputDecoration(labelText: 'Time zone'),
@@ -506,7 +633,7 @@ class _UtcDateTimePicker extends StatelessWidget {
                   Align(
                     alignment: AlignmentDirectional.centerStart,
                     child: Text(
-                      zoneAbbreviation(zoneAnchor, choice),
+                      zoneDaylightLabel(zoneAnchor, choice),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -690,10 +817,19 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     bool shiftFollowing = false,
   }) async {
     final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final rows = planProvider.itineraryActivities;
     final openingStart = useDefaultStart
-        ? _defaultActivityStart(planProvider.itineraryActivities)
+        ? _defaultActivityStart(rows)
         : initialStart;
     final openingEnd = useDefaultStart ? null : (initialEnd ?? initialStart);
+    var openingZone = initialZone?.trim() ?? '';
+    if (openingZone.isEmpty && useDefaultStart && rows.isNotEmpty) {
+      final previous = rows.last;
+      final storedType = previous.typeLabel.trim().toLowerCase();
+      if (storedType == 'flight' || previous.type.name == 'flight') {
+        openingZone = _activityEndZone(previous, _shownPlan(planProvider).timeZone);
+      }
+    }
     final draft = await showDialog<_ActivityFields>(
       context: context,
       builder: (context) => _ActivityFormDialog(
@@ -702,7 +838,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
         planTimeZone: _shownPlan(planProvider).timeZone,
         initialStart: openingStart,
         initialEnd: openingEnd,
-        initialZone: initialZone,
+        initialZone: openingZone.isEmpty ? null : openingZone,
       ),
     );
     if (draft == null || !mounted) return;
@@ -1703,12 +1839,16 @@ class _ExtraLeg {
   final TextEditingController destination;
   DateTime? departure;
   DateTime? arrival;
+  String originZone;
+  String destinationZone;
 
   _ExtraLeg({
     String origin = '',
     String destination = '',
     this.departure,
     this.arrival,
+    this.originZone = 'UTC',
+    this.destinationZone = 'UTC',
   }) : origin = TextEditingController(text: origin),
        destination = TextEditingController(text: destination);
 
@@ -1855,13 +1995,22 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     _destinationController.text = first.destination;
     _start = first.departure;
     _end = first.arrival;
+    final firstOrigin = first.originTimeZone.trim();
+    final firstDestination = first.destinationTimeZone.trim();
+    if (firstOrigin.isNotEmpty) _startZone = firstOrigin;
+    if (firstDestination.isNotEmpty) _endZone = firstDestination;
+    _endZoneCustom = _endZone != _startZone;
     for (final leg in activity.legs.skip(1)) {
+      final originZone = leg.originTimeZone.trim();
+      final destinationZone = leg.destinationTimeZone.trim();
       _extraLegs.add(
         _ExtraLeg(
           origin: leg.origin,
           destination: leg.destination,
           departure: leg.departure,
           arrival: leg.arrival,
+          originZone: originZone.isNotEmpty ? originZone : _startZone,
+          destinationZone: destinationZone.isNotEmpty ? destinationZone : _endZone,
         ),
       );
     }
@@ -1951,8 +2100,8 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     });
   }
 
-  void _setStart(DateTime wall) {
-    final value = _instantFromWall(wall, _startZone);
+  void _setStart(DateTime instant) {
+    final value = instant.toUtc();
     if (_extraLegs.isNotEmpty) {
       setState(() {
         _start = value;
@@ -1976,8 +2125,8 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     });
   }
 
-  void _setEnd(DateTime wall) {
-    final value = _instantFromWall(wall, _endZone);
+  void _setEnd(DateTime instant) {
+    final value = instant.toUtc();
     if (_extraLegs.isNotEmpty) {
       setState(() {
         _end = value;
@@ -2042,6 +2191,11 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     return _destinationController.text.trim();
   }
 
+  String _lastDestinationZone() {
+    if (_extraLegs.isNotEmpty) return _extraLegs.last.destinationZone;
+    return _endZone;
+  }
+
   void _syncShownDuration() {
     final start = _start;
     final end = _extraLegs.isEmpty ? _end : _extraLegs.last.arrival;
@@ -2061,15 +2215,19 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     return [
       FlightLeg(
         origin: _originController.text.trim(),
+        originTimeZone: _startZone,
         departure: _start,
         destination: _destinationController.text.trim(),
+        destinationTimeZone: _endZone,
         arrival: _end,
       ),
       for (final leg in _extraLegs)
         FlightLeg(
           origin: leg.origin.text.trim(),
+          originTimeZone: leg.originZone,
           departure: leg.departure,
           destination: leg.destination.text.trim(),
+          destinationTimeZone: leg.destinationZone,
           arrival: leg.arrival,
         ),
     ];
@@ -2077,8 +2235,15 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
 
   void _addLeg() {
     final previous = _lastDestinationText();
+    final previousZone = _lastDestinationZone();
     setState(() {
-      _extraLegs.add(_ExtraLeg(origin: previous));
+      _extraLegs.add(
+        _ExtraLeg(
+          origin: previous,
+          originZone: previousZone,
+          destinationZone: previousZone,
+        ),
+      );
       _startChanged = true;
       _endChanged = true;
       _syncFlightLocation();
@@ -2096,6 +2261,9 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
         _destinationController.text = next.destination.text;
         _start = next.departure;
         _end = next.arrival;
+        _startZone = next.originZone;
+        _endZone = next.destinationZone;
+        _endZoneCustom = _endZone != _startZone;
         _retiredLegs.add(next);
       } else {
         _retiredLegs.add(_extraLegs.removeAt(index - 1));
@@ -2108,21 +2276,37 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     });
   }
 
-  void _setExtraDeparture(int index, DateTime wall) {
+  void _setExtraDeparture(int index, DateTime instant) {
     setState(() {
-      _extraLegs[index].departure = _instantFromWall(wall, _startZone);
+      _extraLegs[index].departure = instant.toUtc();
       _startChanged = true;
       _error = null;
       _syncShownDuration();
     });
   }
 
-  void _setExtraArrival(int index, DateTime wall) {
+  void _setExtraArrival(int index, DateTime instant) {
     setState(() {
-      _extraLegs[index].arrival = _instantFromWall(wall, _endZone);
+      _extraLegs[index].arrival = instant.toUtc();
       _endChanged = true;
       _error = null;
       _syncShownDuration();
+    });
+  }
+
+  void _onExtraOriginZone(int index, String zone) {
+    if (_extraLegs[index].originZone == zone) return;
+    setState(() {
+      _extraLegs[index].originZone = zone;
+      _error = null;
+    });
+  }
+
+  void _onExtraDestinationZone(int index, String zone) {
+    if (_extraLegs[index].destinationZone == zone) return;
+    setState(() {
+      _extraLegs[index].destinationZone = zone;
+      _error = null;
     });
   }
 
@@ -2203,6 +2387,9 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
         writeDuration = true;
       }
     }
+    final savedEndZone = _usesFlightFields && _extraLegs.isNotEmpty
+        ? _extraLegs.last.destinationZone
+        : _endZone;
     return _ActivityFields(
       name: name,
       type: _type,
@@ -2210,7 +2397,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       end: writeEnd ? end : null,
       timeZone: _startZone,
       startTimeZone: _startZone,
-      endTimeZone: _endZone,
+      endTimeZone: savedEndZone,
       location: _locationController.text.trim(),
       googlePlaceId: _googlePlaceIdController.text.trim(),
       details: _detailsController.text.trim(),
@@ -2521,6 +2708,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
         },
       ),
       _UtcDateTimePicker(
+        id: 'leg-1-departure',
         label: 'Departure',
         value: _start,
         zone: _startZone,
@@ -2537,6 +2725,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
         },
       ),
       _UtcDateTimePicker(
+        id: 'leg-1-arrival',
         label: 'Arrival',
         value: _end,
         zone: _endZone,
@@ -2553,10 +2742,12 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
           onChanged: (_) => setState(() => _error = null),
         ),
         _UtcDateTimePicker(
+          id: 'leg-${index + 2}-departure',
           label: 'Departure',
           value: _extraLegs[index].departure,
-          zone: _startZone,
-          onChanged: (wall) => _setExtraDeparture(index, wall),
+          zone: _extraLegs[index].originZone,
+          onZoneChanged: (zone) => _onExtraOriginZone(index, zone),
+          onChanged: (instant) => _setExtraDeparture(index, instant),
           onClear: widget.isScreen ? () => _clearExtraDeparture(index) : null,
         ),
         _textField(
@@ -2568,10 +2759,12 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
           },
         ),
         _UtcDateTimePicker(
+          id: 'leg-${index + 2}-arrival',
           label: 'Arrival',
           value: _extraLegs[index].arrival,
-          zone: _endZone,
-          onChanged: (wall) => _setExtraArrival(index, wall),
+          zone: _extraLegs[index].destinationZone,
+          onZoneChanged: (zone) => _onExtraDestinationZone(index, zone),
+          onChanged: (instant) => _setExtraArrival(index, instant),
           onClear: widget.isScreen ? () => _clearExtraArrival(index) : null,
         ),
         _removeLegButton(index + 1),
@@ -2636,6 +2829,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
         ),
         if (!_usesFlightFields) ...[
           _UtcDateTimePicker(
+            id: 'activity-start',
             label: 'Start',
             value: _start,
             zone: _startZone,
@@ -2644,6 +2838,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
             onClear: widget.isScreen ? _clearStart : null,
           ),
           _UtcDateTimePicker(
+            id: 'activity-end',
             label: 'End',
             value: _end,
             zone: _endZone,
@@ -3032,15 +3227,17 @@ class _PlanEditScreenState extends State<_PlanEditScreen> {
             decoration: const InputDecoration(labelText: 'Budget'),
           ),
           _UtcDateTimePicker(
+            id: 'plan-start',
             label: 'Start',
             value: _start,
-            onChanged: (value) => setState(() => _start = value),
+            onChanged: (value) => setState(() => _start = value.toUtc()),
             onClear: () => setState(() => _start = null),
           ),
           _UtcDateTimePicker(
+            id: 'plan-end',
             label: 'End',
             value: _end,
-            onChanged: (value) => setState(() => _end = value),
+            onChanged: (value) => setState(() => _end = value.toUtc()),
             onClear: () => setState(() => _end = null),
           ),
           const SizedBox(height: 12),

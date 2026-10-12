@@ -37,24 +37,34 @@ enum CostType { estimated, actual }
 
 class FlightLeg {
   final String origin;
+  final String originTimeZone;
   final DateTime? departure;
   final String destination;
+  final String destinationTimeZone;
   final DateTime? arrival;
 
   const FlightLeg({
     this.origin = '',
+    this.originTimeZone = '',
     this.departure,
     this.destination = '',
+    this.destinationTimeZone = '',
     this.arrival,
   });
 
   factory FlightLeg.fromJson(Map<String, dynamic> json) {
     return FlightLeg(
       origin: json['origin'] == null ? '' : json['origin'].toString().trim(),
+      originTimeZone: json['originTimeZone'] == null
+          ? ''
+          : json['originTimeZone'].toString().trim(),
       departure: _parsedInstant(json['departure']),
       destination: json['destination'] == null
           ? ''
           : json['destination'].toString().trim(),
+      destinationTimeZone: json['destinationTimeZone'] == null
+          ? ''
+          : json['destinationTimeZone'].toString().trim(),
       arrival: _parsedInstant(json['arrival']),
     );
   }
@@ -62,8 +72,10 @@ class FlightLeg {
   Map<String, dynamic> toJson() {
     return {
       'origin': origin,
+      'originTimeZone': originTimeZone,
       'departure': departure?.toIso8601String(),
       'destination': destination,
+      'destinationTimeZone': destinationTimeZone,
       'arrival': arrival?.toIso8601String(),
     };
   }
