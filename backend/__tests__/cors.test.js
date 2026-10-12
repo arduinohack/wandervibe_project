@@ -4,6 +4,7 @@ const app = require('../app');
 const flutterOrigin = 'http://localhost:63582';
 const flutterWebOrigin = 'http://192.168.1.140:8081';
 const importExportOrigin = 'http://192.168.1.140:5501';
+const planItOrigin = 'https://planitvibe.com';
 const adminOrigins = [
   'http://localhost:5500',
   'http://127.0.0.1:5500',
@@ -107,9 +108,33 @@ describe('browser CORS', () => {
     }
   });
 
+  test('development and production allow the planitvibe.com origin', async () => {
+    for (const env of ['development', 'production']) {
+      process.env.NODE_ENV = env;
+      const response = await preflight(planItOrigin);
+      expect(response.status).toBe(204);
+      expect(response.headers['access-control-allow-origin']).toBe(planItOrigin);
+      expect(response.headers['access-control-allow-origin']).not.toBe('*');
+
+      const login = await request(app)
+        .post('/api/auth/login')
+        .set('Origin', planItOrigin)
+        .send({});
+      expect(login.status).toBe(400);
+      expect(login.body.message).toBe('Missing required fields: email, password');
+      expect(login.headers['access-control-allow-origin']).toBe(planItOrigin);
+      expect(login.headers['access-control-allow-origin']).not.toBe('*');
+
+      const www = await preflight('https://www.planitvibe.com');
+      expect(www.headers['access-control-allow-origin']).toBeUndefined();
+      const httpOrigin = await preflight('http://planitvibe.com');
+      expect(httpOrigin.headers['access-control-allow-origin']).toBeUndefined();
+    }
+  });
+
   test('production allows the admin origins and the Flutter web LAN origin', async () => {
     process.env.NODE_ENV = 'production';
-    for (const origin of [...adminOrigins, flutterWebOrigin, importExportOrigin]) {
+    for (const origin of [...adminOrigins, flutterWebOrigin, importExportOrigin, planItOrigin]) {
       const response = await preflight(origin);
       expect(response.status).toBe(204);
       expect(response.headers['access-control-allow-origin']).toBe(origin);
