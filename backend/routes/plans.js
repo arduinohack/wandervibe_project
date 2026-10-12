@@ -1025,6 +1025,15 @@ function textField(body, key) {
   return { present: true, value: value.trim() };
 }
 
+// Intl accepts EST and numeric offsets. A plan stores an IANA name, same rule as an activity zone.
+function isPlanIanaName(zone) {
+  if (!zone || !IANAZone.isValidZone(zone)) return false;
+  if (zone === 'UTC') return true;
+  if (!zone.includes('/')) return false;
+  if (/^[+-]\d/.test(zone)) return false;
+  return true;
+}
+
 function boolField(body, key) {
   if (!Object.prototype.hasOwnProperty.call(body, key)) return { present: false };
   if (typeof body[key] !== 'boolean') return { present: true, invalid: true };
@@ -1130,7 +1139,7 @@ router.put('/:planId', authMiddleware, async (req, res) => {
     if (timeZone.invalid) {
       return res.status(400).json({ message: 'Time zone must be text' });
     }
-    if (timeZone.present && !IANAZone.isValidZone(timeZone.value)) {
+    if (timeZone.present && !isPlanIanaName(timeZone.value)) {
       return res.status(400).json({ message: 'Time zone must be an IANA name' });
     }
 

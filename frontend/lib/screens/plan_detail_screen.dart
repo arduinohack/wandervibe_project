@@ -78,9 +78,14 @@ DateTime _clampCalendarDate(int year, int month, int day) {
   return date;
 }
 
-String _dateTimeButtonLabel(DateTime? instant, String? zone) {
+String _dateTimeButtonLabel(
+  DateTime? instant,
+  String? zone, {
+  bool showDaylightLabel = false,
+}) {
   if (instant == null) return 'Choose date and time';
   final named = zone?.trim() ?? '';
+  if (showDaylightLabel) return planClockButtonLabel(instant, named);
   if (named.isEmpty) return '${itineraryClockLabel(instant, 'UTC')} UTC';
   return itineraryClockLabel(instant, named);
 }
@@ -586,6 +591,7 @@ class _UtcDateTimePicker extends StatelessWidget {
   final String? zone;
   final ValueChanged<String>? onZoneChanged;
   final bool enableClock;
+  final bool showDaylightLabel;
 
   const _UtcDateTimePicker({
     required this.id,
@@ -596,6 +602,7 @@ class _UtcDateTimePicker extends StatelessWidget {
     this.zone,
     this.onZoneChanged,
     this.enableClock = true,
+    this.showDaylightLabel = false,
   });
 
   @override
@@ -632,7 +639,13 @@ class _UtcDateTimePicker extends StatelessWidget {
                         onChanged(next);
                       }
                     : null,
-                child: Text(_dateTimeButtonLabel(instant, selectedZone)),
+                child: Text(
+                  _dateTimeButtonLabel(
+                    instant,
+                    selectedZone,
+                    showDaylightLabel: showDaylightLabel,
+                  ),
+                ),
               ),
               if (enableClock && onClear != null && instant != null)
                 TextButton(onPressed: onClear, child: const Text('Clear')),
@@ -3199,10 +3212,10 @@ class _PlanEditScreenState extends State<_PlanEditScreen> {
   late final TextEditingController _nameController;
   late final TextEditingController _destinationController;
   late final TextEditingController _budgetController;
-  late final TextEditingController _timeZoneController;
   late bool _autoStart;
   late bool _autoEnd;
   late final Set<String> _hiddenFields;
+  late String _timeZone;
   DateTime? _start;
   DateTime? _end;
   String? _error;
@@ -3216,7 +3229,8 @@ class _PlanEditScreenState extends State<_PlanEditScreen> {
     _budgetController = TextEditingController(text: _costBoxText(plan.budget));
     _start = plan.startDate;
     _end = plan.endDate;
-    _timeZoneController = TextEditingController(text: plan.timeZone);
+    final storedZone = plan.timeZone.trim();
+    _timeZone = storedZone.isEmpty ? 'UTC' : storedZone;
     _autoStart = plan.autoCalculateStartDate;
     _autoEnd = plan.autoCalculateEndDate;
     _hiddenFields = {
@@ -3230,8 +3244,41 @@ class _PlanEditScreenState extends State<_PlanEditScreen> {
     _nameController.dispose();
     _destinationController.dispose();
     _budgetController.dispose();
-    _timeZoneController.dispose();
     super.dispose();
+  }
+
+  DateTime get _planZoneAnchor => _start ?? _end ?? DateTime.now().toUtc();
+
+  Widget _planZoneField() {
+    final choices = planZoneOptions(_timeZone);
+    final anchor = _planZoneAnchor;
+    return DropdownButtonFormField<String>(
+      key: ValueKey('plan-zone|$_timeZone'),
+      initialValue: _timeZone,
+      isExpanded: true,
+      decoration: const InputDecoration(labelText: 'Time zone'),
+      selectedItemBuilder: (context) => [
+        for (final choice in choices)
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: Text(
+              zoneDaylightLabel(anchor, choice),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+      ],
+      items: [
+        for (final choice in choices)
+          DropdownMenuItem(
+            value: choice,
+            child: Text(planZoneMenuLabel(choice)),
+          ),
+      ],
+      onChanged: (next) {
+        if (next == null || next == _timeZone) return;
+        setState(() => _timeZone = next);
+      },
+    );
   }
 
   Future<void> _endSession() async {
@@ -3250,7 +3297,7 @@ class _PlanEditScreenState extends State<_PlanEditScreen> {
   Future<void> _submit() async {
     final name = _nameController.text.trim();
     final destination = _destinationController.text.trim();
-    final timeZone = _timeZoneController.text.trim();
+    final timeZone = _timeZone.trim();
     final budgetText = _budgetController.text.trim();
     final double? budget;
     if (budgetText.isEmpty) {
@@ -3410,10 +3457,14 @@ class _PlanEditScreenState extends State<_PlanEditScreen> {
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: const InputDecoration(labelText: 'Budget'),
           ),
+          const SizedBox(height: 12),
+          _planZoneField(),
           _UtcDateTimePicker(
             id: 'plan-start',
             label: 'Start',
             value: _start,
+            zone: _timeZone,
+            showDaylightLabel: true,
             onChanged: (value) => setState(() => _start = value.toUtc()),
             onClear: () => setState(() => _start = null),
           ),
@@ -3421,13 +3472,10 @@ class _PlanEditScreenState extends State<_PlanEditScreen> {
             id: 'plan-end',
             label: 'End',
             value: _end,
+            zone: _timeZone,
+            showDaylightLabel: true,
             onChanged: (value) => setState(() => _end = value.toUtc()),
             onClear: () => setState(() => _end = null),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _timeZoneController,
-            decoration: const InputDecoration(labelText: 'Time zone'),
           ),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,

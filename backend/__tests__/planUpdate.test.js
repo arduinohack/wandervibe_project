@@ -218,6 +218,33 @@ describe('owner plan update', () => {
     expect(stored.timeZone).toBe('UTC');
   });
 
+  test('a plan time zone stores an IANA name and rejects an abbreviation', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+    });
+    const planId = await createPlan(ada.token);
+
+    const eastern = await request(app)
+      .put(`/api/plans/${planId}`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ timeZone: 'America/New_York' });
+    expect(eastern.status).toBe(200);
+    expect(eastern.body.plan.timeZone).toBe('America/New_York');
+    expect((await Plan.findById(planId)).timeZone).toBe('America/New_York');
+
+    for (const zone of ['EST', 'EDT', 'Eastern DT', '-05:00']) {
+      const rejected = await request(app)
+        .put(`/api/plans/${planId}`)
+        .set('Authorization', `Bearer ${ada.token}`)
+        .send({ timeZone: zone });
+      expect(rejected.status).toBe(400);
+      expect(rejected.body.message).toBe('Time zone must be an IANA name');
+    }
+    expect((await Plan.findById(planId)).timeZone).toBe('America/New_York');
+  });
+
   test('a number budget is saved and a blank budget clears it', async () => {
     const ada = await registerAndLogin({
       firstName: 'Ada',

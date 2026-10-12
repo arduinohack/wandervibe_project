@@ -141,3 +141,50 @@ List<String> activityZoneOptions(String selected) {
   }
   return [zone, ...activityZoneChoices];
 }
+
+/// Plan editor choices. The stored value is the IANA name. EST and EDT are not choices.
+const planZoneChoices = <String>[
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Los_Angeles',
+  'America/Anchorage',
+  'Pacific/Honolulu',
+  'America/Phoenix',
+  'UTC',
+];
+
+const planZonePlaceLabels = <String, String>{
+  'America/New_York': 'Eastern',
+  'America/Chicago': 'Central',
+  'America/Denver': 'Mountain',
+  'America/Los_Angeles': 'Pacific',
+  'America/Anchorage': 'Alaska',
+  'Pacific/Honolulu': 'Hawaii',
+  'America/Phoenix': 'Arizona',
+  'UTC': 'UTC',
+};
+
+String planZoneMenuLabel(String zone) {
+  final name = zone.trim();
+  if (name.isEmpty || name == 'UTC') return 'UTC';
+  final place = planZonePlaceLabels[name];
+  if (place == null) return name;
+  return '$place · $name';
+}
+
+List<String> planZoneOptions(String selected) {
+  final zone = selected.trim();
+  if (zone.isEmpty || planZoneChoices.contains(zone)) {
+    return planZoneChoices;
+  }
+  return [zone, ...planZoneChoices];
+}
+
+/// Plan start and end button. The clock is the wall time in [zone].
+/// A July Eastern instant reads Eastern DT. A January Eastern instant reads Eastern ST.
+String planClockButtonLabel(DateTime? instant, String zone) {
+  if (instant == null) return 'Choose date and time';
+  final named = zone.trim().isEmpty ? 'UTC' : zone.trim();
+  return '${itineraryClockLabel(instant, named)} ${zoneDaylightLabel(instant, named)}';
+}
