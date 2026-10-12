@@ -11,6 +11,7 @@ const Plan = require('../models/Plan');
 const PlanUser = require('../models/PlanUser');
 const Invitation = require('../models/Invitation');
 const { notifyUsers } = require('../utils/notifications');
+const { inviteeMail } = require('../utils/mailCopy');
 
 jest.setTimeout(30000);
 
@@ -676,5 +677,218 @@ describe('POST /api/plans/:planId/invite replaces a removed invitation', () => {
     expect(rows[0].role).toBe('Collaborator');
     expect(rows[0].status).toBe('accepted');
     expect((await PlanUser.findOne({ planId, userId: grace.userId })).role).toBe('Collaborator');
+  });
+});
+
+describe('POST /api/plans/:planId/invite/resend', () => {
+  function signupUrl(email) {
+    return `https://planitvibe.com/signup?email=${encodeURIComponent(email)}`;
+  }
+
+  test('no token is 401', async () => {
+    const res = await request(app)
+      .post('/api/plans/any-plan/invite/resend')
+      .send({ email: 'ada@example.com' });
+    expect(res.status).toBe(401);
+    expect(res.body.message).toBe('No token, authorization denied');
+  });
+
+  test('owner resends a pending invite without a new row or a new role', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+    });
+    const grace = await registerAndLogin({
+      firstName: 'Grace',
+      lastName: 'Hopper',
+      email: 'grace@example.com',
+    });
+    const planId = await createPlan(ada.token);
+    const collaboratorInvite = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'grace@example.com', role: 'Collaborator' });
+    expect(collaboratorInvite.status).toBe(201);
+    const collaboratorId = collaboratorInvite.body.invitation._id;
+
+    notifyUsers.mockClear();
+    const resent = await request(app)
+      .post(`/api/plans/${planId}/invite/resend`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'Grace@Example.com' });
+    expect(resent.status).toBe(200);
+    expect(resent.body.msg).toBe('Invitation sent!');
+    expect(notifyUsers).toHaveBeenCalledTimes(1);
+    expect(notifyUsers).toHaveBeenCalledWith(
+      [grace.userId],
+      inviteeMail({ planName: 'Paris', planType: 'trip', storedRole: 'Collaborator' }),
+      'email',
+    );
+    const collaboratorRows = await Invitation.find({ planId, userId: grace.userId });
+    expect(collaboratorRows).toHaveLength(1);
+    expect(collaboratorRows[0]._id).toBe(collaboratorId);
+    expect(collaboratorRows[0].role).toBe('Collaborator');
+    expect(collaboratorRows[0].status).toBe('pending');
+    expect(collaboratorRows[0].invitedBy).toBe(ada.userId);
+
+    const guestEmail = 'new.person@example.com';
+    const guestInvite = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: guestEmail, role: 'Guest' });
+    expect(guestInvite.status).toBe(201);
+    const guestId = guestInvite.body.invitation._id;
+    notifyUsers.mockClear();
+    const guestResent = await request(app)
+      .post(`/api/plans/${planId}/invite/resend`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: guestEmail });
+    expect(guestResent.status).toBe(200);
+    expect(notifyUsers).toHaveBeenCalledTimes(1);
+    expect(notifyUsers).toHaveBeenCalledWith(
+      [guestEmail],
+      inviteeMail({
+        planName: 'Paris',
+        planType: 'trip',
+        storedRole: 'Guest',
+        signupUrl: signupUrl(guestEmail),
+      }),
+      'email',
+    );
+    const guestRows = await Invitation.find({ planId, email: guestEmail });
+    expect(guestRows).toHaveLength(1);
+    expect(guestRows[0]._id).toBe(guestId);
+    expect(guestRows[0].role).toBe('Guest');
+    expect(guestRows[0].status).toBe('pending');
+    expect(guestRows[0].userId).toBeFalsy();
+  });
+
+  test('a collaborator may resend a guest, and anyone else pending is refused', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+    });
+    const grace = await registerAndLogin({
+      firstName: 'Grace',
+      lastName: 'Hopper',
+      email: 'grace@example.com',
+    });
+    const alan = await registerAndLogin({
+      firstName: 'Alan',
+      lastName: 'Turing',
+      email: 'alan@example.com',
+    });
+    const planId = await createPlan(ada.token);
+
+    const collaboratorInvite = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'grace@example.com', role: 'Collaborator' });
+    expect((await request(app)
+      .post(`/api/invites/invitations/${collaboratorInvite.body.invitation._id}/respond`)
+      .set('Authorization', `Bearer ${grace.token}`)
+      .send({ status: 'accepted' })).status).toBe(200);
+
+    const guestEmail = 'new.person@example.com';
+    const guestInvite = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: guestEmail, role: 'Guest' });
+    expect(guestInvite.status).toBe(201);
+    const pendingCollaborator = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'bea@example.com', role: 'Collaborator' });
+    expect(pendingCollaborator.status).toBe(201);
+
+    notifyUsers.mockClear();
+    const guestResent = await request(app)
+      .post(`/api/plans/${planId}/invite/resend`)
+      .set('Authorization', `Bearer ${grace.token}`)
+      .send({ email: guestEmail });
+    expect(guestResent.status).toBe(200);
+    expect(notifyUsers).toHaveBeenCalledWith(
+      [guestEmail],
+      inviteeMail({
+        planName: 'Paris',
+        planType: 'trip',
+        storedRole: 'Guest',
+        signupUrl: signupUrl(guestEmail),
+      }),
+      'email',
+    );
+    expect(await Invitation.countDocuments({ planId, email: guestEmail })).toBe(1);
+    expect((await Invitation.findOne({ planId, email: guestEmail })).role).toBe('Guest');
+
+    notifyUsers.mockClear();
+    const collaboratorDenied = await request(app)
+      .post(`/api/plans/${planId}/invite/resend`)
+      .set('Authorization', `Bearer ${grace.token}`)
+      .send({ email: 'bea@example.com' });
+    expect(collaboratorDenied.status).toBe(403);
+    expect(collaboratorDenied.body.msg).toBe('Only Owner can resend a Collaborator invite');
+    expect(notifyUsers).not.toHaveBeenCalled();
+    expect((await Invitation.findById(pendingCollaborator.body.invitation._id)).role).toBe('Collaborator');
+    expect(await Invitation.countDocuments({ planId, email: 'bea@example.com' })).toBe(1);
+
+    const acceptedGuest = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'alan@example.com', role: 'Guest' });
+    expect((await request(app)
+      .post(`/api/invites/invitations/${acceptedGuest.body.invitation._id}/respond`)
+      .set('Authorization', `Bearer ${alan.token}`)
+      .send({ status: 'accepted' })).status).toBe(200);
+
+    notifyUsers.mockClear();
+    const notPending = await request(app)
+      .post(`/api/plans/${planId}/invite/resend`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'alan@example.com' });
+    expect(notPending.status).toBe(400);
+    expect(notPending.body.msg).toBe('This person is not pending');
+    expect(notifyUsers).not.toHaveBeenCalled();
+    expect((await Invitation.findById(acceptedGuest.body.invitation._id)).status).toBe('accepted');
+
+    const unknown = await request(app)
+      .post(`/api/plans/${planId}/invite/resend`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'nobody@example.com' });
+    expect(unknown.status).toBe(400);
+    expect(unknown.body.msg).toBe('This person is not pending');
+
+    await Invitation.create({
+      _id: 'rejected-row',
+      planId,
+      email: 'rejected@example.com',
+      invitedBy: ada.userId,
+      role: 'Guest',
+      status: 'rejected',
+    });
+    const rejected = await request(app)
+      .post(`/api/plans/${planId}/invite/resend`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'rejected@example.com' });
+    expect(rejected.status).toBe(400);
+    expect(rejected.body.msg).toBe('This person is not pending');
+    expect((await Invitation.findById('rejected-row')).status).toBe('rejected');
+
+    const missing = await request(app)
+      .post(`/api/plans/${planId}/invite/resend`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({});
+    expect(missing.status).toBe(400);
+    expect(missing.body.msg).toBe('Missing email');
+
+    const guestDenied = await request(app)
+      .post(`/api/plans/${planId}/invite/resend`)
+      .set('Authorization', `Bearer ${alan.token}`)
+      .send({ email: guestEmail });
+    expect(guestDenied.status).toBe(403);
+    expect(guestDenied.body.msg).toBe('Access denied: insufficient plan role');
+    expect(await Invitation.countDocuments({ planId, email: guestEmail })).toBe(1);
+    expect((await Invitation.findOne({ planId, email: guestEmail })).status).toBe('pending');
   });
 });

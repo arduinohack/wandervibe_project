@@ -54,6 +54,17 @@ bool canAssignAsOwner(
   }
 }
 
+/// Owner may resend a pending Collaborator or Guest. Collaborator may resend
+/// a pending Guest. An accepted person has no resend action.
+bool canResendInvite(
+  String? callerStoredRole,
+  String targetStoredRole,
+  String status,
+) {
+  if (status.trim().toLowerCase() != 'pending') return false;
+  return canRemoveStoredRole(callerStoredRole, targetStoredRole);
+}
+
 /// Owner may remove Collaborator or Guest. Collaborator may remove Guest.
 /// Guest may remove none. Owner is never removable.
 bool canRemoveStoredRole(String? callerStoredRole, String targetStoredRole) {

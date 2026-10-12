@@ -1580,6 +1580,43 @@ class PlanProvider extends ChangeNotifier {
     }
   }
 
+  /// POST /api/plans/:planId/invite/resend with { email }.
+  /// 200 sends the same invite mail again. The pending role stays as it is.
+  Future<PlanInviteResult> resendPlanInvite({
+    required String planId,
+    required String email,
+    required String? token,
+  }) async {
+    try {
+      if (token == null || token.isEmpty) {
+        return const PlanInviteResult(status: 401);
+      }
+      final response = await http.post(
+        Uri.parse(
+          backendBaseUrl + apiPlanInviteResend.replaceAll('{planId}', planId),
+        ),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode({'email': email}),
+      );
+      if (response.statusCode == 200) {
+        return const PlanInviteResult(status: 200);
+      }
+      if (response.statusCode == 401) {
+        return const PlanInviteResult(status: 401);
+      }
+      return PlanInviteResult(
+        status: response.statusCode,
+        error: _apiErrorMessage(response.body),
+      );
+    } catch (e) {
+      logger.e('Error resending invite: $e');
+      return const PlanInviteResult();
+    }
+  }
+
   /// POST /api/plans/:planId/invite with { email, role }.
   /// Role is Collaborator or Guest. 201 is success.
   Future<PlanInviteResult> inviteToPlan({

@@ -134,6 +134,57 @@ planInviteRouter.post('/:planId/invite', roleCheck(['Owner', 'Collaborator']), a
   }
 });
 
+// POST /api/plans/:planId/invite/resend with { email }
+// Sends the same invite mail again. The pending row and its role stay as they are.
+// Owner may resend Collaborator or Guest. Collaborator may resend Guest only.
+planInviteRouter.post('/:planId/invite/resend', roleCheck(['Owner', 'Collaborator']), async (req, res) => {
+  const { planId } = req.params;
+  const email = normalizeEmail(req.body && req.body.email);
+  if (!email) {
+    return res.status(400).json({ msg: 'Missing email' });
+  }
+
+  const callerRole = canonicalMembershipRole(req.planUser && req.planUser.role);
+
+  try {
+    const invitee = await User.findOne(emailMatch(email)).select('_id email').lean();
+    const userId = invitee ? String(invitee._id) : '';
+    const matchers = [emailMatch(email)];
+    if (userId) matchers.push({ userId });
+    const [plan, membership, pending] = await Promise.all([
+      Plan.findById(planId).select('name type ownerId').lean(),
+      userId ? PlanUser.findOne({ planId, userId }).select('_id').lean() : null,
+      Invitation.findOne({ planId, status: 'pending', $or: matchers }).lean(),
+    ]);
+    const isOwner = Boolean(userId && plan && String(plan.ownerId) === userId);
+    if (membership || isOwner || !pending) {
+      return res.status(400).json({ msg: 'This person is not pending' });
+    }
+
+    const storedRole = canonicalMembershipRole(pending.role);
+    if (storedRole !== 'Collaborator' && storedRole !== 'Guest') {
+      return res.status(400).json({ msg: 'This person is not pending' });
+    }
+    if (storedRole === 'Collaborator' && callerRole !== 'Owner') {
+      return res.status(403).json({ msg: 'Only Owner can resend a Collaborator invite' });
+    }
+
+    const message = invitee
+      ? inviteeMail({ planName: plan && plan.name, planType: plan && plan.type, storedRole })
+      : inviteeMail({
+        planName: plan && plan.name,
+        planType: plan && plan.type,
+        storedRole,
+        signupUrl: signupLink(email),
+      });
+    await notifyUsers([invitee ? invitee._id : email], message, 'email');
+    res.status(200).json({ msg: 'Invitation sent!' });
+  } catch (err) {
+    console.error('Resend invite error:', err);
+    res.status(500).json({ msg: 'Server error' });
+  }
+});
+
 const INVITE_STATUSES = ['pending', 'accepted', 'rejected'];
 
 // GET /api/invites — invitations where the caller is the invitee

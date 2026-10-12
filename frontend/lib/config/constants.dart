@@ -20,6 +20,7 @@ const String apiPlanMembers = '/api/plans/{planId}/members';
 const String apiPlanReassign = '/api/plans/{planId}/reassign-coordinator';
 const String apiPlanPlaceMap = '/api/plans/{planId}/place-map';
 const String apiPlanInvite = '/api/plans/{planId}/invite';
+const String apiPlanInviteResend = '/api/plans/{planId}/invite/resend';
 const String apiActivities = '/api/activities';
 const String apiActivitiesAlias = '/api/events';
 const String apiInvites = '/api/invites';

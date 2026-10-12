@@ -25,6 +25,7 @@ class _PlanPeopleScreenState extends State<PlanPeopleScreen> {
   bool _sending = false;
   String? _removingEmail;
   String? _assigningEmail;
+  String? _resendingEmail;
 
   @override
   void initState() {
@@ -121,6 +122,36 @@ class _PlanPeopleScreenState extends State<PlanPeopleScreen> {
       _sending = false;
       _error = result.error ?? 'Could not send invite';
     });
+  }
+
+  Future<void> _resendInvite(PlanMember member) async {
+    final email = member.email.trim();
+    if (email.isEmpty) return;
+    setState(() => _resendingEmail = email);
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final result = await planProvider.resendPlanInvite(
+      planId: widget.plan.id,
+      email: email,
+      token: userProvider.token,
+    );
+    if (!mounted) return;
+    if (result.status == 401) {
+      await _endSession(userProvider, planProvider, navigator);
+      return;
+    }
+    setState(() => _resendingEmail = null);
+    if (result.status == 200) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Invitation sent')),
+      );
+      return;
+    }
+    messenger.showSnackBar(
+      SnackBar(content: Text(result.error ?? 'Could not resend invite')),
+    );
   }
 
   Future<void> _removeMember(PlanMember member) async {
@@ -240,10 +271,17 @@ class _PlanPeopleScreenState extends State<PlanPeopleScreen> {
     final title = member.name.isNotEmpty ? member.name : member.email;
     final canRemove = canRemoveStoredRole(callerRole, member.role);
     final canAssign = canAssignAsOwner(callerRole, member.role, member.status);
+    final canResend = canResendInvite(callerRole, member.role, member.status);
     final email = member.email.trim();
     final removing = _removingEmail == email;
     final assigning = _assigningEmail == email;
-    final busy = removing || assigning || _sending || _assigningEmail != null;
+    final resending = _resendingEmail == email;
+    final busy = removing ||
+        assigning ||
+        resending ||
+        _sending ||
+        _assigningEmail != null ||
+        _resendingEmail != null;
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
@@ -260,10 +298,15 @@ class _PlanPeopleScreenState extends State<PlanPeopleScreen> {
               ],
             ),
           ),
-          if (canAssign || canRemove)
+          if (canResend || canAssign || canRemove)
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
+                if (canResend && email.isNotEmpty)
+                  TextButton(
+                    onPressed: busy ? null : () => _resendInvite(member),
+                    child: const Text('Resend'),
+                  ),
                 if (canAssign)
                   TextButton(
                     onPressed: busy ? null : () => _assignOwner(member),
