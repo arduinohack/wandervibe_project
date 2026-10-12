@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wandervibe_frontend/models/plan.dart';
+import 'package:wandervibe_frontend/utils/activity_time.dart';
 
 void main() {
   test('the first activity date is day 1 and six days later is day 7', () {
@@ -81,6 +82,66 @@ void main() {
       'Day 1 · 2026-10-10',
       'Day 7 · 2026-10-16',
     ]);
+  });
+
+  test('4pm Alaska on July 13 stays day 1 when the plan zone is Eastern', () {
+    final first = instantFromWall(
+      year: 2026,
+      month: 7,
+      day: 13,
+      hour: 9,
+      minute: 0,
+      zone: 'America/New_York',
+    );
+    final alaska = instantFromWall(
+      year: 2026,
+      month: 7,
+      day: 13,
+      hour: 16,
+      minute: 0,
+      zone: 'America/Anchorage',
+    );
+
+    expect(alaska.toUtc(), DateTime.utc(2026, 7, 14));
+    expect(
+      planItineraryDayHeaders(
+        [first, alaska],
+        planTimeZone: 'America/New_York',
+      ),
+      ['Day 1 · 2026-07-13', null],
+    );
+    expect(
+      planItineraryDayHeaders(
+        [first, alaska],
+        planTimeZone: 'UTC',
+      ),
+      ['Day 1 · 2026-07-13', 'Day 2 · 2026-07-14'],
+    );
+  });
+
+  test('a missing plan time zone uses the device zone, not the UTC date', () {
+    final plan = Plan.fromJson({
+      '_id': 'plan-1',
+      'type': 'trip',
+      'name': 'July',
+    });
+    expect(plan.timeZone, isEmpty);
+
+    final alaska = instantFromWall(
+      year: 2026,
+      month: 7,
+      day: 13,
+      hour: 16,
+      minute: 0,
+      zone: 'America/Anchorage',
+    );
+    final headers = planItineraryDayHeaders(
+      [alaska],
+      planTimeZone: plan.timeZone,
+      deviceTimeZone: 'America/New_York',
+    );
+
+    expect(headers, ['Day 1 · 2026-07-13']);
   });
 
   test('a start with no time stays day 1 until a date exists', () {

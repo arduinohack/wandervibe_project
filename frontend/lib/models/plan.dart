@@ -271,7 +271,7 @@ class Plan {
       location: _stringValue(json['location']),
       budget: json['budget'] is num ? (json['budget'] as num).toDouble() : null,
       planningState: _stringValue(json['planningState'], fallback: 'initial'),
-      timeZone: _stringValue(json['timeZone'], fallback: 'UTC'),
+      timeZone: _stringValue(json['timeZone']).trim(),
       participants: _participants(json['participants']),
       activityIds: _stringList(json['eventIds'] ?? json['activityIds']),
       ownerId: _stringValue(json['ownerId']),
