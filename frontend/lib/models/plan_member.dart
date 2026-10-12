@@ -1,20 +1,34 @@
+import '../utils/activity_time.dart';
+
 String _text(dynamic value) {
   if (value == null) return '';
   return value.toString();
 }
 
-/// One accepted member or pending invitation from GET /api/plans/:planId/members.
+DateTime? _instant(dynamic value) {
+  if (value == null) return null;
+  final text = value.toString().trim();
+  if (text.isEmpty) return null;
+  return DateTime.tryParse(text);
+}
+
+/// One accepted member, pending invitation, or declined invitation from
+/// GET /api/plans/:planId/members.
 class PlanMember {
   final String name;
   final String email;
   final String role;
   final String status;
+  final DateTime? invitedAt;
+  final DateTime? acceptedAt;
 
   const PlanMember({
     required this.name,
     required this.email,
     required this.role,
     required this.status,
+    this.invitedAt,
+    this.acceptedAt,
   });
 
   factory PlanMember.fromJson(Map<String, dynamic> json) {
@@ -23,8 +37,60 @@ class PlanMember {
       email: _text(json['email']),
       role: _text(json['role']),
       status: _text(json['status']),
+      invitedAt: _instant(json['invitedAt']),
+      acceptedAt: _instant(json['acceptedAt']),
     );
   }
+}
+
+String _twoDigit(int value) => value.toString().padLeft(2, '0');
+
+/// Clock for a people row. A plan zone uses that IANA name. An empty plan
+/// zone uses [deviceTimeZone], then the device clock.
+String planMemberClock(
+  DateTime instant, {
+  String planTimeZone = '',
+  String? deviceTimeZone,
+}) {
+  final plan = planTimeZone.trim();
+  if (plan.isNotEmpty) {
+    return '${itineraryClockLabel(instant, plan)} ${zoneDaylightLabel(instant, plan)}';
+  }
+  final device = (deviceTimeZone ?? '').trim();
+  if (device.isNotEmpty) {
+    return '${itineraryClockLabel(instant, device)} ${zoneDaylightLabel(instant, device)}';
+  }
+  final local = instant.toLocal();
+  final clock = '${local.month}/${local.day} ${_twoDigit(local.hour)}:${_twoDigit(local.minute)}';
+  final name = local.timeZoneName.trim();
+  if (name.isEmpty) return clock;
+  return '$clock $name';
+}
+
+/// "Invited", "Declined", or "Accepted" plus the clock. Pending and declined
+/// use [PlanMember.invitedAt]. Accepted uses [PlanMember.acceptedAt].
+String planMemberTimeLine(
+  PlanMember member,
+  String planTimeZone, {
+  String? deviceTimeZone,
+}) {
+  final status = member.status.trim().toLowerCase();
+  final String label;
+  final DateTime? instant;
+  if (status == 'pending') {
+    label = 'Invited';
+    instant = member.invitedAt;
+  } else if (status == 'rejected' || status == 'declined') {
+    label = 'Declined';
+    instant = member.invitedAt;
+  } else if (status == 'accepted') {
+    label = 'Accepted';
+    instant = member.acceptedAt;
+  } else {
+    return '';
+  }
+  if (instant == null) return label;
+  return '$label ${planMemberClock(instant, planTimeZone: planTimeZone, deviceTimeZone: deviceTimeZone)}';
 }
 
 bool _isStoredOwner(String role) {
@@ -67,7 +133,7 @@ List<PlanMember> linkedPlanPlanners(List<PlanMember> members) {
   return [...owners, ...planners];
 }
 
-/// Owner once at the top, then accepted Collaborators and Guests plus pending invites.
+/// Owner once at the top, then accepted, pending, and declined people.
 List<PlanMember> peopleScreenMembers(List<PlanMember> members) {
   PlanMember? owner;
   final rest = <PlanMember>[];

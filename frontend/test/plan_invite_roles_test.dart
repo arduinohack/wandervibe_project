@@ -135,6 +135,13 @@ void main() {
       role: 'Collaborator',
       status: 'pending',
     );
+    const declined = PlanMember(
+      name: 'No',
+      email: 'no@example.com',
+      role: 'Collaborator',
+      status: 'rejected',
+      invitedAt: null,
+    );
     const blank = PlanMember(
       name: 'No Mail',
       email: '   ',
@@ -146,6 +153,7 @@ void main() {
       planner,
       guest,
       pending,
+      declined,
       owner,
       attendee,
       legacyPlanner,
@@ -157,5 +165,91 @@ void main() {
     expect(planRoleLabel('trip', listed[1].role), 'Co-Planner');
     expect(planRoleLabel('plan', listed[0].role), 'Host');
     expect(planRoleLabel('plan', listed[2].role), 'Planner');
+  });
+
+  test('people times use the plan zone', () {
+    final winter = DateTime.parse('2026-01-15T17:00:00Z');
+    final summer = DateTime.parse('2026-07-15T16:00:00Z');
+    final pending = PlanMember(
+      name: 'Eve',
+      email: 'eve@example.com',
+      role: 'Guest',
+      status: 'pending',
+      invitedAt: winter,
+    );
+    final declined = PlanMember(
+      name: 'Grace',
+      email: 'grace@example.com',
+      role: 'Collaborator',
+      status: 'rejected',
+      invitedAt: winter,
+    );
+    final accepted = PlanMember(
+      name: 'Ada',
+      email: 'ada@example.com',
+      role: 'Owner',
+      status: 'accepted',
+      acceptedAt: summer,
+    );
+
+    expect(
+      planMemberTimeLine(pending, 'America/New_York'),
+      'Invited 1/15 12:00 Eastern ST',
+    );
+    expect(
+      planMemberTimeLine(declined, 'America/New_York'),
+      'Declined 1/15 12:00 Eastern ST',
+    );
+    expect(
+      planMemberTimeLine(accepted, 'America/New_York'),
+      'Accepted 7/15 12:00 Eastern DT',
+    );
+    expect(
+      planMemberTimeLine(accepted, 'UTC'),
+      'Accepted 7/15 16:00 UTC',
+    );
+    expect(
+      planMemberTimeLine(accepted, '', deviceTimeZone: 'America/Chicago'),
+      'Accepted 7/15 11:00 Central DT',
+    );
+  });
+
+  test('an empty plan zone uses the device clock', () {
+    final instant = DateTime.parse('2026-01-15T17:00:00Z');
+    final local = instant.toLocal();
+    final hour = local.hour.toString().padLeft(2, '0');
+    final minute = local.minute.toString().padLeft(2, '0');
+    final member = PlanMember(
+      name: 'Ada',
+      email: 'ada@example.com',
+      role: 'Owner',
+      status: 'accepted',
+      acceptedAt: instant,
+    );
+    expect(
+      planMemberTimeLine(member, '   '),
+      startsWith('Accepted ${local.month}/${local.day} $hour:$minute'),
+    );
+  });
+
+  test('member times parse from the members payload', () {
+    final pending = PlanMember.fromJson({
+      'name': 'Eve',
+      'email': 'eve@example.com',
+      'role': 'Guest',
+      'status': 'pending',
+      'invitedAt': '2026-01-15T17:00:00.000Z',
+    });
+    final accepted = PlanMember.fromJson({
+      'name': 'Ada',
+      'email': 'ada@example.com',
+      'role': 'Owner',
+      'status': 'accepted',
+      'acceptedAt': '2026-07-15T16:00:00.000Z',
+    });
+    expect(pending.invitedAt, DateTime.parse('2026-01-15T17:00:00.000Z'));
+    expect(pending.acceptedAt, isNull);
+    expect(accepted.acceptedAt, DateTime.parse('2026-07-15T16:00:00.000Z'));
+    expect(accepted.invitedAt, isNull);
   });
 }

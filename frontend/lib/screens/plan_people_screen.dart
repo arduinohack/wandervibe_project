@@ -267,9 +267,13 @@ class _PlanPeopleScreenState extends State<PlanPeopleScreen> {
     PlanMember member,
     String planType,
     String? callerRole,
+    String planTimeZone,
   ) {
     final title = member.name.isNotEmpty ? member.name : member.email;
-    final canRemove = canRemoveStoredRole(callerRole, member.role);
+    final listedStatus = member.status.trim().toLowerCase();
+    final canRemove = (listedStatus == 'pending' || listedStatus == 'accepted') &&
+        canRemoveStoredRole(callerRole, member.role);
+    final timeLine = planMemberTimeLine(member, planTimeZone);
     final canAssign = canAssignAsOwner(callerRole, member.role, member.status);
     final canResend = canResendInvite(callerRole, member.role, member.status);
     final email = member.email.trim();
@@ -295,6 +299,7 @@ class _PlanPeopleScreenState extends State<PlanPeopleScreen> {
                 if (member.name.isNotEmpty && member.email.isNotEmpty)
                   Text(member.email),
                 Text(planMemberRoleLine(planType, member.role, member.status)),
+                if (timeLine.isNotEmpty) Text(timeLine),
               ],
             ),
           ),
@@ -379,6 +384,7 @@ class _PlanPeopleScreenState extends State<PlanPeopleScreen> {
   Widget _body({
     required List<PlanMember> members,
     required String planType,
+    required String planTimeZone,
     required List<String> roles,
     required String? callerRole,
   }) {
@@ -412,7 +418,7 @@ class _PlanPeopleScreenState extends State<PlanPeopleScreen> {
       padding: const EdgeInsets.all(16),
       children: [
         for (final member in members)
-          _memberTile(member, planType, callerRole),
+          _memberTile(member, planType, callerRole, planTimeZone),
         if (roles.isNotEmpty) ...[
           if (members.isNotEmpty) const SizedBox(height: 8),
           _inviteForm(planType, roles),
@@ -428,9 +434,11 @@ class _PlanPeopleScreenState extends State<PlanPeopleScreen> {
     final storedRole = planProvider.viewerStoredRole(widget.plan.id, userId);
     final roles = inviteStoredRoles(storedRole);
     var planType = widget.plan.type;
+    var planTimeZone = widget.plan.timeZone;
     for (final plan in planProvider.plans) {
       if (plan.id == widget.plan.id) {
         planType = plan.type;
+        planTimeZone = plan.timeZone;
         break;
       }
     }
@@ -444,6 +452,7 @@ class _PlanPeopleScreenState extends State<PlanPeopleScreen> {
       body: _body(
         members: members,
         planType: planType,
+        planTimeZone: planTimeZone,
         roles: roles,
         callerRole: storedRole,
       ),

@@ -69,6 +69,13 @@ function memberKeys(row) {
   return Object.keys(row).sort();
 }
 
+function expectedMemberKeys(status) {
+  if (status === 'accepted') {
+    return ['acceptedAt', 'email', 'name', 'role', 'status'];
+  }
+  return ['email', 'invitedAt', 'name', 'role', 'status'];
+}
+
 describe('GET /api/plans/:planId/members', () => {
   test('no token is 401', async () => {
     const ada = await registerAndLogin({
@@ -177,7 +184,8 @@ describe('GET /api/plans/:planId/members', () => {
       expect(bodyText.toLowerCase()).not.toContain('resettoken');
 
       for (const row of res.body.members) {
-        expect(memberKeys(row)).toEqual(['email', 'name', 'role', 'status']);
+        expect(memberKeys(row)).toEqual(expectedMemberKeys(row.status));
+        expect(row.invitedAt === undefined || row.acceptedAt === undefined).toBe(true);
       }
 
       const byEmail = Object.fromEntries(
@@ -214,12 +222,117 @@ describe('GET /api/plans/:planId/members', () => {
         status: 'pending',
       });
       expect(res.body.members).toHaveLength(5);
+
+      const adaMembership = await PlanUser.findOne({ planId, userId: ada.userId }).lean();
+      const graceInvite = await Invitation.findById(collaboratorInvite.body.invitation._id).lean();
+      const alanInvite = await Invitation.findById(guestInvite.body.invitation._id).lean();
+      const eveInvite = await Invitation.findOne({ planId, email: 'eve@example.com' }).lean();
+      const unknownInvite = await Invitation.findOne({
+        planId,
+        email: 'new.person@example.com',
+      }).lean();
+      expect(byEmail['ada@example.com'].acceptedAt).toBe(
+        new Date(adaMembership.createdAt).toISOString(),
+      );
+      expect(byEmail['grace@example.com'].acceptedAt).toBe(
+        new Date(graceInvite.updatedAt).toISOString(),
+      );
+      expect(byEmail['alan@example.com'].acceptedAt).toBe(
+        new Date(alanInvite.updatedAt).toISOString(),
+      );
+      expect(byEmail['eve@example.com'].invitedAt).toBe(
+        new Date(eveInvite.createdAt).toISOString(),
+      );
+      expect(byEmail['new.person@example.com'].invitedAt).toBe(
+        new Date(unknownInvite.createdAt).toISOString(),
+      );
     }
 
     const outsider = await request(app)
       .get(`/api/plans/${planId}/members`)
       .set('Authorization', `Bearer ${eve.token}`);
     expect(outsider.status).toBe(403);
+  });
+
+  test('a declined person is included with invitedAt', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+    });
+    const grace = await registerAndLogin({
+      firstName: 'Grace',
+      lastName: 'Hopper',
+      email: 'grace@example.com',
+    });
+    const alan = await registerAndLogin({
+      firstName: 'Alan',
+      lastName: 'Turing',
+      email: 'alan@example.com',
+    });
+    const planId = await createPlan(ada.token);
+
+    const guestInvite = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'alan@example.com', role: 'Guest' });
+    expect(guestInvite.status).toBe(201);
+    const acceptGuest = await request(app)
+      .post(`/api/invites/invitations/${guestInvite.body.invitation._id}/respond`)
+      .set('Authorization', `Bearer ${alan.token}`)
+      .send({ status: 'accepted' });
+    expect(acceptGuest.status).toBe(200);
+
+    const declinedInvite = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'grace@example.com', role: 'Collaborator' });
+    expect(declinedInvite.status).toBe(201);
+    const reject = await request(app)
+      .post(`/api/invites/invitations/${declinedInvite.body.invitation._id}/respond`)
+      .set('Authorization', `Bearer ${grace.token}`)
+      .send({ status: 'rejected' });
+    expect(reject.status).toBe(200);
+
+    await User.updateOne(
+      { _id: grace.userId },
+      { $set: { resetToken: 'secret-reset-token', resetTokenExpiry: new Date() } },
+    );
+
+    const stored = await Invitation.findById(declinedInvite.body.invitation._id).lean();
+    expect(stored.status).toBe('rejected');
+
+    for (const token of [ada.token, alan.token]) {
+      const res = await request(app)
+        .get(`/api/plans/${planId}/members`)
+        .set('Authorization', `Bearer ${token}`);
+      expect(res.status).toBe(200);
+
+      const bodyText = JSON.stringify(res.body);
+      expect(bodyText).not.toMatch(/password1/i);
+      expect(bodyText).not.toMatch(/secret-reset-token/);
+      expect(bodyText.toLowerCase()).not.toContain('password');
+      expect(bodyText.toLowerCase()).not.toContain('resettoken');
+      expect(bodyText).not.toContain(ada.token);
+      expect(bodyText).not.toContain(grace.token);
+
+      const byEmail = Object.fromEntries(
+        res.body.members.map((row) => [row.email, row]),
+      );
+      expect(res.body.members).toHaveLength(3);
+      expect(memberKeys(byEmail['grace@example.com'])).toEqual(expectedMemberKeys('rejected'));
+      expect(byEmail['grace@example.com']).toMatchObject({
+        name: 'Grace Hopper',
+        email: 'grace@example.com',
+        role: 'Collaborator',
+        status: 'rejected',
+        invitedAt: new Date(stored.createdAt).toISOString(),
+      });
+      expect(byEmail['grace@example.com'].acceptedAt).toBeUndefined();
+      expect(byEmail['ada@example.com'].status).toBe('accepted');
+      expect(byEmail['ada@example.com'].invitedAt).toBeUndefined();
+      expect(byEmail['alan@example.com'].status).toBe('accepted');
+    }
   });
 });
 
