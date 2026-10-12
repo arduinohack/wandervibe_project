@@ -256,12 +256,25 @@ String _flightLegCardText(FlightLeg leg, String startZone, String endZone) {
   if (leg.departure != null) {
     parts.add(_pdfClock(leg.departure, departureZone));
   }
+  final minutes = _shownLegMinutes(leg);
+  if (minutes != null) parts.add('$minutes min');
   final destination = leg.destination.trim();
   if (destination.isNotEmpty) parts.add(destination);
   if (leg.arrival != null) {
     parts.add(_pdfClock(leg.arrival, arrivalZone));
   }
   return parts.where((part) => part.trim().isNotEmpty && part.trim() != 'not set').join(', ');
+}
+
+int? _shownLegMinutes(FlightLeg leg) {
+  final stored = leg.durationMinutes;
+  if (stored != null) return stored;
+  final departure = leg.departure;
+  final arrival = leg.arrival;
+  if (departure == null || arrival == null || arrival.isBefore(departure)) {
+    return null;
+  }
+  return arrival.difference(departure).inMinutes;
 }
 
 List<Widget> _activityCardLines(
@@ -572,6 +585,7 @@ class _UtcDateTimePicker extends StatelessWidget {
   final VoidCallback? onClear;
   final String? zone;
   final ValueChanged<String>? onZoneChanged;
+  final bool showClock;
 
   const _UtcDateTimePicker({
     required this.id,
@@ -581,6 +595,7 @@ class _UtcDateTimePicker extends StatelessWidget {
     this.onClear,
     this.zone,
     this.onZoneChanged,
+    this.showClock = true,
   });
 
   @override
@@ -597,30 +612,32 @@ class _UtcDateTimePicker extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              OutlinedButton(
-                onPressed: () async {
-                  final next = await _pickDateAndTime(
-                    context,
-                    label: label,
-                    instant: instant,
-                    zone: selectedZone,
-                  );
-                  if (next == null || !context.mounted) return;
-                  onChanged(next);
-                },
-                child: Text(_dateTimeButtonLabel(instant, selectedZone)),
-              ),
-              if (onClear != null && instant != null)
-                TextButton(onPressed: onClear, child: const Text('Clear')),
-            ],
-          ),
+          if (showClock) ...[
+            Text(label),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                OutlinedButton(
+                  onPressed: () async {
+                    final next = await _pickDateAndTime(
+                      context,
+                      label: label,
+                      instant: instant,
+                      zone: selectedZone,
+                    );
+                    if (next == null || !context.mounted) return;
+                    onChanged(next);
+                  },
+                  child: Text(_dateTimeButtonLabel(instant, selectedZone)),
+                ),
+                if (onClear != null && instant != null)
+                  TextButton(onPressed: onClear, child: const Text('Clear')),
+              ],
+            ),
+          ],
           if (selectedZone != null && changeZone != null) ...[
             const SizedBox(height: 8),
             DropdownButtonFormField<String>(
@@ -1837,6 +1854,7 @@ class _ActivityFields {
 class _ExtraLeg {
   final TextEditingController origin;
   final TextEditingController destination;
+  final TextEditingController duration;
   DateTime? departure;
   DateTime? arrival;
   String originZone;
@@ -1845,16 +1863,19 @@ class _ExtraLeg {
   _ExtraLeg({
     String origin = '',
     String destination = '',
+    String duration = '',
     this.departure,
     this.arrival,
     this.originZone = 'UTC',
     this.destinationZone = 'UTC',
   }) : origin = TextEditingController(text: origin),
-       destination = TextEditingController(text: destination);
+       destination = TextEditingController(text: destination),
+       duration = TextEditingController(text: duration);
 
   void dispose() {
     origin.dispose();
     destination.dispose();
+    duration.dispose();
   }
 }
 
@@ -1916,6 +1937,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
   late final TextEditingController _confirmationController;
   late final TextEditingController _originController;
   late final TextEditingController _destinationController;
+  late final TextEditingController _legDurationController;
   late final TextEditingController _costController;
   late String _costType;
   late final TextEditingController _gateController;
@@ -1976,6 +1998,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     _confirmationController = TextEditingController();
     _originController = TextEditingController();
     _destinationController = TextEditingController();
+    _legDurationController = TextEditingController();
     _costController = TextEditingController(text: _costBoxText(activity?.cost));
     _costType = _storedCostType(activity);
     _gateController = TextEditingController(text: activity?.gate ?? '');
@@ -1989,7 +2012,20 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
   }
 
   void _loadStoredLegs(Activity? activity) {
-    if (activity == null || _type != 'flight' || activity.legs.isEmpty) return;
+    if (activity == null || _type != 'flight') return;
+    if (activity.legs.isEmpty) {
+      _legDurationController.text = _durationTextFor(
+        stored: activity.duration?.inMinutes,
+        departure: _start,
+        arrival: _end,
+      );
+      _applyDurationToArrival(
+        minutesText: _legDurationController.text,
+        departure: _start,
+        assign: (arrival) => _end = arrival,
+      );
+      return;
+    }
     final first = activity.legs.first;
     _originController.text = first.origin;
     _destinationController.text = first.destination;
@@ -2000,21 +2036,65 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     if (firstOrigin.isNotEmpty) _startZone = firstOrigin;
     if (firstDestination.isNotEmpty) _endZone = firstDestination;
     _endZoneCustom = _endZone != _startZone;
+    _legDurationController.text = _durationTextFor(
+      stored: first.durationMinutes,
+      departure: first.departure,
+      arrival: first.arrival,
+    );
+    _applyDurationToArrival(
+      minutesText: _legDurationController.text,
+      departure: _start,
+      assign: (arrival) => _end = arrival,
+    );
     for (final leg in activity.legs.skip(1)) {
       final originZone = leg.originTimeZone.trim();
       final destinationZone = leg.destinationTimeZone.trim();
+      final durationText = _durationTextFor(
+        stored: leg.durationMinutes,
+        departure: leg.departure,
+        arrival: leg.arrival,
+      );
+      var arrival = leg.arrival;
+      final minutes = _wholeMinutes(durationText);
+      final departure = leg.departure;
+      if (minutes != null && departure != null) {
+        arrival = departure.add(Duration(minutes: minutes));
+      }
       _extraLegs.add(
         _ExtraLeg(
           origin: leg.origin,
           destination: leg.destination,
+          duration: durationText,
           departure: leg.departure,
-          arrival: leg.arrival,
+          arrival: arrival,
           originZone: originZone.isNotEmpty ? originZone : _startZone,
           destinationZone: destinationZone.isNotEmpty ? destinationZone : _endZone,
         ),
       );
     }
-    if (_extraLegs.isNotEmpty) _syncShownDuration();
+    _syncShownDuration();
+  }
+
+  String _durationTextFor({
+    required int? stored,
+    required DateTime? departure,
+    required DateTime? arrival,
+  }) {
+    if (stored != null && stored >= 0) return stored.toString();
+    if (departure != null && arrival != null && !arrival.isBefore(departure)) {
+      return arrival.difference(departure).inMinutes.toString();
+    }
+    return '';
+  }
+
+  void _applyDurationToArrival({
+    required String minutesText,
+    required DateTime? departure,
+    required void Function(DateTime arrival) assign,
+  }) {
+    final minutes = _wholeMinutes(minutesText);
+    if (minutes == null || departure == null) return;
+    assign(departure.add(Duration(minutes: minutes)));
   }
 
   String _planOrUtc() {
@@ -2069,6 +2149,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     _confirmationController.dispose();
     _originController.dispose();
     _destinationController.dispose();
+    _legDurationController.dispose();
     _costController.dispose();
     _gateController.dispose();
     _baggageController.dispose();
@@ -2102,11 +2183,16 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
 
   void _setStart(DateTime instant) {
     final value = instant.toUtc();
-    if (_extraLegs.isNotEmpty) {
+    if (_usesFlightFields) {
+      final minutes = _wholeMinutes(_legDurationController.text);
       setState(() {
         _start = value;
         _startChanged = true;
         _error = null;
+        if (minutes != null) {
+          _end = value.add(Duration(minutes: minutes));
+          _endChanged = true;
+        }
         _syncShownDuration();
       });
       return;
@@ -2127,7 +2213,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
 
   void _setEnd(DateTime instant) {
     final value = instant.toUtc();
-    if (_extraLegs.isNotEmpty) {
+    if (_usesFlightFields) {
       setState(() {
         _end = value;
         _endChanged = true;
@@ -2159,13 +2245,13 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     setState(() {
       _end = null;
       _endChanged = true;
-      _durationController.clear();
+      if (!_usesFlightFields) _durationController.clear();
       _error = null;
     });
   }
 
   void _onDurationChanged(String text) {
-    if (_extraLegs.isNotEmpty) return;
+    if (_usesFlightFields) return;
     final minutes = _wholeMinutes(text);
     final start = _start;
     if (minutes == null || start == null) {
@@ -2220,6 +2306,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
         destination: _destinationController.text.trim(),
         destinationTimeZone: _endZone,
         arrival: _end,
+        durationMinutes: _wholeMinutes(_legDurationController.text),
       ),
       for (final leg in _extraLegs)
         FlightLeg(
@@ -2229,6 +2316,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
           destination: leg.destination.text.trim(),
           destinationTimeZone: leg.destinationZone,
           arrival: leg.arrival,
+          durationMinutes: _wholeMinutes(leg.duration.text),
         ),
     ];
   }
@@ -2264,6 +2352,12 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
         _startZone = next.originZone;
         _endZone = next.destinationZone;
         _endZoneCustom = _endZone != _startZone;
+        _legDurationController.text = next.duration.text;
+        _applyDurationToArrival(
+          minutesText: _legDurationController.text,
+          departure: _start,
+          assign: (arrival) => _end = arrival,
+        );
         _retiredLegs.add(next);
       } else {
         _retiredLegs.add(_extraLegs.removeAt(index - 1));
@@ -2277,10 +2371,44 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
   }
 
   void _setExtraDeparture(int index, DateTime instant) {
+    final leg = _extraLegs[index];
+    final minutes = _wholeMinutes(leg.duration.text);
+    final departure = instant.toUtc();
     setState(() {
-      _extraLegs[index].departure = instant.toUtc();
+      leg.departure = departure;
       _startChanged = true;
       _error = null;
+      if (minutes != null) {
+        leg.arrival = departure.add(Duration(minutes: minutes));
+        _endChanged = true;
+      }
+      _syncShownDuration();
+    });
+  }
+
+  void _onLeg1DurationChanged(String text) {
+    final minutes = _wholeMinutes(text);
+    final departure = _start;
+    setState(() {
+      _error = null;
+      if (minutes != null && departure != null) {
+        _end = departure.add(Duration(minutes: minutes));
+        _endChanged = true;
+      }
+      _syncShownDuration();
+    });
+  }
+
+  void _onExtraDurationChanged(int index, String text) {
+    final leg = _extraLegs[index];
+    final minutes = _wholeMinutes(text);
+    final departure = leg.departure;
+    setState(() {
+      _error = null;
+      if (minutes != null && departure != null) {
+        leg.arrival = departure.add(Duration(minutes: minutes));
+        _endChanged = true;
+      }
       _syncShownDuration();
     });
   }
@@ -2333,11 +2461,27 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     final name = _nameController.text.trim();
     final start = _start;
     final end = _spanEnd;
-    final typedDuration = _durationController.text.trim();
-    var minutes = _wholeMinutes(typedDuration);
-    if (typedDuration.isNotEmpty && minutes == null) {
-      setState(() => _error = 'Enter duration as whole minutes');
-      return null;
+    var typedDuration = '';
+    int? minutes;
+    if (_usesFlightFields) {
+      final legDurations = <String>[
+        _legDurationController.text,
+        for (final leg in _extraLegs) leg.duration.text,
+      ];
+      for (final text in legDurations) {
+        final trimmed = text.trim();
+        if (trimmed.isNotEmpty && _wholeMinutes(trimmed) == null) {
+          setState(() => _error = 'Enter duration as whole minutes');
+          return null;
+        }
+      }
+    } else {
+      typedDuration = _durationController.text.trim();
+      minutes = _wholeMinutes(typedDuration);
+      if (typedDuration.isNotEmpty && minutes == null) {
+        setState(() => _error = 'Enter duration as whole minutes');
+        return null;
+      }
     }
     final editing = widget.isScreen;
     if (name.isEmpty || (!editing && (start == null || end == null))) {
@@ -2487,6 +2631,14 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       final next = _wallFromParsed(endText, _endZone, _end);
       if (next != null) {
         _end = next;
+        _endChanged = true;
+      }
+    }
+    if (_type == 'flight') {
+      final minutes = _wholeMinutes(_legDurationController.text);
+      final departure = _start;
+      if (minutes != null && departure != null) {
+        _end = departure.add(Duration(minutes: minutes));
         _endChanged = true;
       }
     }
@@ -2695,8 +2847,38 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     );
   }
 
+  Widget _legArrivalPicker({
+    required String id,
+    required bool durationSet,
+    required DateTime? value,
+    required String zone,
+    required ValueChanged<String> onZoneChanged,
+    required ValueChanged<DateTime> onChanged,
+    VoidCallback? onClear,
+  }) {
+    if (durationSet) {
+      return _UtcDateTimePicker(
+        id: '$id-zone',
+        label: 'Arrival',
+        value: value,
+        zone: zone,
+        onZoneChanged: onZoneChanged,
+        onChanged: (_) {},
+        showClock: false,
+      );
+    }
+    return _UtcDateTimePicker(
+      id: id,
+      label: 'Arrival',
+      value: value,
+      zone: zone,
+      onZoneChanged: onZoneChanged,
+      onChanged: onChanged,
+      onClear: onClear,
+    );
+  }
+
   List<Widget> _flightLegFields() {
-    final lockedDuration = _extraLegs.isNotEmpty;
     return [
       _legTitle('Leg 1'),
       _textField(
@@ -2724,9 +2906,15 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
           setState(() => _error = null);
         },
       ),
-      _UtcDateTimePicker(
+      _textField(
+        _legDurationController,
+        'Duration (minutes)',
+        number: true,
+        onChanged: _onLeg1DurationChanged,
+      ),
+      _legArrivalPicker(
         id: 'leg-1-arrival',
-        label: 'Arrival',
+        durationSet: _wholeMinutes(_legDurationController.text) != null,
         value: _end,
         zone: _endZone,
         onZoneChanged: _onEndZone,
@@ -2758,9 +2946,15 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
             setState(() => _error = null);
           },
         ),
-        _UtcDateTimePicker(
+        _textField(
+          _extraLegs[index].duration,
+          'Duration (minutes)',
+          number: true,
+          onChanged: (text) => _onExtraDurationChanged(index, text),
+        ),
+        _legArrivalPicker(
           id: 'leg-${index + 2}-arrival',
-          label: 'Arrival',
+          durationSet: _wholeMinutes(_extraLegs[index].duration.text) != null,
           value: _extraLegs[index].arrival,
           zone: _extraLegs[index].destinationZone,
           onZoneChanged: (zone) => _onExtraDestinationZone(index, zone),
@@ -2776,13 +2970,13 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
           child: const Text('Add leg'),
         ),
       ),
-      _textField(
-        _durationController,
-        'Duration (minutes)',
-        number: true,
-        readOnly: lockedDuration,
-        onChanged: lockedDuration ? null : _onDurationChanged,
-      ),
+      if (_extraLegs.isNotEmpty)
+        _textField(
+          _durationController,
+          'Duration (minutes)',
+          number: true,
+          readOnly: true,
+        ),
     ];
   }
 

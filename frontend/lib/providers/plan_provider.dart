@@ -58,6 +58,7 @@ Map<String, dynamic> _flightLegBody(FlightLeg leg) {
     'destination': leg.destination,
     'destinationTimeZone': leg.destinationTimeZone,
     'arrival': arrival == null ? null : _activityInstant(arrival),
+    'durationMinutes': leg.durationMinutes,
   };
 }
 

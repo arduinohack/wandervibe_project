@@ -580,4 +580,304 @@ describe('flight legs', () => {
     expect(storedDinner.name).toBe('Dinner');
     expect(storedDinner.timeZone).toBe('Europe/Paris');
   });
+
+  test('a leg duration sets that arrival and the activity end is the last arrival', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada-leg-duration@example.com',
+    });
+    const planId = await createPlan(ada.token);
+    const derivedArrival = '2026-07-02T13:30:00.000Z';
+    const secondArrival = '2026-07-02T19:00:00.000Z';
+
+    const created = await request(app)
+      .post('/api/activities')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({
+        name: 'DL 961',
+        type: 'flight',
+        planId,
+        startTime: '2026-01-01T00:00:00.000Z',
+        endTime: lastArrival,
+        durationMinutes: 5,
+        startTimeZone: 'UTC',
+        endTimeZone: 'UTC',
+        legs: [
+          {
+            origin: 'ATL',
+            destination: 'DFW',
+            departure: firstDeparture,
+            arrival: lastArrival,
+            durationMinutes: '90',
+          },
+          {
+            origin: 'DFW',
+            destination: 'SEA',
+            departure: secondDeparture,
+            arrival: lastArrival,
+            durationMinutes: 60,
+          },
+        ],
+      });
+
+    expect(created.status).toBe(201);
+    expect(created.body.legs[0].durationMinutes).toBe(90);
+    expect(iso(created.body.legs[0].arrival)).toBe(derivedArrival);
+    expect(created.body.legs[1].durationMinutes).toBe(60);
+    expect(iso(created.body.legs[1].arrival)).toBe(secondArrival);
+    expect(iso(created.body.startTime)).toBe(firstDeparture);
+    expect(iso(created.body.endTime)).toBe(secondArrival);
+    expect(created.body.durationMinutes).toBe(420);
+
+    const zero = await request(app)
+      .put(`/api/activities/${created.body._id}`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({
+        legs: [
+          {
+            origin: 'ATL',
+            destination: 'DFW',
+            departure: firstDeparture,
+            arrival: lastArrival,
+            durationMinutes: 0,
+          },
+        ],
+      });
+    expect(zero.status).toBe(200);
+    expect(zero.body.legs[0].durationMinutes).toBe(0);
+    expect(iso(zero.body.legs[0].arrival)).toBe(firstDeparture);
+    expect(iso(zero.body.endTime)).toBe(firstDeparture);
+    expect(zero.body.durationMinutes).toBe(0);
+
+    const keptArrival = await request(app)
+      .put(`/api/activities/${created.body._id}`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({
+        legs: [
+          {
+            origin: 'ATL',
+            destination: 'DFW',
+            arrival: firstArrival,
+            durationMinutes: 90,
+          },
+        ],
+      });
+    expect(keptArrival.status).toBe(200);
+    expect(keptArrival.body.legs[0].durationMinutes).toBe(90);
+    expect(iso(keptArrival.body.legs[0].arrival)).toBe(firstArrival);
+    expect(keptArrival.body.startTime ?? null).toBeNull();
+    expect(iso(keptArrival.body.endTime)).toBe(firstArrival);
+  });
+
+  test('an omitted leg duration is the span, and a bad duration is rejected', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada-leg-duration-span@example.com',
+    });
+    const planId = await createPlan(ada.token);
+
+    const created = await request(app)
+      .post('/api/activities')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({
+        name: 'DL 961',
+        type: 'flight',
+        planId,
+        startTimeZone: 'UTC',
+        endTimeZone: 'UTC',
+        legs: [
+          {
+            origin: 'ATL',
+            destination: 'DFW',
+            departure: firstDeparture,
+            arrival: firstArrival,
+          },
+          {
+            origin: 'DFW',
+            destination: 'SEA',
+            departure: secondDeparture,
+            arrival: lastArrival,
+            durationMinutes: '',
+          },
+        ],
+      });
+    expect(created.status).toBe(201);
+    expect(created.body.legs[0].durationMinutes).toBe(180);
+    expect(created.body.legs[1].durationMinutes).toBe(240);
+    expect(iso(created.body.endTime)).toBe(lastArrival);
+    expect(created.body.durationMinutes).toBe(600);
+
+    const negative = await request(app)
+      .put(`/api/activities/${created.body._id}`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({
+        legs: [
+          {
+            origin: 'ATL',
+            destination: 'DFW',
+            departure: lastArrival,
+            arrival: firstDeparture,
+          },
+        ],
+      });
+    expect(negative.status).toBe(200);
+    expect(negative.body.legs[0].durationMinutes ?? null).toBeNull();
+    expect(iso(negative.body.legs[0].departure)).toBe(lastArrival);
+    expect(iso(negative.body.legs[0].arrival)).toBe(firstDeparture);
+
+    const rejected = await request(app)
+      .put(`/api/activities/${created.body._id}`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({
+        name: 'Changed',
+        legs: [
+          {
+            origin: 'JFK',
+            destination: 'LAX',
+            departure: firstDeparture,
+            arrival: firstArrival,
+            durationMinutes: 1.5,
+          },
+        ],
+      });
+    expect(rejected.status).toBe(400);
+    expect(rejected.body.message).toBe('Duration must be a whole number of minutes');
+    const stored = await Event.findById(created.body._id).lean();
+    expect(stored.name).toBe('DL 961');
+    expect(stored.legs[0].origin).toBe('ATL');
+    expect(stored.legs[0].durationMinutes ?? null).toBeNull();
+    expect(iso(stored.legs[0].arrival)).toBe(firstDeparture);
+
+    const renamed = await request(app)
+      .put(`/api/activities/${created.body._id}`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ name: 'DL 962' });
+    expect(renamed.status).toBe(200);
+    expect(renamed.body.legs[0].durationMinutes ?? null).toBeNull();
+    expect(iso(renamed.body.legs[0].arrival)).toBe(firstDeparture);
+
+    const dinner = await request(app)
+      .post('/api/activities')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({
+        name: 'Dinner',
+        type: 'dining',
+        planId,
+        startTime: firstDeparture,
+        endTime: firstArrival,
+        timeZone: 'UTC',
+        legs: [
+          {
+            origin: 'ATL',
+            destination: 'DFW',
+            durationMinutes: 'nope',
+          },
+        ],
+      });
+    expect(dinner.status).toBe(201);
+    expect(dinner.body.legs).toEqual([]);
+    expect(iso(dinner.body.startTime)).toBe(firstDeparture);
+    expect(iso(dinner.body.endTime)).toBe(firstArrival);
+  });
+
+  test('a collaborator can save a leg duration and a guest can read it', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada-leg-duration-role@example.com',
+    });
+    const co = await registerAndLogin({
+      firstName: 'Bea',
+      lastName: 'Planner',
+      email: 'bea-leg-duration@example.com',
+    });
+    const sam = await registerAndLogin({
+      firstName: 'Sam',
+      lastName: 'Guest',
+      email: 'sam-leg-duration@example.com',
+    });
+    const planId = await createPlan(ada.token);
+    await acceptRole(
+      ada.token,
+      co.token,
+      planId,
+      'bea-leg-duration@example.com',
+      'Collaborator',
+    );
+    await acceptRole(
+      ada.token,
+      sam.token,
+      planId,
+      'sam-leg-duration@example.com',
+      'Guest',
+    );
+
+    const created = await request(app)
+      .post('/api/activities')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({
+        name: 'DL 961',
+        type: 'flight',
+        planId,
+        startTimeZone: 'UTC',
+        endTimeZone: 'UTC',
+        legs: twoLegs(),
+      });
+    expect(created.status).toBe(201);
+
+    const updated = await request(app)
+      .put(`/api/activities/${created.body._id}`)
+      .set('Authorization', `Bearer ${co.token}`)
+      .send({
+        legs: [
+          {
+            origin: 'ATL',
+            destination: 'DFW',
+            departure: firstDeparture,
+            arrival: lastArrival,
+            durationMinutes: 90,
+          },
+        ],
+      });
+    expect(updated.status).toBe(200);
+    expect(updated.body.legs[0].durationMinutes).toBe(90);
+    expect(iso(updated.body.legs[0].arrival)).toBe('2026-07-02T13:30:00.000Z');
+
+    const itinerary = await request(app)
+      .get(`/api/plans/${planId}/itinerary`)
+      .set('Authorization', `Bearer ${sam.token}`);
+    expect(itinerary.status).toBe(200);
+    const row = itinerary.body.events.find((event) => event._id === created.body._id);
+    expect(row.legs[0].durationMinutes).toBe(90);
+    expect(iso(row.legs[0].arrival)).toBe('2026-07-02T13:30:00.000Z');
+
+    const renamed = await request(app)
+      .put(`/api/activities/${created.body._id}`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ name: 'DL 962' });
+    expect(renamed.status).toBe(200);
+    expect(renamed.body.name).toBe('DL 962');
+    expect(renamed.body.legs[0].durationMinutes).toBe(90);
+    expect(iso(renamed.body.legs[0].arrival)).toBe('2026-07-02T13:30:00.000Z');
+
+    const denied = await request(app)
+      .put(`/api/activities/${created.body._id}`)
+      .set('Authorization', `Bearer ${sam.token}`)
+      .send({
+        legs: [
+          {
+            origin: 'ATL',
+            destination: 'DFW',
+            departure: firstDeparture,
+            durationMinutes: 30,
+          },
+        ],
+      });
+    expect(denied.status).toBe(403);
+    expect(denied.body.message).toBe('Only Owner or Collaborator can change activities');
+    const stored = await Event.findById(created.body._id).lean();
+    expect(stored.legs[0].durationMinutes).toBe(90);
+  });
 });

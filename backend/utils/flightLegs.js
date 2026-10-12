@@ -63,19 +63,42 @@ function legInstant(value) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+function legDuration(value) {
+  if (value == null) return { empty: true };
+  if (typeof value === 'string' && value.trim() === '') return { empty: true };
+  if (typeof value !== 'number' && typeof value !== 'string') return { invalid: true };
+  const number = typeof value === 'number' ? value : Number(value.trim());
+  if (!Number.isFinite(number) || number < 0 || !Number.isInteger(number)) {
+    return { invalid: true };
+  }
+  return { minutes: number };
+}
+
 function normalizeLeg(raw) {
   const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
   const originTimeZone = readIanaZone(source.originTimeZone);
   if (originTimeZone.error) return { error: originTimeZone.error };
   const destinationTimeZone = readIanaZone(source.destinationTimeZone);
   if (destinationTimeZone.error) return { error: destinationTimeZone.error };
+  const duration = legDuration(source.durationMinutes);
+  if (duration.invalid) return { error: 'Duration must be a whole number of minutes' };
+  const departure = legInstant(source.departure);
+  let arrival = legInstant(source.arrival);
+  let minutes = duration.empty ? null : duration.minutes;
+  if (minutes != null && departure) {
+    arrival = new Date(departure.getTime() + minutes * 60000);
+  } else if (minutes == null && departure && arrival) {
+    const span = Math.round((arrival.getTime() - departure.getTime()) / 60000);
+    if (span >= 0) minutes = span;
+  }
   return {
     origin: legText(source.origin),
     originTimeZone: originTimeZone.zone,
     destination: legText(source.destination),
     destinationTimeZone: destinationTimeZone.zone,
-    departure: legInstant(source.departure),
-    arrival: legInstant(source.arrival),
+    departure,
+    arrival,
+    durationMinutes: minutes,
   };
 }
 

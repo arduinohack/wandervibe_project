@@ -35,6 +35,13 @@ List<FlightLeg> _flightLegsFromJson(dynamic value) {
 
 enum CostType { estimated, actual }
 
+int? _storedLegMinutes(dynamic value) {
+  if (value is! num) return null;
+  final minutes = value.round();
+  if (minutes < 0) return null;
+  return minutes;
+}
+
 class FlightLeg {
   final String origin;
   final String originTimeZone;
@@ -42,6 +49,7 @@ class FlightLeg {
   final String destination;
   final String destinationTimeZone;
   final DateTime? arrival;
+  final int? durationMinutes;
 
   const FlightLeg({
     this.origin = '',
@@ -50,6 +58,7 @@ class FlightLeg {
     this.destination = '',
     this.destinationTimeZone = '',
     this.arrival,
+    this.durationMinutes,
   });
 
   factory FlightLeg.fromJson(Map<String, dynamic> json) {
@@ -66,6 +75,7 @@ class FlightLeg {
           ? ''
           : json['destinationTimeZone'].toString().trim(),
       arrival: _parsedInstant(json['arrival']),
+      durationMinutes: _storedLegMinutes(json['durationMinutes']),
     );
   }
 
@@ -77,6 +87,7 @@ class FlightLeg {
       'destination': destination,
       'destinationTimeZone': destinationTimeZone,
       'arrival': arrival?.toIso8601String(),
+      'durationMinutes': durationMinutes,
     };
   }
 }

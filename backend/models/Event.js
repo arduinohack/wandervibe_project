@@ -8,6 +8,7 @@ const flightLegSchema = new mongoose.Schema({
   destination: { type: String, default: '' },
   destinationTimeZone: { type: String, default: '' },
   arrival: { type: Date },
+  durationMinutes: { type: Number },
 }, { _id: false });
 
 // Main Event schema (recursive for sub-events)
