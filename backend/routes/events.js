@@ -10,6 +10,7 @@ const { applyTypeChange, assertTypeRequirements } = require('../utils/activityTy
 const { recordActivityRevision } = require('../utils/recordActivityRevision');
 const { syncPlanDates } = require('../utils/syncPlanDates');
 const { resolveActivitySchedule, resolveActivityZones, compareStoredOrder } = require('../utils/activityTimes');
+const { applyFlightLegs } = require('../utils/flightLegs');
 const { parseConfirmation } = require('../utils/parseConfirmation');
 
 function applySchedule(target, schedule) {
@@ -143,6 +144,8 @@ router.post('/', authMiddleware, async (req, res) => {
       const anchor = placement.target && (placement.target.endTime || placement.target.startTime);
       if (anchor) source = { ...req.body, startTime: new Date(anchor).toISOString() };
     }
+    const legged = applyFlightLegs(source, source && source.type);
+    source = legged.body;
     const schedule = await resolveActivitySchedule({
       isCreate: true,
       planId,
@@ -320,6 +323,8 @@ router.post('/:id/restore', authMiddleware, async (req, res) => {
     }
 
     const fields = applyTypeChange(event ? event.toObject({ virtuals: false }) : {}, snapshot.type, snapshot);
+    const snapshotLegs = Array.isArray(snapshot.legs) ? snapshot.legs : [];
+    fields.legs = applyFlightLegs({ legs: snapshotLegs }, snapshot.type).legs;
     fields.planId = planId;
 
     let saved;
@@ -362,6 +367,8 @@ router.put('/:id', authMiddleware, async (req, res) => {
     const body = req.body || {};
     const nextType = Object.prototype.hasOwnProperty.call(body, 'type') ? body.type : event.type;
     const fields = applyTypeChange(event.toObject(), nextType, body);
+    const legged = applyFlightLegs(body, nextType);
+    if (legged.assignLegs) fields.legs = legged.legs;
     const zones = await resolveActivityZones({
       isCreate: false,
       planId: event.planId,
@@ -379,7 +386,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
     const schedule = await resolveActivitySchedule({
       isCreate: false,
       planId: event.planId,
-      body,
+      body: legged.body,
       existingStart: event.startTime,
       existingEnd: event.endTime,
       excludeId: event._id,

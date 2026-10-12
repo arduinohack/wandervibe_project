@@ -48,6 +48,17 @@ String _activityInstant(DateTime utc) {
   return utc.toUtc().toIso8601String();
 }
 
+Map<String, dynamic> _flightLegBody(FlightLeg leg) {
+  final departure = leg.departure;
+  final arrival = leg.arrival;
+  return {
+    'origin': leg.origin,
+    'departure': departure == null ? null : _activityInstant(departure),
+    'destination': leg.destination,
+    'arrival': arrival == null ? null : _activityInstant(arrival),
+  };
+}
+
 /// Shared activity fields plus only the fields the selected type keeps.
 Map<String, dynamic> _activityWriteBody({
   required String name,
@@ -73,6 +84,7 @@ Map<String, dynamic> _activityWriteBody({
   bool? writeDuration,
   String? insertAfter,
   String? insertBefore,
+  List<FlightLeg>? legs,
 }) {
   final body = <String, dynamic>{
     'name': name,
@@ -101,6 +113,9 @@ Map<String, dynamic> _activityWriteBody({
   if (type == 'flight') {
     body['gate'] = gate ?? '';
     body['baggageClaim'] = baggageClaim ?? '';
+    if (legs != null) {
+      body['legs'] = [for (final leg in legs) _flightLegBody(leg)];
+    }
   }
   if (type == 'hotel' || type == 'ceremony' || type == 'reception') {
     body['roomNumber'] = roomNumber ?? '';
@@ -1219,6 +1234,7 @@ class PlanProvider extends ChangeNotifier {
     String? insertAfter,
     String? insertBefore,
     int? insertIndex,
+    List<FlightLeg>? legs,
     required String? token,
   }) async {
     try {
@@ -1251,6 +1267,7 @@ class PlanProvider extends ChangeNotifier {
             durationMinutes: durationMinutes,
             insertAfter: insertAfter,
             insertBefore: insertBefore,
+            legs: legs,
           ),
         ),
       );
@@ -1308,6 +1325,7 @@ class PlanProvider extends ChangeNotifier {
     bool? writeStartTime,
     bool? writeEndTime,
     bool? writeDuration,
+    List<FlightLeg>? legs,
     required String planId,
     required String? token,
   }) async {
@@ -1341,6 +1359,7 @@ class PlanProvider extends ChangeNotifier {
             writeStartTime: writeStartTime,
             writeEndTime: writeEndTime,
             writeDuration: writeDuration,
+            legs: legs,
           ),
         ),
       );

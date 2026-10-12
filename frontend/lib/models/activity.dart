@@ -18,7 +18,56 @@ Duration? _storedDurationMinutes(dynamic value) {
   return Duration(minutes: value.round());
 }
 
+DateTime? _parsedInstant(dynamic value) {
+  if (value is! String || value.trim().isEmpty) return null;
+  return DateTime.tryParse(value.trim());
+}
+
+List<FlightLeg> _flightLegsFromJson(dynamic value) {
+  if (value is! List) return const [];
+  final legs = <FlightLeg>[];
+  for (final item in value) {
+    if (item is! Map) continue;
+    legs.add(FlightLeg.fromJson(Map<String, dynamic>.from(item)));
+  }
+  return legs;
+}
+
 enum CostType { estimated, actual }
+
+class FlightLeg {
+  final String origin;
+  final DateTime? departure;
+  final String destination;
+  final DateTime? arrival;
+
+  const FlightLeg({
+    this.origin = '',
+    this.departure,
+    this.destination = '',
+    this.arrival,
+  });
+
+  factory FlightLeg.fromJson(Map<String, dynamic> json) {
+    return FlightLeg(
+      origin: json['origin'] == null ? '' : json['origin'].toString().trim(),
+      departure: _parsedInstant(json['departure']),
+      destination: json['destination'] == null
+          ? ''
+          : json['destination'].toString().trim(),
+      arrival: _parsedInstant(json['arrival']),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'origin': origin,
+      'departure': departure?.toIso8601String(),
+      'destination': destination,
+      'arrival': arrival?.toIso8601String(),
+    };
+  }
+}
 
 class UrlLink {
   final String linkName; // Optional label (e.g., 'JFK Map')
@@ -156,6 +205,7 @@ class Activity {
   final String? customType;
   final String? serviceProvider;
   final String? bookingReference;
+  final List<FlightLeg> legs;
   final Map<String, dynamic> extras;
   final DateTime? createdAt;
   final bool linked;
@@ -190,6 +240,7 @@ class Activity {
     this.customType,
     this.serviceProvider,
     this.bookingReference,
+    this.legs = const [],
     this.extras = const {},
     this.createdAt,
     this.linked = false,
@@ -293,6 +344,7 @@ class Activity {
       customType: json['customType'],
       serviceProvider: json['serviceProvider'],
       bookingReference: json['bookingReference'],
+      legs: _flightLegsFromJson(json['legs']),
       extras: Map<String, dynamic>.from(json['extras'] ?? {}),
       createdAt: json['createdAt'] != null
           ? DateTime.parse(json['createdAt'])
@@ -337,6 +389,7 @@ class Activity {
       'customType': customType ?? '',
       if (serviceProvider != null) 'serviceProvider': serviceProvider,
       if (bookingReference != null) 'bookingReference': bookingReference,
+      'legs': legs.map((leg) => leg.toJson()).toList(),
       'extras': extras,
       if (createdAt != null) 'createdAt': createdAt!.toIso8601String(),
     };

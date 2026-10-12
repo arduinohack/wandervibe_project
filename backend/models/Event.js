@@ -1,6 +1,13 @@
 const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
 
+const flightLegSchema = new mongoose.Schema({
+  origin: { type: String, default: '' },
+  departure: { type: Date },
+  destination: { type: String, default: '' },
+  arrival: { type: Date },
+}, { _id: false });
+
 // Main Event schema (recursive for sub-events)
 const eventSchema = new mongoose.Schema({
   _id: { type: String, default: uuidv4 },  // Auto-generate UUID string (or omit for ObjectId)
@@ -47,6 +54,7 @@ const eventSchema = new mongoose.Schema({
   gate: { type: String },  // For departure
   baggageClaim: { type: String },  // For arrival
   roomNumber: { type: String },  // For hotel check-in
+  legs: { type: [flightLegSchema], default: [] },
   // Add more as types evolve (Mongoose ignores unused)
 }, { timestamps: true, collection: 'activities' });  // Auto createdAt/updatedAt. Collection name is activities; the model name stays Event.
 
