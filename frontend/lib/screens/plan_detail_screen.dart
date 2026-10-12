@@ -585,7 +585,7 @@ class _UtcDateTimePicker extends StatelessWidget {
   final VoidCallback? onClear;
   final String? zone;
   final ValueChanged<String>? onZoneChanged;
-  final bool showClock;
+  final bool enableClock;
 
   const _UtcDateTimePicker({
     required this.id,
@@ -595,7 +595,7 @@ class _UtcDateTimePicker extends StatelessWidget {
     this.onClear,
     this.zone,
     this.onZoneChanged,
-    this.showClock = true,
+    this.enableClock = true,
   });
 
   @override
@@ -612,32 +612,32 @@ class _UtcDateTimePicker extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (showClock) ...[
-            Text(label),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                OutlinedButton(
-                  onPressed: () async {
-                    final next = await _pickDateAndTime(
-                      context,
-                      label: label,
-                      instant: instant,
-                      zone: selectedZone,
-                    );
-                    if (next == null || !context.mounted) return;
-                    onChanged(next);
-                  },
-                  child: Text(_dateTimeButtonLabel(instant, selectedZone)),
-                ),
-                if (onClear != null && instant != null)
-                  TextButton(onPressed: onClear, child: const Text('Clear')),
-              ],
-            ),
-          ],
+          Text(label),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              OutlinedButton(
+                onPressed: enableClock
+                    ? () async {
+                        final next = await _pickDateAndTime(
+                          context,
+                          label: label,
+                          instant: instant,
+                          zone: selectedZone,
+                        );
+                        if (next == null || !context.mounted) return;
+                        onChanged(next);
+                      }
+                    : null,
+                child: Text(_dateTimeButtonLabel(instant, selectedZone)),
+              ),
+              if (enableClock && onClear != null && instant != null)
+                TextButton(onPressed: onClear, child: const Text('Clear')),
+            ],
+          ),
           if (selectedZone != null && changeZone != null) ...[
             const SizedBox(height: 8),
             DropdownButtonFormField<String>(
@@ -2856,17 +2856,6 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     required ValueChanged<DateTime> onChanged,
     VoidCallback? onClear,
   }) {
-    if (durationSet) {
-      return _UtcDateTimePicker(
-        id: '$id-zone',
-        label: 'Arrival',
-        value: value,
-        zone: zone,
-        onZoneChanged: onZoneChanged,
-        onChanged: (_) {},
-        showClock: false,
-      );
-    }
     return _UtcDateTimePicker(
       id: id,
       label: 'Arrival',
@@ -2874,7 +2863,8 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       zone: zone,
       onZoneChanged: onZoneChanged,
       onChanged: onChanged,
-      onClear: onClear,
+      onClear: durationSet ? null : onClear,
+      enableClock: !durationSet,
     );
   }
 
