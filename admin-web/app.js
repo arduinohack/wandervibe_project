@@ -1,4 +1,4 @@
-const API = 'http://192.168.1.140:3001';
+const API = 'https://planitvibe.com';
 const TOKEN_KEY = 'wandervibeAdminToken';
 const USER_KEY = 'wandervibeAdminUser';
 const ZONE_KEY = 'wandervibe.admin.timeZone';

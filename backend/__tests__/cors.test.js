@@ -6,6 +6,8 @@ const flutterWebOrigin = 'http://192.168.1.140:8081';
 const importExportOrigin = 'http://192.168.1.140:5501';
 const planItOrigin = 'https://planitvibe.com';
 const planItWwwOrigin = 'https://www.planitvibe.com';
+const planItAdminOrigin = 'https://admin.planitvibe.com';
+const planItImportOrigin = 'https://impexp.planitvibe.com';
 const adminOrigins = [
   'http://localhost:5500',
   'http://127.0.0.1:5500',
@@ -140,9 +142,34 @@ describe('browser CORS', () => {
     }
   });
 
+  test('development and production allow the admin and import site origins', async () => {
+    for (const env of ['development', 'production']) {
+      process.env.NODE_ENV = env;
+      for (const origin of [planItAdminOrigin, planItImportOrigin]) {
+        const response = await preflight(origin);
+        expect(response.status).toBe(204);
+        expect(response.headers['access-control-allow-origin']).toBe(origin);
+        expect(response.headers['access-control-allow-origin']).not.toBe('*');
+      }
+
+      const httpAdmin = await preflight('http://admin.planitvibe.com');
+      expect(httpAdmin.headers['access-control-allow-origin']).toBeUndefined();
+      const httpImport = await preflight('http://impexp.planitvibe.com');
+      expect(httpImport.headers['access-control-allow-origin']).toBeUndefined();
+    }
+  });
+
   test('production allows the admin origins and the Flutter web LAN origin', async () => {
     process.env.NODE_ENV = 'production';
-    for (const origin of [...adminOrigins, flutterWebOrigin, importExportOrigin, planItOrigin, planItWwwOrigin]) {
+    for (const origin of [
+      ...adminOrigins,
+      flutterWebOrigin,
+      importExportOrigin,
+      planItOrigin,
+      planItWwwOrigin,
+      planItAdminOrigin,
+      planItImportOrigin,
+    ]) {
       const response = await preflight(origin);
       expect(response.status).toBe(204);
       expect(response.headers['access-control-allow-origin']).toBe(origin);
