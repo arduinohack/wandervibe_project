@@ -8,6 +8,9 @@ const logger = require('../utils/logger');  // Added: Borrow exported logger fro
 const authMiddleware = require('../middleware/auth.js');  // Add this line for token verification
 const { v4: uuidv4 } = require('uuid');  // For reset token
 const { sendEmail, selectedProviderName } = require('../utils/email/sendEmail');
+const { sendSms } = require('../utils/sms');
+
+const INVITE_REQUEST_FALLBACK = 'ken@eratespecialists.com';
 
 function noteSupportAccount(req, { actorUserId, actorEmail } = {}) {
   const noted = {};
@@ -103,6 +106,31 @@ function escapeRegex(value) {
 function normalizeEmail(value) {
   if (typeof value !== 'string') return '';
   return value.trim().toLowerCase();
+}
+
+function inviteRequestAddress() {
+  const raw = process.env.INVITE_REQUEST_EMAIL;
+  if (typeof raw === 'string' && raw.trim() !== '') return raw.trim();
+  return INVITE_REQUEST_FALLBACK;
+}
+
+// Same number notifyUsers uses for NOTIFY_OVERRIDE_SMS. Empty means no operator phone.
+function operatorSmsPhone() {
+  const raw = process.env.NOTIFY_OVERRIDE_SMS;
+  if (typeof raw === 'string' && raw.trim() !== '') return raw.trim();
+  return '';
+}
+
+function isRequestEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 // POST /api/auth/register (Creates new user, hashes password, returns token)
@@ -203,6 +231,64 @@ router.post('/register', async (req, res) => {
       });
     res.status(500).json({ msg: 'Server error' });
   }
+});
+
+// POST /api/auth/request-invite
+// Notifies the operator only. Does not create a user or an invitation,
+// and does not mail the requester. The response does not say whether an account exists.
+router.post('/request-invite', async (req, res) => {
+  const userId = req.user?.id ?? 'User ID not in request';
+  const email = typeof req.body?.email === 'string' ? req.body.email.trim() : '';
+
+  if (!isRequestEmail(email)) {
+    logger.error('Invitation request email is not valid', {
+      userId: userId,
+      event: 'AuthRequestInvite',
+      context: { email }
+    });
+    return res.status(400).json({ msg: 'Email is not valid' });
+  }
+
+  const message = `PlanItVibe: invitation requested for ${email}`;
+  const operatorEmail = inviteRequestAddress();
+  logger.info('Invitation request', {
+    userId: userId,
+    event: 'AuthRequestInvite',
+    context: { email }
+  });
+
+  try {
+    await sendEmail({
+      to: operatorEmail,
+      subject: 'PlanItVibe invitation request',
+      text: message,
+      html: `<p>${escapeHtml(message)}</p>`,
+    });
+  } catch (err) {
+    const status = (err.response && err.response.statusCode) || err.statusCode;
+    const provider = err.provider || selectedProviderName();
+    logger.error(`Invitation request email failed: provider ${provider}: ${err.message}${status ? ` status ${status}` : ''}`, {
+      userId: userId,
+      event: 'AuthRequestInvite',
+      context: { email, provider, status: status || undefined }
+    });
+    return res.status(500).json({ msg: 'Server error' });
+  }
+
+  const phone = operatorSmsPhone();
+  if (phone) {
+    try {
+      await sendSms({ to: phone, body: message });
+    } catch (err) {
+      logger.error(`Invitation request SMS failed: ${err.message}`, {
+        userId: userId,
+        event: 'AuthRequestInvite',
+        context: { email }
+      });
+    }
+  }
+
+  res.status(200).json({ msg: 'Request received' });
 });
 
 // POST /api/auth/forgot-password (Sends reset email with token)

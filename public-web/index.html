@@ -18,6 +18,7 @@
       <a href="#pricing">Pricing</a>
       <a href="docs.html">Docs</a>
       <a href="#apps">Apps</a>
+      <a href="#request">Request an invitation</a>
     </nav>
   </header>
   <main id="top">
@@ -26,6 +27,15 @@
       <h1>PlanItVibe</h1>
       <p>A shared trip and event planner.</p>
       <p>Signup is by invitation.</p>
+    </section>
+    <section id="request">
+      <h2>Request an invitation</h2>
+      <form id="invite-request">
+        <label for="invite-email">Email</label>
+        <input id="invite-email" name="email" type="email" autocomplete="email" required>
+        <button type="submit">Request an invitation</button>
+        <p id="invite-request-status" class="request-status" role="status"></p>
+      </form>
     </section>
     <section id="features">
       <h2>Features</h2>
@@ -57,5 +67,37 @@
       </div>
     </section>
   </main>
+  <script>
+    const inviteRequestUrl = 'https://planitvibe.com/api/auth/request-invite';
+    const inviteForm = document.getElementById('invite-request');
+    const inviteStatus = document.getElementById('invite-request-status');
+
+    inviteForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const email = String(new FormData(inviteForm).get('email') || '').trim();
+      const button = inviteForm.querySelector('button');
+      inviteStatus.textContent = '';
+      button.disabled = true;
+      try {
+        const response = await fetch(inviteRequestUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (response.ok) {
+          inviteForm.reset();
+          inviteStatus.textContent = 'The request was received.';
+          return;
+        }
+        const message = data && (data.msg || data.message);
+        inviteStatus.textContent = message || 'The request was not sent.';
+      } catch (err) {
+        inviteStatus.textContent = 'The request was not sent.';
+      } finally {
+        button.disabled = false;
+      }
+    });
+  </script>
 </body>
 </html>

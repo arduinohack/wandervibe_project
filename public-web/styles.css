@@ -118,6 +118,48 @@ section p {
   margin-top: 8px;
 }
 
+#invite-request {
+  display: grid;
+  gap: 12px;
+  max-width: 24rem;
+  margin-top: 16px;
+}
+
+#invite-request label {
+  font-size: 1rem;
+}
+
+#invite-request input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font: inherit;
+  background: var(--card);
+  color: var(--ink);
+}
+
+#invite-request button {
+  justify-self: start;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--gold);
+  color: var(--navy);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+#invite-request button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.request-status:empty {
+  display: none;
+}
+
 section p + ol {
   margin-top: 12px;
 }
