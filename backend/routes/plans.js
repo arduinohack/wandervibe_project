@@ -256,9 +256,14 @@ function memberInstant(value) {
   return date.toISOString();
 }
 
+function pendingInstant(invite) {
+  return memberInstant(invite.invitedAt) || memberInstant(invite.createdAt);
+}
+
 // GET /api/plans/:planId/members
 // Owner, Collaborator, or Guest. Accepted people, pending invitations, and
-// declined invitations. invitedAt is the invite time. acceptedAt is the accept time.
+// declined invitations. Pending invitedAt is the latest invite. Accepted
+// lastActivityAt is the newest activity revision that person made on this plan.
 router.get('/:planId/members', roleCheck(['Owner', 'Collaborator', 'Guest']), async (req, res) => {
   const { planId } = req.params;
   logger.info('In Get /api/plans/{planId}/members - lists accepted, pending, and declined people');
@@ -267,7 +272,7 @@ router.get('/:planId/members', roleCheck(['Owner', 'Collaborator', 'Guest']), as
     const [planUsers, invites] = await Promise.all([
       PlanUser.find({ planId }).select('userId role createdAt').lean(),
       Invitation.find({ planId, status: { $in: ['pending', 'accepted', 'rejected'] } })
-        .select('userId email role status createdAt updatedAt')
+        .select('userId email role status createdAt updatedAt invitedAt')
         .lean(),
     ]);
 
@@ -284,14 +289,22 @@ router.get('/:planId/members', roleCheck(['Owner', 'Collaborator', 'Guest']), as
       : [];
     const userById = new Map(users.map((user) => [String(user._id), user]));
 
-    const acceptedAtByUser = new Map();
-    for (const invite of invites) {
-      if (invite.status !== 'accepted' || !invite.userId) continue;
-      const id = String(invite.userId);
-      const instant = memberInstant(invite.updatedAt) || memberInstant(invite.createdAt);
-      if (!instant) continue;
-      const previous = acceptedAtByUser.get(id);
-      if (!previous || instant > previous) acceptedAtByUser.set(id, instant);
+    const acceptedIds = planUsers
+      .map((row) => (row.userId ? String(row.userId) : ''))
+      .filter(Boolean);
+    const lastActivityByUser = new Map();
+    if (acceptedIds.length) {
+      const revisions = await ActivityRevision.find({
+        planId,
+        userId: { $in: acceptedIds },
+      }).select('userId createdAt').lean();
+      for (const revision of revisions) {
+        const id = String(revision.userId || '');
+        const instant = memberInstant(revision.createdAt);
+        if (!id || !instant) continue;
+        const previous = lastActivityByUser.get(id);
+        if (!previous || instant > previous) lastActivityByUser.set(id, instant);
+      }
     }
 
     const members = [];
@@ -312,36 +325,59 @@ router.get('/:planId/members', roleCheck(['Owner', 'Collaborator', 'Guest']), as
       const id = String(row.userId || '');
       const user = userById.get(id);
       const email = (user && user.email) || '';
-      const acceptedAt = acceptedAtByUser.get(id) || memberInstant(row.createdAt);
+      const lastActivityAt = lastActivityByUser.get(id);
       const item = {
         name: memberDisplayName(user),
         email,
         role: row.role,
         status: 'accepted',
       };
-      if (acceptedAt) item.acceptedAt = acceptedAt;
+      if (lastActivityAt) item.lastActivityAt = lastActivityAt;
       members.push(item);
       remember(id, email);
     }
 
-    for (const status of ['pending', 'rejected']) {
-      for (const invite of invites) {
-        if (invite.status !== status) continue;
-        const id = invite.userId ? String(invite.userId) : '';
-        const user = id ? userById.get(id) : null;
-        const email = (user && user.email) || invite.email || '';
-        if (alreadyListed(id, email)) continue;
-        const invitedAt = memberInstant(invite.createdAt);
-        const item = {
-          name: memberDisplayName(user),
-          email,
-          role: invite.role,
-          status: invite.status,
-        };
-        if (invitedAt) item.invitedAt = invitedAt;
-        members.push(item);
-        remember(id, email);
-      }
+    const pendingInvites = invites
+      .filter((invite) => invite.status === 'pending')
+      .sort((a, b) => {
+        const aTime = pendingInstant(a);
+        const bTime = pendingInstant(b);
+        if (aTime === bTime) return 0;
+        return aTime < bTime ? 1 : -1;
+      });
+    for (const invite of pendingInvites) {
+      const id = invite.userId ? String(invite.userId) : '';
+      const user = id ? userById.get(id) : null;
+      const email = (user && user.email) || invite.email || '';
+      if (alreadyListed(id, email)) continue;
+      const invitedAt = pendingInstant(invite);
+      const item = {
+        name: memberDisplayName(user),
+        email,
+        role: invite.role,
+        status: invite.status,
+      };
+      if (invitedAt) item.invitedAt = invitedAt;
+      members.push(item);
+      remember(id, email);
+    }
+
+    for (const invite of invites) {
+      if (invite.status !== 'rejected') continue;
+      const id = invite.userId ? String(invite.userId) : '';
+      const user = id ? userById.get(id) : null;
+      const email = (user && user.email) || invite.email || '';
+      if (alreadyListed(id, email)) continue;
+      const invitedAt = memberInstant(invite.updatedAt) || memberInstant(invite.createdAt);
+      const item = {
+        name: memberDisplayName(user),
+        email,
+        role: invite.role,
+        status: invite.status,
+      };
+      if (invitedAt) item.invitedAt = invitedAt;
+      members.push(item);
+      remember(id, email);
     }
 
     res.json({ members });

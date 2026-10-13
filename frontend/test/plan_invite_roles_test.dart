@@ -189,7 +189,13 @@ void main() {
       email: 'ada@example.com',
       role: 'Owner',
       status: 'accepted',
-      acceptedAt: summer,
+      lastActivityAt: summer,
+    );
+    final quiet = PlanMember(
+      name: 'Alan',
+      email: 'alan@example.com',
+      role: 'Guest',
+      status: 'accepted',
     );
 
     expect(
@@ -202,16 +208,17 @@ void main() {
     );
     expect(
       planMemberTimeLine(accepted, 'America/New_York'),
-      'Accepted 7/15 12:00 Eastern DT',
+      'Last activity 7/15 12:00 Eastern DT',
     );
     expect(
       planMemberTimeLine(accepted, 'UTC'),
-      'Accepted 7/15 16:00 UTC',
+      'Last activity 7/15 16:00 UTC',
     );
     expect(
       planMemberTimeLine(accepted, '', deviceTimeZone: 'America/Chicago'),
-      'Accepted 7/15 11:00 Central DT',
+      'Last activity 7/15 11:00 Central DT',
     );
+    expect(planMemberTimeLine(quiet, 'America/New_York'), 'no activity yet');
   });
 
   test('an empty plan zone uses the device clock', () {
@@ -224,11 +231,11 @@ void main() {
       email: 'ada@example.com',
       role: 'Owner',
       status: 'accepted',
-      acceptedAt: instant,
+      lastActivityAt: instant,
     );
     expect(
       planMemberTimeLine(member, '   '),
-      startsWith('Accepted ${local.month}/${local.day} $hour:$minute'),
+      startsWith('Last activity ${local.month}/${local.day} $hour:$minute'),
     );
   });
 
@@ -245,11 +252,11 @@ void main() {
       'email': 'ada@example.com',
       'role': 'Owner',
       'status': 'accepted',
-      'acceptedAt': '2026-07-15T16:00:00.000Z',
+      'lastActivityAt': '2026-07-15T16:00:00.000Z',
     });
     expect(pending.invitedAt, DateTime.parse('2026-01-15T17:00:00.000Z'));
-    expect(pending.acceptedAt, isNull);
-    expect(accepted.acceptedAt, DateTime.parse('2026-07-15T16:00:00.000Z'));
+    expect(pending.lastActivityAt, isNull);
+    expect(accepted.lastActivityAt, DateTime.parse('2026-07-15T16:00:00.000Z'));
     expect(accepted.invitedAt, isNull);
   });
 }

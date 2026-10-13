@@ -11,6 +11,7 @@ const User = require('../models/User');
 const Plan = require('../models/Plan');
 const PlanUser = require('../models/PlanUser');
 const Invitation = require('../models/Invitation');
+const ActivityRevision = require('../models/ActivityRevision');
 const { notifyUsers } = require('../utils/notifications');
 const { inviteeMail } = require('../utils/mailCopy');
 
@@ -60,6 +61,7 @@ afterEach(async () => {
     Plan.deleteMany({}),
     PlanUser.deleteMany({}),
     Invitation.deleteMany({}),
+    ActivityRevision.deleteMany({}),
   ]);
 });
 
@@ -72,9 +74,12 @@ function memberKeys(row) {
   return Object.keys(row).sort();
 }
 
-function expectedMemberKeys(status) {
+function expectedMemberKeys(row) {
+  const status = typeof row === 'string' ? row : row.status;
   if (status === 'accepted') {
-    return ['acceptedAt', 'email', 'name', 'role', 'status'];
+    const keys = ['email', 'name', 'role', 'status'];
+    if (row && row.lastActivityAt) keys.push('lastActivityAt');
+    return keys.sort();
   }
   return ['email', 'invitedAt', 'name', 'role', 'status'];
 }
@@ -187,8 +192,9 @@ describe('GET /api/plans/:planId/members', () => {
       expect(bodyText.toLowerCase()).not.toContain('resettoken');
 
       for (const row of res.body.members) {
-        expect(memberKeys(row)).toEqual(expectedMemberKeys(row.status));
-        expect(row.invitedAt === undefined || row.acceptedAt === undefined).toBe(true);
+        expect(memberKeys(row)).toEqual(expectedMemberKeys(row));
+        expect(row.acceptedAt).toBeUndefined();
+        expect(row.invitedAt === undefined || row.lastActivityAt === undefined).toBe(true);
       }
 
       const byEmail = Object.fromEntries(
@@ -226,28 +232,19 @@ describe('GET /api/plans/:planId/members', () => {
       });
       expect(res.body.members).toHaveLength(5);
 
-      const adaMembership = await PlanUser.findOne({ planId, userId: ada.userId }).lean();
-      const graceInvite = await Invitation.findById(collaboratorInvite.body.invitation._id).lean();
-      const alanInvite = await Invitation.findById(guestInvite.body.invitation._id).lean();
       const eveInvite = await Invitation.findOne({ planId, email: 'eve@example.com' }).lean();
       const unknownInvite = await Invitation.findOne({
         planId,
         email: 'new.person@example.com',
       }).lean();
-      expect(byEmail['ada@example.com'].acceptedAt).toBe(
-        new Date(adaMembership.createdAt).toISOString(),
-      );
-      expect(byEmail['grace@example.com'].acceptedAt).toBe(
-        new Date(graceInvite.updatedAt).toISOString(),
-      );
-      expect(byEmail['alan@example.com'].acceptedAt).toBe(
-        new Date(alanInvite.updatedAt).toISOString(),
-      );
+      expect(byEmail['ada@example.com'].lastActivityAt).toBeUndefined();
+      expect(byEmail['grace@example.com'].lastActivityAt).toBeUndefined();
+      expect(byEmail['alan@example.com'].lastActivityAt).toBeUndefined();
       expect(byEmail['eve@example.com'].invitedAt).toBe(
-        new Date(eveInvite.createdAt).toISOString(),
+        new Date(eveInvite.invitedAt).toISOString(),
       );
       expect(byEmail['new.person@example.com'].invitedAt).toBe(
-        new Date(unknownInvite.createdAt).toISOString(),
+        new Date(unknownInvite.invitedAt).toISOString(),
       );
     }
 
@@ -329,13 +326,167 @@ describe('GET /api/plans/:planId/members', () => {
         email: 'grace@example.com',
         role: 'Collaborator',
         status: 'rejected',
-        invitedAt: new Date(stored.createdAt).toISOString(),
+        invitedAt: new Date(stored.updatedAt).toISOString(),
       });
       expect(byEmail['grace@example.com'].acceptedAt).toBeUndefined();
       expect(byEmail['ada@example.com'].status).toBe('accepted');
       expect(byEmail['ada@example.com'].invitedAt).toBeUndefined();
       expect(byEmail['alan@example.com'].status).toBe('accepted');
     }
+  });
+
+  test('a pending row shows the latest invite, and resend replaces the older time', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+    });
+    const planId = await createPlan(ada.token);
+    const old = new Date('2020-01-01T00:00:00.000Z');
+
+    const first = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'eve@example.com', role: 'Guest' });
+    expect(first.status).toBe(201);
+    await Invitation.updateOne(
+      { _id: first.body.invitation._id },
+      { $set: { createdAt: old, invitedAt: old, updatedAt: old } },
+    );
+
+    const second = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'eve@example.com', role: 'Guest' });
+    expect(second.status).toBe(201);
+    expect(second.body.invitation._id).not.toBe(first.body.invitation._id);
+
+    const eveRows = await Invitation.find({ planId, email: 'eve@example.com' }).lean();
+    expect(eveRows).toHaveLength(1);
+    const afterSecond = await request(app)
+      .get(`/api/plans/${planId}/members`)
+      .set('Authorization', `Bearer ${ada.token}`);
+    const eve = afterSecond.body.members.find((row) => row.email === 'eve@example.com');
+    expect(eve.invitedAt).toBe(new Date(eveRows[0].invitedAt).toISOString());
+    expect(eve.invitedAt).not.toBe(old.toISOString());
+
+    const graceInvite = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'grace@example.com', role: 'Collaborator' });
+    expect(graceInvite.status).toBe(201);
+    await Invitation.updateOne(
+      { _id: graceInvite.body.invitation._id },
+      { $set: { createdAt: old, invitedAt: old, updatedAt: old } },
+    );
+    const resent = await request(app)
+      .post(`/api/plans/${planId}/invite/resend`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'grace@example.com' });
+    expect(resent.status).toBe(200);
+
+    const graceRows = await Invitation.find({ planId, email: 'grace@example.com' }).lean();
+    expect(graceRows).toHaveLength(1);
+    expect(String(graceRows[0]._id)).toBe(graceInvite.body.invitation._id);
+    expect(graceRows[0].role).toBe('Collaborator');
+    const afterResend = await request(app)
+      .get(`/api/plans/${planId}/members`)
+      .set('Authorization', `Bearer ${ada.token}`);
+    const grace = afterResend.body.members.find((row) => row.email === 'grace@example.com');
+    expect(grace.status).toBe('pending');
+    expect(grace.invitedAt).toBe(new Date(graceRows[0].invitedAt).toISOString());
+    expect(new Date(grace.invitedAt).getTime()).toBeGreaterThan(old.getTime());
+  });
+
+  test('an accepted row uses the newest activity revision on this plan', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+    });
+    const grace = await registerAndLogin({
+      firstName: 'Grace',
+      lastName: 'Hopper',
+      email: 'grace@example.com',
+    });
+    const alan = await registerAndLogin({
+      firstName: 'Alan',
+      lastName: 'Turing',
+      email: 'alan@example.com',
+    });
+    const planId = await createPlan(ada.token);
+
+    const graceInvite = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'grace@example.com', role: 'Collaborator' });
+    expect(graceInvite.status).toBe(201);
+    const acceptGrace = await request(app)
+      .post(`/api/invites/invitations/${graceInvite.body.invitation._id}/respond`)
+      .set('Authorization', `Bearer ${grace.token}`)
+      .send({ status: 'accepted' });
+    expect(acceptGrace.status).toBe(200);
+
+    const alanInvite = await request(app)
+      .post(`/api/plans/${planId}/invite`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ email: 'alan@example.com', role: 'Guest' });
+    expect(alanInvite.status).toBe(201);
+    const acceptAlan = await request(app)
+      .post(`/api/invites/invitations/${alanInvite.body.invitation._id}/respond`)
+      .set('Authorization', `Bearer ${alan.token}`)
+      .send({ status: 'accepted' });
+    expect(acceptAlan.status).toBe(200);
+
+    await ActivityRevision.create({
+      eventId: 'activity-older',
+      planId,
+      userId: grace.userId,
+      action: 'update',
+      snapshot: { _id: 'activity-older' },
+      createdAt: new Date('2026-03-01T15:00:00.000Z'),
+    });
+    await ActivityRevision.create({
+      eventId: 'activity-newer',
+      planId,
+      userId: grace.userId,
+      action: 'update',
+      snapshot: { _id: 'activity-newer' },
+      createdAt: new Date('2026-06-01T15:00:00.000Z'),
+    });
+    await ActivityRevision.create({
+      eventId: 'activity-other-plan',
+      planId: 'other-plan',
+      userId: grace.userId,
+      action: 'update',
+      snapshot: { _id: 'activity-other-plan' },
+      createdAt: new Date('2026-08-01T15:00:00.000Z'),
+    });
+    await ActivityRevision.create({
+      eventId: 'activity-ada',
+      planId,
+      userId: ada.userId,
+      action: 'create',
+      snapshot: { _id: 'activity-ada' },
+      createdAt: new Date('2026-04-01T12:00:00.000Z'),
+    });
+
+    const res = await request(app)
+      .get(`/api/plans/${planId}/members`)
+      .set('Authorization', `Bearer ${ada.token}`);
+    expect(res.status).toBe(200);
+    const bodyText = JSON.stringify(res.body);
+    expect(bodyText).not.toMatch(/lastLogin/i);
+    expect(bodyText).not.toContain('acceptedAt');
+
+    const byEmail = Object.fromEntries(
+      res.body.members.map((row) => [row.email, row]),
+    );
+    expect(byEmail['grace@example.com'].lastActivityAt).toBe('2026-06-01T15:00:00.000Z');
+    expect(byEmail['ada@example.com'].lastActivityAt).toBe('2026-04-01T12:00:00.000Z');
+    expect(byEmail['alan@example.com'].lastActivityAt).toBeUndefined();
+    expect(byEmail['alan@example.com'].acceptedAt).toBeUndefined();
+    expect(memberKeys(byEmail['alan@example.com'])).toEqual(expectedMemberKeys(byEmail['alan@example.com']));
   });
 });
 

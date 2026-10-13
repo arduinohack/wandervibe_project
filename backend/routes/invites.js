@@ -96,6 +96,7 @@ planInviteRouter.post('/:planId/invite', roleCheck(['Owner', 'Collaborator']), a
       invitedBy: callerId,
       role: storedRole,
       email,
+      invitedAt: new Date(),
       ...(invitee ? { userId: invitee._id } : {}),
     });
     await invitation.save();
@@ -178,6 +179,10 @@ planInviteRouter.post('/:planId/invite/resend', roleCheck(['Owner', 'Collaborato
         signupUrl: signupLink(email),
       });
     await notifyUsers([invitee ? invitee._id : email], message, 'email');
+    await Invitation.updateOne(
+      { _id: pending._id },
+      { $set: { invitedAt: new Date() } },
+    );
     res.status(200).json({ msg: 'Invitation sent!' });
   } catch (err) {
     console.error('Resend invite error:', err);

@@ -7,7 +7,8 @@ const invitationSchema = new mongoose.Schema({
   email: { type: String },
   invitedBy: { type: String, required: true },
   role: { type: String, enum: ['Owner', 'Collaborator', 'Guest'], required: true },
-  status: { type: String, enum: ['pending', 'accepted', 'rejected'], default: 'pending' }
+  status: { type: String, enum: ['pending', 'accepted', 'rejected'], default: 'pending' },
+  invitedAt: { type: Date }
 }, { timestamps: true });
 
 invitationSchema.index({ planId: 1, userId: 1, status: 1 });

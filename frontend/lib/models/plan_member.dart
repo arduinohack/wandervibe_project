@@ -20,7 +20,7 @@ class PlanMember {
   final String role;
   final String status;
   final DateTime? invitedAt;
-  final DateTime? acceptedAt;
+  final DateTime? lastActivityAt;
 
   const PlanMember({
     required this.name,
@@ -28,7 +28,7 @@ class PlanMember {
     required this.role,
     required this.status,
     this.invitedAt,
-    this.acceptedAt,
+    this.lastActivityAt,
   });
 
   factory PlanMember.fromJson(Map<String, dynamic> json) {
@@ -38,7 +38,7 @@ class PlanMember {
       role: _text(json['role']),
       status: _text(json['status']),
       invitedAt: _instant(json['invitedAt']),
-      acceptedAt: _instant(json['acceptedAt']),
+      lastActivityAt: _instant(json['lastActivityAt']),
     );
   }
 }
@@ -67,14 +67,26 @@ String planMemberClock(
   return '$clock $name';
 }
 
-/// "Invited", "Declined", or "Accepted" plus the clock. Pending and declined
-/// use [PlanMember.invitedAt]. Accepted uses [PlanMember.acceptedAt].
+/// Pending shows the latest invite. Declined shows the declined time.
+/// Accepted shows the newest activity revision on this plan, or
+/// "no activity yet". Clocks use the plan time zone.
 String planMemberTimeLine(
   PlanMember member,
   String planTimeZone, {
   String? deviceTimeZone,
 }) {
   final status = member.status.trim().toLowerCase();
+  if (status == 'accepted') {
+    final instant = member.lastActivityAt;
+    if (instant == null) return 'no activity yet';
+    final clock = planMemberClock(
+      instant,
+      planTimeZone: planTimeZone,
+      deviceTimeZone: deviceTimeZone,
+    );
+    return 'Last activity $clock';
+  }
+
   final String label;
   final DateTime? instant;
   if (status == 'pending') {
@@ -83,9 +95,6 @@ String planMemberTimeLine(
   } else if (status == 'rejected' || status == 'declined') {
     label = 'Declined';
     instant = member.invitedAt;
-  } else if (status == 'accepted') {
-    label = 'Accepted';
-    instant = member.acceptedAt;
   } else {
     return '';
   }
