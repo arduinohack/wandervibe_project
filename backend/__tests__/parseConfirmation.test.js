@@ -4,6 +4,7 @@ jest.mock('../utils/notifications', () => ({
 
 const request = require('supertest');
 const mongoose = require('mongoose');
+const axios = require('axios');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const app = require('../app');
 const { allowRegister, clearRegisterInvite } = require('./inviteForRegister');
@@ -16,6 +17,20 @@ const { Event } = require('../models/Event');
 jest.setTimeout(30000);
 
 let mongo;
+let savedXaiKey;
+
+function modelPayload(fields) {
+  return {
+    data: {
+      output: [
+        {
+          type: 'message',
+          content: [{ type: 'output_text', text: JSON.stringify(fields) }],
+        },
+      ],
+    },
+  };
+}
 
 async function registerAndLogin({ firstName, lastName, email }) {
   await allowRegister(email);
@@ -62,11 +77,18 @@ async function acceptRole(ownerToken, memberToken, planId, email, role) {
 }
 
 beforeAll(async () => {
+  savedXaiKey = process.env.XAI_API_KEY;
   mongo = await MongoMemoryServer.create();
   await mongoose.connect(mongo.getUri());
 });
 
+beforeEach(() => {
+  delete process.env.XAI_API_KEY;
+});
+
 afterEach(async () => {
+  jest.restoreAllMocks();
+  delete process.env.XAI_API_KEY;
   await Promise.all([
     User.deleteMany({}),
     Plan.deleteMany({}),
@@ -77,6 +99,8 @@ afterEach(async () => {
 });
 
 afterAll(async () => {
+  if (savedXaiKey === undefined) delete process.env.XAI_API_KEY;
+  else process.env.XAI_API_KEY = savedXaiKey;
   await mongoose.disconnect();
   if (mongo) await mongo.stop();
 });
@@ -200,6 +224,120 @@ describe('parse confirmation', () => {
       .send({ text: 'Confirmation code: ABC123', type: 'flight' });
     expect(missing.status).toBe(401);
     expect(missing.body.message).toBe('No token, authorization denied');
+    expect(await Event.countDocuments({})).toBe(0);
+  });
+
+  test('a flight with a model key returns only values written in the text', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+    });
+    await createPlan(ada.token);
+    const text = [
+      'Confirmation: CONF-88',
+      'Booking reference: ABC123',
+      'From: JFK',
+      'To: LAX',
+      'Departure: 2026-07-02 08:15',
+      'Arrival: 2026-07-02 11:40',
+    ].join('\n');
+    process.env.XAI_API_KEY = 'test-key';
+    const post = jest.spyOn(axios, 'post').mockResolvedValue(modelPayload({
+      bookingReference: 'ABC123',
+      confirmation: 'CONF-88',
+      origin: 'New York',
+      destination: 'LAX',
+      start: '2026-07-02T08:15',
+      end: '1999-01-01T00:00',
+    }));
+
+    const parsed = await request(app)
+      .post('/api/activities/parse-confirmation')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ text, type: 'flight' });
+
+    expect(parsed.status).toBe(200);
+    expect(parsed.body).toEqual({
+      bookingReference: 'ABC123',
+      confirmation: 'CONF-88',
+      destination: 'LAX',
+      start: '2026-07-02T08:15',
+    });
+    expect(parsed.body.origin).toBeUndefined();
+    expect(parsed.body.end).toBeUndefined();
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(post.mock.calls[0][0]).toBe('https://api.x.ai/v1/responses');
+    expect(post.mock.calls[0][1].model).toBe('grok-4.7');
+    expect(post.mock.calls[0][1].input).toContain(text);
+    expect(post.mock.calls[0][2].headers.Authorization).toBe('Bearer test-key');
+    expect(await Event.countDocuments({})).toBe(0);
+  });
+
+  test('a model failure still returns the labeled parser result and saves nothing', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+    });
+    await createPlan(ada.token);
+    const text = [
+      'Confirmation code: ABC123',
+      'From: JFK',
+      'To: LAX',
+      'Departure: 2026-07-02 08:15',
+      'Arrival: 2026-07-02 11:40',
+    ].join('\n');
+    process.env.XAI_API_KEY = 'test-key';
+    jest.spyOn(axios, 'post').mockRejectedValue(new Error('network down'));
+
+    const parsed = await request(app)
+      .post('/api/activities/parse-confirmation')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ text, type: 'flight' });
+
+    expect(parsed.status).toBe(200);
+    expect(parsed.body).toEqual({
+      bookingReference: 'ABC123',
+      origin: 'JFK',
+      destination: 'LAX',
+      start: '2026-07-02T08:15',
+      end: '2026-07-02T11:40',
+    });
+    expect(await Event.countDocuments({})).toBe(0);
+  });
+
+  test('a hotel confirmation stays on the labeled parser when a model key is set', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+    });
+    await createPlan(ada.token);
+    process.env.XAI_API_KEY = 'test-key';
+    const post = jest.spyOn(axios, 'post');
+
+    const parsed = await request(app)
+      .post('/api/activities/parse-confirmation')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({
+        type: 'hotel',
+        text: [
+          'Hotel: Hilton Paris',
+          'Booking reference: H9981',
+          'Check-in: July 2, 2026',
+          'Check-out: July 5, 2026',
+        ].join('\n'),
+      });
+
+    expect(parsed.status).toBe(200);
+    expect(parsed.body).toEqual({
+      name: 'Hilton Paris',
+      bookingReference: 'H9981',
+      start: '2026-07-02',
+      end: '2026-07-05',
+    });
+    expect(post).not.toHaveBeenCalled();
     expect(await Event.countDocuments({})).toBe(0);
   });
 });

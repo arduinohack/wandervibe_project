@@ -12,6 +12,7 @@ const { syncPlanDates } = require('../utils/syncPlanDates');
 const { resolveActivitySchedule, resolveActivityZones, compareStoredOrder } = require('../utils/activityTimes');
 const { applyFlightLegs, activityZoneError, zoneNameError } = require('../utils/flightLegs');
 const { parseConfirmation } = require('../utils/parseConfirmation');
+const { xaiApiKey, flightFieldsFromModel } = require('../utils/xaiConfirmation');
 
 function applySchedule(target, schedule) {
   if (schedule.startTime) target.startTime = schedule.startTime;
@@ -267,7 +268,12 @@ router.post('/parse-confirmation', authMiddleware, async (req, res) => {
     if (typeof req.body?.text !== 'string') {
       return res.status(400).json({ message: 'Text is required' });
     }
-    return res.json(parseConfirmation(req.body.text, type));
+    const parsed = parseConfirmation(req.body.text, type);
+    if (type === 'flight' && xaiApiKey()) {
+      const modeled = await flightFieldsFromModel(req.body.text);
+      if (modeled) return res.json(modeled);
+    }
+    return res.json(parsed);
   } catch (error) {
     console.error('Parse confirmation error:', error);
     return res.status(500).json({ message: 'Server error' });

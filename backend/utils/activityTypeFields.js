@@ -31,7 +31,7 @@ const FIELD_TYPES = {
   origin: ['shuttle'],
   originCountry: ['shuttle'],
   destination: ['shuttle'],
-  confirmation: ['shuttle'],
+  confirmation: ['shuttle', 'flight'],
 };
 
 const CLEARED_VALUE = {

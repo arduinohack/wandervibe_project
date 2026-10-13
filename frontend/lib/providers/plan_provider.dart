@@ -120,6 +120,7 @@ Map<String, dynamic> _activityWriteBody({
   if (type == 'flight') {
     body['gate'] = gate ?? '';
     body['baggageClaim'] = baggageClaim ?? '';
+    if (confirmation != null) body['confirmation'] = confirmation.trim();
     if (legs != null) {
       body['legs'] = [for (final leg in legs) _flightLegBody(leg)];
     }
@@ -1202,6 +1203,7 @@ class PlanProvider extends ChangeNotifier {
       if (data is! Map) return ConfirmationParse(status: response.statusCode);
       const keys = [
         'bookingReference',
+        'confirmation',
         'origin',
         'destination',
         'name',

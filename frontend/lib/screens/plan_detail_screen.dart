@@ -100,6 +100,7 @@ const _naturalActivityInputs = <String, List<_ActivityInput>>{
     _ActivityInput.gate,
     _ActivityInput.baggage,
     _ActivityInput.bookingReference,
+    _ActivityInput.shuttleConfirmation,
   ],
   'hotel': [
     _ActivityInput.paste,
@@ -2870,7 +2871,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       destination: _usesShuttleFields
           ? _shuttleDestinationController.text.trim()
           : null,
-      confirmation: _usesShuttleFields
+      confirmation: _usesShuttleFields || _usesFlightFields
           ? _shuttleConfirmationController.text.trim()
           : null,
       durationMinutes: minutes,
@@ -2926,6 +2927,10 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       _nameController.text = parsedName;
     }
     if (_type == 'flight') {
+      final confirmation = values['confirmation'];
+      if (confirmation != null && confirmation.isNotEmpty) {
+        _shuttleConfirmationController.text = confirmation;
+      }
       final origin = values['origin'];
       final destination = values['destination'];
       if (origin != null && origin.isNotEmpty) {
@@ -2940,12 +2945,15 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
         if (place.isNotEmpty) _nameController.text = place;
       }
     }
+    var filledStart = false;
+    var filledEnd = false;
     final startText = values['start'];
     if (startText != null && startText.isNotEmpty) {
       final next = _wallFromParsed(startText, _startZone, _start);
       if (next != null) {
         _start = next;
         _startChanged = true;
+        filledStart = true;
       }
     }
     final endText = values['end'];
@@ -2954,14 +2962,26 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       if (next != null) {
         _end = next;
         _endChanged = true;
+        filledEnd = true;
       }
     }
-    if (_type == 'flight') {
-      final minutes = _wholeMinutes(_legDurationController.text);
+    if (_type == 'flight' && (filledStart || filledEnd)) {
+      if (!filledEnd && _end == null) {
+        final minutes = _wholeMinutes(_legDurationController.text);
+        if (minutes != null && _start != null) {
+          _end = _start!.add(Duration(minutes: minutes));
+          _endChanged = true;
+        }
+      }
       final departure = _start;
-      if (minutes != null && departure != null) {
-        _end = departure.add(Duration(minutes: minutes));
-        _endChanged = true;
+      final arrival = _end;
+      if (departure != null &&
+          arrival != null &&
+          !arrival.isBefore(departure)) {
+        _legDurationController.text = arrival
+            .difference(departure)
+            .inMinutes
+            .toString();
       }
     }
     _syncShownDuration();
@@ -3343,7 +3363,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       case _ActivityInput.shuttleOriginCountry:
       case _ActivityInput.shuttleDestination:
       case _ActivityInput.shuttleConfirmation:
-        return _usesShuttleFields;
+        return _usesShuttleFields || _usesFlightFields;
       case _ActivityInput.start:
       case _ActivityInput.end:
       case _ActivityInput.duration:
@@ -3567,7 +3587,9 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
         return _textField(
           _shuttleConfirmationController,
           'Confirmation',
-          hint: 'The shuttle confirmation. This is separate from the booking reference.',
+          hint: _usesShuttleFields
+              ? 'The shuttle confirmation. This is separate from the booking reference.'
+              : 'The confirmation. This is separate from the booking reference.',
         );
     }
   }
