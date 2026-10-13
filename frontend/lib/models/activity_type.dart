@@ -22,6 +22,7 @@ enum ActivityType {
   setup,
   ceremony,
   reception,
+  shuttle,
   vendor,
   custom,
 }
@@ -157,6 +158,13 @@ extension ActivityTypeExtension on ActivityType {
       activityLabel: 'Cruise',
       serviceProviderLabel: 'Cruise Line',
       bookingReferenceLabel: 'Booking Number',
+    ),
+    ActivityType.shuttle: (
+      icon: Icons.airport_shuttle,
+      spPresence: false,
+      activityLabel: 'Shuttle',
+      serviceProviderLabel: '',
+      bookingReferenceLabel: 'Booking reference',
     ),
     ActivityType.custom: (
       icon: Icons.category,

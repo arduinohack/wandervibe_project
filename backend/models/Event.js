@@ -57,6 +57,10 @@ const eventSchema = new mongoose.Schema({
   gate: { type: String },  // For departure
   baggageClaim: { type: String },  // For arrival
   roomNumber: { type: String },  // For hotel check-in
+  origin: { type: String },
+  originCountry: { type: String },
+  destination: { type: String },
+  confirmation: { type: String },
   legs: { type: [flightLegSchema], default: [] },
   // Add more as types evolve (Mongoose ignores unused)
 }, { timestamps: true, collection: 'activities' });  // Auto createdAt/updatedAt. Collection name is activities; the model name stays Event.
@@ -109,7 +113,6 @@ const Event = mongoose.models.Event || mongoose.model('Event', eventSchema);
 // Plan schema extends Event via discriminator
 const planSchema = new mongoose.Schema({
   budget: { type: Number, default: 0 },
-  destination: { type: String, default: '' },
   planningState: { type: String, default: '' },
   planType: { type: String, enum: ['trip', 'plan'], default: 'trip' }, // Kept
 });

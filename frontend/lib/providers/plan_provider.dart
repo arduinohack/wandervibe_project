@@ -80,6 +80,10 @@ Map<String, dynamic> _activityWriteBody({
   String? gate,
   String? baggageClaim,
   String? roomNumber,
+  String? origin,
+  String? originCountry,
+  String? destination,
+  String? confirmation,
   String? planId,
   int? durationMinutes,
   bool? writeStartTime,
@@ -122,6 +126,12 @@ Map<String, dynamic> _activityWriteBody({
   }
   if (type == 'hotel' || type == 'ceremony' || type == 'reception') {
     body['roomNumber'] = roomNumber ?? '';
+  }
+  if (type == 'shuttle') {
+    if (origin != null) body['origin'] = origin.trim();
+    if (originCountry != null) body['originCountry'] = originCountry.trim();
+    if (destination != null) body['destination'] = destination.trim();
+    if (confirmation != null) body['confirmation'] = confirmation.trim();
   }
   if (insertAfter != null && insertAfter.isNotEmpty) {
     body['insertAfter'] = insertAfter;
@@ -1233,6 +1243,10 @@ class PlanProvider extends ChangeNotifier {
     String? gate,
     String? baggageClaim,
     String? roomNumber,
+    String? origin,
+    String? originCountry,
+    String? destination,
+    String? confirmation,
     int? durationMinutes,
     String? insertAfter,
     String? insertBefore,
@@ -1266,6 +1280,10 @@ class PlanProvider extends ChangeNotifier {
             gate: gate,
             baggageClaim: baggageClaim,
             roomNumber: roomNumber,
+            origin: origin,
+            originCountry: originCountry,
+            destination: destination,
+            confirmation: confirmation,
             planId: planId,
             durationMinutes: durationMinutes,
             insertAfter: insertAfter,
@@ -1324,6 +1342,10 @@ class PlanProvider extends ChangeNotifier {
     String? gate,
     String? baggageClaim,
     String? roomNumber,
+    String? origin,
+    String? originCountry,
+    String? destination,
+    String? confirmation,
     int? durationMinutes,
     bool? writeStartTime,
     bool? writeEndTime,
@@ -1358,6 +1380,10 @@ class PlanProvider extends ChangeNotifier {
             gate: gate,
             baggageClaim: baggageClaim,
             roomNumber: roomNumber,
+            origin: origin,
+            originCountry: originCountry,
+            destination: destination,
+            confirmation: confirmation,
             durationMinutes: durationMinutes,
             writeStartTime: writeStartTime,
             writeEndTime: writeEndTime,
@@ -2019,6 +2045,8 @@ class PlanProvider extends ChangeNotifier {
         return Icons.directions_bus;
       case ActivityType.ferry:
         return Icons.directions_boat;
+      case ActivityType.shuttle:
+        return Icons.airport_shuttle;
       default:
         return Icons.event;
     }

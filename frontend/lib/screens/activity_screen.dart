@@ -71,6 +71,8 @@ String _activityScreenTypeLabel(ActivityType type) {
       return 'Ceremony';
     case ActivityType.reception:
       return 'Reception';
+    case ActivityType.shuttle:
+      return 'Shuttle';
     case ActivityType.vendor:
       return 'Vendor';
     case ActivityType.custom:

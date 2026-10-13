@@ -129,4 +129,55 @@ describe('activityTypeFields', () => {
     expect(specificFieldsFor('car_service')).not.toContain('roomNumber');
     expect(specificFieldsFor('car_service')).not.toContain('originTimeZone');
   });
+
+  test('shuttle keeps its own confirmation apart from the booking reference', () => {
+    const shuttle = {
+      type: 'shuttle',
+      name: 'Airport shuttle',
+      startTime: flight.startTime,
+      endTime: flight.endTime,
+      origin: 'Hotel',
+      originCountry: 'France',
+      destination: 'CDG',
+      bookingReference: 'BK1',
+      confirmation: 'CONF9',
+      cost: 40,
+    };
+
+    const kept = applyTypeChange(shuttle, 'shuttle', { name: 'Hotel shuttle' });
+    expect(kept.name).toBe('Hotel shuttle');
+    expect(kept.origin).toBe('Hotel');
+    expect(kept.originCountry).toBe('France');
+    expect(kept.destination).toBe('CDG');
+    expect(kept.bookingReference).toBe('BK1');
+    expect(kept.confirmation).toBe('CONF9');
+    expect(kept.cost).toBe(40);
+
+    const replaced = applyTypeChange(shuttle, 'shuttle', { confirmation: 'CONF2' });
+    expect(replaced.confirmation).toBe('CONF2');
+    expect(replaced.bookingReference).toBe('BK1');
+
+    const dining = applyTypeChange(shuttle, 'dining', { confirmation: 'CONF9' });
+    expect(dining.type).toBe('dining');
+    expect(dining.name).toBe('Airport shuttle');
+    expect(dining.startTime).toBe(shuttle.startTime);
+    expect(dining.endTime).toBe(shuttle.endTime);
+    expect(dining.cost).toBe(40);
+    expect(dining.bookingReference).toBe('BK1');
+    expect(dining.confirmation).toBeUndefined();
+    expect(dining.origin).toBeUndefined();
+    expect(dining.originCountry).toBeUndefined();
+    expect(dining.destination).toBeUndefined();
+
+    expect(specificFieldsFor('shuttle')).toEqual(expect.arrayContaining([
+      'origin',
+      'originCountry',
+      'destination',
+      'confirmation',
+    ]));
+    expect(specificFieldsFor('shuttle')).not.toContain('roomNumber');
+    expect(specificFieldsFor('shuttle')).not.toContain('originTimeZone');
+    expect(specificFieldsFor('dining')).not.toContain('confirmation');
+    expect(assertTypeRequirements('shuttle', {})).toBeNull();
+  });
 });

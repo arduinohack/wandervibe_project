@@ -19,6 +19,7 @@ void main() {
         'Flight',
         'Hotel',
         'Reception',
+        'Shuttle',
         'Tour',
         'Train',
       ],

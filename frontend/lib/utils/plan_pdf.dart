@@ -14,6 +14,10 @@ class PlanPdfRow {
   final String location;
   final String details;
   final String bookingReference;
+  final String origin;
+  final String originCountry;
+  final String destination;
+  final String confirmation;
   final String cost;
   final String gate;
   final String baggageClaim;
@@ -35,6 +39,10 @@ class PlanPdfRow {
     required this.location,
     required this.details,
     required this.bookingReference,
+    this.origin = '',
+    this.originCountry = '',
+    this.destination = '',
+    this.confirmation = '',
     required this.cost,
     required this.gate,
     required this.baggageClaim,
@@ -87,8 +95,12 @@ const _pdfColumns = [
   _PdfColumn('End', _endCell),
   _PdfColumn('Duration', _durationCell, headingOneLine: true),
   _PdfColumn('Location', _locationCell),
+  _PdfColumn('Origin', _originCell),
+  _PdfColumn('Origin country', _originCountryCell),
+  _PdfColumn('Destination', _destinationCell),
   _PdfColumn('Details', _detailsCell, flex: true),
   _PdfColumn('Booking reference', _bookingReferenceCell),
+  _PdfColumn('Confirmation', _confirmationCell),
   _PdfColumn(
     'Cost',
     _costCell,
@@ -106,8 +118,12 @@ String _startCell(PlanPdfRow row) => row.start;
 String _endCell(PlanPdfRow row) => row.end;
 String _durationCell(PlanPdfRow row) => row.duration;
 String _locationCell(PlanPdfRow row) => row.location;
+String _originCell(PlanPdfRow row) => row.origin;
+String _originCountryCell(PlanPdfRow row) => row.originCountry;
+String _destinationCell(PlanPdfRow row) => row.destination;
 String _detailsCell(PlanPdfRow row) => row.details;
 String _bookingReferenceCell(PlanPdfRow row) => row.bookingReference;
+String _confirmationCell(PlanPdfRow row) => row.confirmation;
 String _costCell(PlanPdfRow row) => row.cost;
 String _gateCell(PlanPdfRow row) => row.gate;
 String _baggageClaimCell(PlanPdfRow row) => row.baggageClaim;

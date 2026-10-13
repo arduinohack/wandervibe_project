@@ -228,6 +228,10 @@ class Activity {
   final String? customType;
   final String? serviceProvider;
   final String? bookingReference;
+  final String? origin;
+  final String? originCountry;
+  final String? destination;
+  final String? confirmation;
   final List<FlightLeg> legs;
   final Map<String, dynamic> extras;
   final DateTime? createdAt;
@@ -263,6 +267,10 @@ class Activity {
     this.customType,
     this.serviceProvider,
     this.bookingReference,
+    this.origin,
+    this.originCountry,
+    this.destination,
+    this.confirmation,
     this.legs = const [],
     this.extras = const {},
     this.createdAt,
@@ -367,6 +375,10 @@ class Activity {
       customType: json['customType'],
       serviceProvider: json['serviceProvider'],
       bookingReference: json['bookingReference'],
+      origin: _optionalActivityText(json['origin']),
+      originCountry: _optionalActivityText(json['originCountry']),
+      destination: _optionalActivityText(json['destination']),
+      confirmation: _optionalActivityText(json['confirmation']),
       legs: _flightLegsFromJson(json['legs']),
       extras: Map<String, dynamic>.from(json['extras'] ?? {}),
       createdAt: json['createdAt'] != null
@@ -412,6 +424,10 @@ class Activity {
       'customType': customType ?? '',
       if (serviceProvider != null) 'serviceProvider': serviceProvider,
       if (bookingReference != null) 'bookingReference': bookingReference,
+      if (origin != null) 'origin': origin,
+      if (originCountry != null) 'originCountry': originCountry,
+      if (destination != null) 'destination': destination,
+      if (confirmation != null) 'confirmation': confirmation,
       'legs': legs.map((leg) => leg.toJson()).toList(),
       'extras': extras,
       if (createdAt != null) 'createdAt': createdAt!.toIso8601String(),
@@ -450,6 +466,8 @@ class Activity {
         return ActivityType.ceremony;
       case 'reception':
         return ActivityType.reception;
+      case 'shuttle':
+        return ActivityType.shuttle;
       case 'custom':
         return ActivityType.custom;
       default:

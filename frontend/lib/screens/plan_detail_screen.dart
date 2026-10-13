@@ -31,6 +31,7 @@ const activityTypes = [
   'cruise',
   'ceremony',
   'reception',
+  'shuttle',
   'custom',
   'activity',
 ];
@@ -47,6 +48,7 @@ const _activityTypeLabels = {
   'cruise': 'Cruise',
   'ceremony': 'Ceremony',
   'reception': 'Reception',
+  'shuttle': 'Shuttle',
   'custom': 'Custom',
   'activity': 'Activity',
 };
@@ -295,6 +297,9 @@ List<Widget> _activityCardLines(
   final startZone = _activityStartZone(activity, planZone);
   final endZone = _activityEndZone(activity, planZone);
   _addCardLine(lines, 'Type', activityTypeLabel(storedType));
+  _addCardLine(lines, 'Origin', activity.origin);
+  _addCardLine(lines, 'Origin country', activity.originCountry);
+  _addCardLine(lines, 'Destination', activity.destination);
   if (times.start != null) {
     _addCardLine(lines, 'Start', _pdfClock(times.start, startZone));
   }
@@ -317,6 +322,7 @@ List<Widget> _activityCardLines(
   if (!hiddenFields.contains('bookingReference')) {
     _addCardLine(lines, 'Booking reference', activity.bookingReference);
   }
+  _addCardLine(lines, 'Confirmation', activity.confirmation);
   final cost = activity.cost;
   if (cost != null && !hiddenFields.contains('cost')) {
     final mark = activity.costType == CostType.actual ? 'act' : 'est';
@@ -420,6 +426,10 @@ Activity _activityWithTimes(Activity activity, DateTime? start, DateTime? end) {
     customType: activity.customType,
     serviceProvider: activity.serviceProvider,
     bookingReference: activity.bookingReference,
+    origin: activity.origin,
+    originCountry: activity.originCountry,
+    destination: activity.destination,
+    confirmation: activity.confirmation,
     legs: activity.legs,
     extras: activity.extras,
     createdAt: activity.createdAt,
@@ -894,6 +904,10 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
       gate: draft.gate,
       baggageClaim: draft.baggageClaim,
       roomNumber: draft.roomNumber,
+      origin: draft.origin,
+      originCountry: draft.originCountry,
+      destination: draft.destination,
+      confirmation: draft.confirmation,
       durationMinutes: draft.durationMinutes,
       legs: draft.legs,
       insertAfter: insertAfter,
@@ -1773,6 +1787,10 @@ PlanPdfRow _pdfActivityRow(
     bookingReference: hiddenFields.contains('bookingReference')
         ? ''
         : activity.bookingReference?.trim() ?? '',
+    origin: activity.origin?.trim() ?? '',
+    originCountry: activity.originCountry?.trim() ?? '',
+    destination: activity.destination?.trim() ?? '',
+    confirmation: activity.confirmation?.trim() ?? '',
     cost: hiddenFields.contains('cost') ? '' : _pdfCostCell(activity),
     gate: activity.gate?.trim() ?? '',
     baggageClaim: activity.baggageClaim?.trim() ?? '',
@@ -1833,6 +1851,10 @@ class _ActivityFields {
   final String? gate;
   final String? baggageClaim;
   final String? roomNumber;
+  final String? origin;
+  final String? originCountry;
+  final String? destination;
+  final String? confirmation;
   final int? durationMinutes;
   final bool writeStart;
   final bool writeEnd;
@@ -1856,6 +1878,10 @@ class _ActivityFields {
     this.gate,
     this.baggageClaim,
     this.roomNumber,
+    this.origin,
+    this.originCountry,
+    this.destination,
+    this.confirmation,
     this.durationMinutes,
     this.writeStart = false,
     this.writeEnd = false,
@@ -1950,6 +1976,10 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
   late final TextEditingController _confirmationController;
   late final TextEditingController _originController;
   late final TextEditingController _destinationController;
+  late final TextEditingController _shuttleOriginController;
+  late final TextEditingController _shuttleOriginCountryController;
+  late final TextEditingController _shuttleDestinationController;
+  late final TextEditingController _shuttleConfirmationController;
   late final TextEditingController _legDurationController;
   late final TextEditingController _costController;
   late String _costType;
@@ -2011,6 +2041,16 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     _confirmationController = TextEditingController();
     _originController = TextEditingController();
     _destinationController = TextEditingController();
+    _shuttleOriginController = TextEditingController(text: activity?.origin ?? '');
+    _shuttleOriginCountryController = TextEditingController(
+      text: activity?.originCountry ?? '',
+    );
+    _shuttleDestinationController = TextEditingController(
+      text: activity?.destination ?? '',
+    );
+    _shuttleConfirmationController = TextEditingController(
+      text: activity?.confirmation ?? '',
+    );
     _legDurationController = TextEditingController();
     _costController = TextEditingController(text: _costBoxText(activity?.cost));
     _costType = _storedCostType(activity);
@@ -2162,6 +2202,10 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     _confirmationController.dispose();
     _originController.dispose();
     _destinationController.dispose();
+    _shuttleOriginController.dispose();
+    _shuttleOriginCountryController.dispose();
+    _shuttleDestinationController.dispose();
+    _shuttleConfirmationController.dispose();
     _legDurationController.dispose();
     _costController.dispose();
     _gateController.dispose();
@@ -2306,6 +2350,8 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
   }
 
   bool get _usesFlightFields => _type == 'flight';
+
+  bool get _usesShuttleFields => _type == 'shuttle';
 
   bool get _usesRoom =>
       _type == 'hotel' || _type == 'ceremony' || _type == 'reception';
@@ -2564,6 +2610,16 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       gate: _usesFlightFields ? _gateController.text.trim() : null,
       baggageClaim: _usesFlightFields ? _baggageController.text.trim() : null,
       roomNumber: _usesRoom ? _roomController.text.trim() : null,
+      origin: _usesShuttleFields ? _shuttleOriginController.text.trim() : null,
+      originCountry: _usesShuttleFields
+          ? _shuttleOriginCountryController.text.trim()
+          : null,
+      destination: _usesShuttleFields
+          ? _shuttleDestinationController.text.trim()
+          : null,
+      confirmation: _usesShuttleFields
+          ? _shuttleConfirmationController.text.trim()
+          : null,
       durationMinutes: minutes,
       writeStart: writeStart,
       writeEnd: writeEnd,
@@ -2745,6 +2801,10 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       gate: fields.gate,
       baggageClaim: fields.baggageClaim,
       roomNumber: fields.roomNumber,
+      origin: fields.origin,
+      originCountry: fields.originCountry,
+      destination: fields.destination,
+      confirmation: fields.confirmation,
       durationMinutes: fields.durationMinutes,
       writeStartTime: fields.writeStart,
       writeEndTime: fields.writeEnd,
@@ -3024,6 +3084,11 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
             setState(() => _type = value);
           },
         ),
+        if (_usesShuttleFields) ...[
+          _textField(_shuttleOriginController, 'Origin'),
+          _textField(_shuttleOriginCountryController, 'Origin country'),
+          _textField(_shuttleDestinationController, 'Destination'),
+        ],
         if (!_usesFlightFields) ...[
           _UtcDateTimePicker(
             id: 'activity-start',
@@ -3043,17 +3108,20 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
             onChanged: _setEnd,
             onClear: widget.isScreen ? _clearEnd : null,
           ),
-          _textField(
-            _durationController,
-            'Duration (minutes)',
-            number: true,
-            onChanged: _onDurationChanged,
-          ),
+          if (!_usesShuttleFields)
+            _textField(
+              _durationController,
+              'Duration (minutes)',
+              number: true,
+              onChanged: _onDurationChanged,
+            ),
         ],
         if (_usesFlightFields) ..._flightLegFields(),
-        _textField(_locationController, 'Location'),
-        _textField(_googlePlaceIdController, 'Google Place ID'),
-        _textField(_detailsController, 'Details'),
+        if (!_usesShuttleFields) ...[
+          _textField(_locationController, 'Location'),
+          _textField(_googlePlaceIdController, 'Google Place ID'),
+          _textField(_detailsController, 'Details'),
+        ],
         _textField(_bookingReferenceController, 'Booking reference'),
         _textField(_costController, 'Cost', decimal: true),
         const SizedBox(height: 12),
@@ -3073,6 +3141,8 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
           _textField(_baggageController, 'Baggage claim'),
         ],
         if (_usesRoom) _textField(_roomController, 'Room number'),
+        if (_usesShuttleFields)
+          _textField(_shuttleConfirmationController, 'Confirmation'),
         if (_error != null) ...[
           const SizedBox(height: 12),
           Text(_error!, style: const TextStyle(color: Colors.red)),
