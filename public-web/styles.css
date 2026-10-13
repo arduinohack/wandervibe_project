@@ -1,0 +1,152 @@
+:root {
+  --navy: #0b1f4d;
+  --ink: #1c1915;
+  --gold: #e0a31a;
+  --paper: #f6f3ec;
+  --card: #fffdf8;
+  --line: #ddd6c8;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Georgia, "Times New Roman", serif;
+  color: var(--ink);
+  background: var(--paper);
+  line-height: 1.5;
+}
+
+header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 24px;
+  background: var(--navy);
+  color: #fff;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #fff;
+  font-size: 1.25rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.brand img,
+.hero img {
+  display: block;
+  border-radius: 12px;
+  background: #fff;
+}
+
+nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+
+nav a {
+  color: #fff;
+  text-decoration: none;
+}
+
+nav a:hover,
+.brand:hover {
+  text-decoration: underline;
+}
+
+a.account {
+  display: inline-block;
+  padding: 8px 14px;
+  border-radius: 6px;
+  background: var(--gold);
+  color: var(--navy);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+a.account:hover {
+  text-decoration: none;
+  filter: brightness(1.05);
+}
+
+main {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 32px 24px 64px;
+}
+
+.hero {
+  text-align: center;
+  padding: 24px 0 8px;
+}
+
+h1 {
+  margin: 16px 0 8px;
+  font-size: 2.5rem;
+  color: var(--navy);
+}
+
+h2 {
+  margin: 0 0 12px;
+  color: var(--navy);
+  font-size: 1.5rem;
+}
+
+h3 {
+  margin: 0 0 4px;
+  color: var(--navy);
+  font-size: 1.15rem;
+}
+
+.hero p,
+section p {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+section {
+  margin-top: 40px;
+  padding-top: 8px;
+}
+
+ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+li {
+  margin: 0 0 8px;
+  padding: 12px 16px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--gold);
+}
+
+.apps {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.apps div {
+  padding: 16px;
+  background: var(--card);
+  border: 1px solid var(--line);
+}
+
+@media (max-width: 560px) {
+  .apps {
+    grid-template-columns: 1fr;
+  }
+}
