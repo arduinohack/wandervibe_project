@@ -133,6 +133,18 @@ li {
   border-left: 4px solid var(--gold);
 }
 
+ol.steps {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+ol.steps li {
+  margin: 0 0 6px;
+  padding: 0;
+  background: none;
+  border: 0;
+}
+
 .apps {
   display: grid;
   grid-template-columns: 1fr 1fr;
