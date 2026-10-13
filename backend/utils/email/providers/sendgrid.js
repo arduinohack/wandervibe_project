@@ -6,7 +6,8 @@ async function send({ to, from, subject, text, html }) {
   if (typeof html === 'string' && html !== '') {
     msg.html = html;
   }
-  await sgMail.send(msg);
+  const [response] = await sgMail.send(msg);
+  return { statusCode: response && response.statusCode };
 }
 
 module.exports = { send };

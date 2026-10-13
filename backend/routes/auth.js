@@ -255,6 +255,7 @@ router.post('/request-invite', async (req, res) => {
   }
 
   const message = `PlanItVibe: ${name} requested an invitation. Email: ${email}`;
+  const smsBody = `PlanItVibe: ${name} ${email}`;
   logger.info('Invitation request', {
     userId: userId,
     event: 'AuthRequestInvite',
@@ -262,30 +263,45 @@ router.post('/request-invite', async (req, res) => {
   });
 
   try {
-    await sendEmail({
+    const result = await sendEmail({
       to: INVITE_REQUEST_EMAIL,
       subject: 'PlanItVibe invitation request',
       text: message,
       html: `<p>${escapeHtml(message)}</p>`,
     });
+    logger.info('Invitation request email sent', {
+      userId: userId,
+      event: 'AuthRequestInvite',
+      context: {
+        email,
+        to: INVITE_REQUEST_EMAIL,
+        result: result == null ? 'sent' : result,
+      }
+    });
   } catch (err) {
     const status = (err.response && err.response.statusCode) || err.statusCode;
     const provider = err.provider || selectedProviderName();
-    logger.error(`Invitation request email failed: provider ${provider}: ${err.message}${status ? ` status ${status}` : ''}`, {
+    logger.error('Invitation request email failed', {
       userId: userId,
       event: 'AuthRequestInvite',
-      context: { email, provider, status: status || undefined }
+      context: {
+        email,
+        to: INVITE_REQUEST_EMAIL,
+        result: 'failed',
+        provider,
+        status: status || undefined,
+        error: err.message,
+      }
     });
-    return res.status(500).json({ msg: 'Server error' });
   }
 
   try {
-    await sendSms({ to: INVITE_REQUEST_SMS, body: message });
+    await sendSms({ to: INVITE_REQUEST_SMS, body: smsBody });
   } catch (err) {
-    logger.error(`Invitation request SMS failed: ${err.message}`, {
+    logger.error('Invitation request SMS failed', {
       userId: userId,
       event: 'AuthRequestInvite',
-      context: { email }
+      context: { email, error: err.message }
     });
   }
 

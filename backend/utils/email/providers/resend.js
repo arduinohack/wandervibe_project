@@ -7,13 +7,14 @@ async function send({ to, from, subject, text, html }) {
     payload.html = html;
   }
 
-  const { error } = await resend.emails.send(payload);
+  const { data, error } = await resend.emails.send(payload);
   if (error) {
     const err = new Error(error.message || 'Resend send failed');
     err.statusCode = error.statusCode;
     err.provider = 'resend';
     throw err;
   }
+  return data || null;
 }
 
 module.exports = { send };

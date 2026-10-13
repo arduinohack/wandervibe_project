@@ -7,6 +7,13 @@ jest.mock('../utils/sms', () => ({
   sendSms: jest.fn().mockResolvedValue(undefined),
 }));
 
+jest.mock('../utils/logger', () => ({
+  info: jest.fn(),
+  error: jest.fn(),
+  warn: jest.fn(),
+  debug: jest.fn(),
+}));
+
 const request = require('supertest');
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
@@ -15,6 +22,7 @@ const User = require('../models/User');
 const Invitation = require('../models/Invitation');
 const { sendEmail } = require('../utils/email/sendEmail');
 const { sendSms } = require('../utils/sms');
+const logger = require('../utils/logger');
 
 jest.setTimeout(30000);
 
@@ -34,8 +42,11 @@ beforeEach(() => {
   process.env.NODE_ENV = 'development';
   process.env.NOTIFY_OVERRIDE_SMS = '+15550002222';
   process.env.NOTIFY_OVERRIDE_EMAIL = 'redirect@example.com';
+  sendEmail.mockResolvedValue({ id: 'email_1' });
   sendEmail.mockClear();
   sendSms.mockClear();
+  logger.info.mockClear();
+  logger.error.mockClear();
 });
 
 afterEach(async () => {
@@ -119,15 +130,57 @@ describe('request-invite', () => {
     expect(message.text).toContain('Grace Hopper');
     expect(message.text).toContain('grace@example.com');
     expect(message.text).toContain('PlanItVibe');
+    expect(message.text).not.toMatch(/https?:\/\//i);
+    expect(message.html).not.toMatch(/https?:\/\//i);
 
     expect(sendSms).toHaveBeenCalledTimes(1);
     expect(sendSms).toHaveBeenCalledWith({
       to: '+14044081476',
-      body: expect.stringContaining('Grace Hopper'),
+      body: 'PlanItVibe: Grace Hopper grace@example.com',
     });
-    expect(sendSms.mock.calls[0][0].body).toContain('grace@example.com');
-    expect(sendSms.mock.calls[0][0].to).not.toBe('+15550002222');
 
+    const sent = logger.info.mock.calls.find((call) => call[0] === 'Invitation request email sent');
+    expect(sent[1].context).toEqual(expect.objectContaining({
+      to: 'ken@eratespecialists.com',
+      result: { id: 'email_1' },
+    }));
+    expect(logger.error).not.toHaveBeenCalled();
+
+    expect(await User.countDocuments()).toBe(0);
+    expect(await Invitation.countDocuments()).toBe(0);
+  });
+
+  test('a mail or SMS failure still returns 200', async () => {
+    const mailError = new Error('mailbox unavailable');
+    mailError.statusCode = 422;
+    mailError.provider = 'resend';
+    sendEmail.mockRejectedValueOnce(mailError);
+
+    const mailFailed = await request(app)
+      .post('/api/auth/request-invite')
+      .send({ name: 'Grace Hopper', email: 'grace@example.com' });
+
+    expect(mailFailed.status).toBe(200);
+    expect(mailFailed.body).toEqual({ exists: false });
+    expect(sendSms).toHaveBeenCalledTimes(1);
+    const failed = logger.error.mock.calls.find((call) => call[0] === 'Invitation request email failed');
+    expect(failed[1].context).toEqual(expect.objectContaining({
+      to: 'ken@eratespecialists.com',
+      result: 'failed',
+      provider: 'resend',
+      status: 422,
+      error: 'mailbox unavailable',
+    }));
+
+    sendSms.mockRejectedValueOnce(new Error('text failed'));
+    const smsFailed = await request(app)
+      .post('/api/auth/request-invite')
+      .send({ name: 'Grace Hopper', email: 'grace@example.com' });
+
+    expect(smsFailed.status).toBe(200);
+    expect(smsFailed.body).toEqual({ exists: false });
+    expect(sendEmail).toHaveBeenCalledTimes(2);
+    expect(logger.error.mock.calls.some((call) => call[0] === 'Invitation request SMS failed')).toBe(true);
     expect(await User.countDocuments()).toBe(0);
     expect(await Invitation.countDocuments()).toBe(0);
   });

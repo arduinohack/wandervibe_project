@@ -34,7 +34,7 @@ async function sendEmail({ to, subject, text, html }) {
   }
 
   try {
-    await provider.send({
+    return await provider.send({
       to,
       from: selectedFrom(),
       subject,
