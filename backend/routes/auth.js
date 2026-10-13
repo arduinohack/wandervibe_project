@@ -255,7 +255,7 @@ router.post('/request-invite', async (req, res) => {
   }
 
   const message = `PlanItVibe: ${name} requested an invitation. Email: ${email}`;
-  const smsBody = `PlanItVibe: ${name} ${email}`;
+  const smsBody = `PlanItVibe invitation request: ${name}`;
   logger.info('Invitation request', {
     userId: userId,
     event: 'AuthRequestInvite',

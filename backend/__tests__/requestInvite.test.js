@@ -136,7 +136,7 @@ describe('request-invite', () => {
     expect(sendSms).toHaveBeenCalledTimes(1);
     expect(sendSms).toHaveBeenCalledWith({
       to: '+14044081476',
-      body: 'PlanItVibe: Grace Hopper grace@example.com',
+      body: 'PlanItVibe invitation request: Grace Hopper',
     });
 
     const sent = logger.info.mock.calls.find((call) => call[0] === 'Invitation request email sent');
