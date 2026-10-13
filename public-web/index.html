@@ -18,7 +18,7 @@
       <a href="#pricing">Pricing</a>
       <a href="docs.html">Docs</a>
       <a href="#apps">Apps</a>
-      <a href="#request">Request an invitation</a>
+      <a href="#invite-request">Request an invitation</a>
     </nav>
   </header>
   <main id="top">
@@ -27,10 +27,9 @@
       <h1>PlanItVibe</h1>
       <p>A shared trip and event planner.</p>
       <p>Signup is by invitation.</p>
-    </section>
-    <section id="request">
-      <h2>Request an invitation</h2>
       <form id="invite-request">
+        <label for="invite-name">Name</label>
+        <input id="invite-name" name="name" type="text" autocomplete="name" required>
         <label for="invite-email">Email</label>
         <input id="invite-email" name="email" type="email" autocomplete="email" required>
         <button type="submit">Request an invitation</button>
@@ -74,7 +73,9 @@
 
     inviteForm.addEventListener('submit', async (event) => {
       event.preventDefault();
-      const email = String(new FormData(inviteForm).get('email') || '').trim();
+      const formData = new FormData(inviteForm);
+      const name = String(formData.get('name') || '').trim();
+      const email = String(formData.get('email') || '').trim();
       const button = inviteForm.querySelector('button');
       inviteStatus.textContent = '';
       button.disabled = true;
@@ -82,10 +83,14 @@
         const response = await fetch(inviteRequestUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email }),
+          body: JSON.stringify({ name, email }),
         });
         const data = await response.json().catch(() => ({}));
-        if (response.ok) {
+        if (response.ok && data.exists === true) {
+          window.location.assign('https://planitvibe.com');
+          return;
+        }
+        if (response.ok && data.exists === false) {
           inviteForm.reset();
           inviteStatus.textContent = 'The request was received.';
           return;

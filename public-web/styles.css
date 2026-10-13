@@ -122,7 +122,8 @@ section p {
   display: grid;
   gap: 12px;
   max-width: 24rem;
-  margin-top: 16px;
+  margin: 16px auto 0;
+  text-align: left;
 }
 
 #invite-request label {

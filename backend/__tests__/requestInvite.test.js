@@ -21,7 +21,6 @@ jest.setTimeout(30000);
 let mongo;
 const envSnapshot = {
   NODE_ENV: process.env.NODE_ENV,
-  INVITE_REQUEST_EMAIL: process.env.INVITE_REQUEST_EMAIL,
   NOTIFY_OVERRIDE_SMS: process.env.NOTIFY_OVERRIDE_SMS,
   NOTIFY_OVERRIDE_EMAIL: process.env.NOTIFY_OVERRIDE_EMAIL,
 };
@@ -33,7 +32,6 @@ beforeAll(async () => {
 
 beforeEach(() => {
   process.env.NODE_ENV = 'development';
-  process.env.INVITE_REQUEST_EMAIL = 'operator@example.com';
   process.env.NOTIFY_OVERRIDE_SMS = '+15550002222';
   process.env.NOTIFY_OVERRIDE_EMAIL = 'redirect@example.com';
   sendEmail.mockClear();
@@ -43,8 +41,6 @@ beforeEach(() => {
 afterEach(async () => {
   if (envSnapshot.NODE_ENV === undefined) delete process.env.NODE_ENV;
   else process.env.NODE_ENV = envSnapshot.NODE_ENV;
-  if (envSnapshot.INVITE_REQUEST_EMAIL === undefined) delete process.env.INVITE_REQUEST_EMAIL;
-  else process.env.INVITE_REQUEST_EMAIL = envSnapshot.INVITE_REQUEST_EMAIL;
   if (envSnapshot.NOTIFY_OVERRIDE_SMS === undefined) delete process.env.NOTIFY_OVERRIDE_SMS;
   else process.env.NOTIFY_OVERRIDE_SMS = envSnapshot.NOTIFY_OVERRIDE_SMS;
   if (envSnapshot.NOTIFY_OVERRIDE_EMAIL === undefined) delete process.env.NOTIFY_OVERRIDE_EMAIL;
@@ -59,19 +55,27 @@ afterAll(async () => {
 });
 
 describe('request-invite', () => {
-  test('a badly formed email is 400 and sends nothing', async () => {
-    const bad = ['', '   ', 'not-an-email', 'ada@', 'ada@example', 'a@b', 'ada @example.com'];
-    for (const email of bad) {
+  test('a missing name or a badly formed email is 400', async () => {
+    const missingName = await request(app)
+      .post('/api/auth/request-invite')
+      .send({ email: 'ada@example.com' });
+    expect(missingName.status).toBe(400);
+    expect(missingName.body.msg).toBe('Name is required');
+
+    const blankName = await request(app)
+      .post('/api/auth/request-invite')
+      .send({ name: '   ', email: 'ada@example.com' });
+    expect(blankName.status).toBe(400);
+    expect(blankName.body.msg).toBe('Name is required');
+
+    const badEmails = ['', '   ', 'not-an-email', 'ada@', 'ada@example', 'a@b', 'ada @example.com'];
+    for (const email of badEmails) {
       const res = await request(app)
         .post('/api/auth/request-invite')
-        .send({ email });
+        .send({ name: 'Ada Lovelace', email });
       expect(res.status).toBe(400);
       expect(res.body.msg).toBe('Email is not valid');
     }
-
-    const missing = await request(app).post('/api/auth/request-invite').send({});
-    expect(missing.status).toBe(400);
-    expect(missing.body.msg).toBe('Email is not valid');
 
     expect(sendEmail).not.toHaveBeenCalled();
     expect(sendSms).not.toHaveBeenCalled();
@@ -79,7 +83,7 @@ describe('request-invite', () => {
     expect(await Invitation.countDocuments()).toBe(0);
   });
 
-  test('a valid email tells the operator and does not reveal an account', async () => {
+  test('an existing account is reported and not notified', async () => {
     await User.create({
       firstName: 'Ada',
       lastName: 'Lovelace',
@@ -87,76 +91,43 @@ describe('request-invite', () => {
       password: 'password1',
     });
 
-    const known = await request(app)
+    const res = await request(app)
       .post('/api/auth/request-invite')
-      .send({ email: '  ada@example.com  ' });
-    const unknown = await request(app)
-      .post('/api/auth/request-invite')
-      .send({ email: 'nobody@example.com' });
+      .send({ name: 'Ada Lovelace', email: '  Ada@Example.com  ' });
 
-    expect(known.status).toBe(200);
-    expect(unknown.status).toBe(200);
-    expect(known.body).toEqual({ msg: 'Request received' });
-    expect(unknown.body).toEqual(known.body);
-
-    expect(sendEmail).toHaveBeenCalledTimes(2);
-    const recipients = sendEmail.mock.calls.map((call) => call[0].to);
-    expect(recipients).toEqual(['operator@example.com', 'operator@example.com']);
-    expect(recipients).not.toContain('ada@example.com');
-    expect(recipients).not.toContain('nobody@example.com');
-    expect(recipients).not.toContain('redirect@example.com');
-
-    const texts = sendEmail.mock.calls.map((call) => call[0].text);
-    expect(texts[0]).toContain('ada@example.com');
-    expect(texts[1]).toContain('nobody@example.com');
-    expect(texts.join('\n')).toContain('PlanItVibe');
-
-    expect(sendSms).toHaveBeenCalledTimes(2);
-    expect(sendSms).toHaveBeenNthCalledWith(1, {
-      to: '+15550002222',
-      body: expect.stringContaining('ada@example.com'),
-    });
-    expect(sendSms).toHaveBeenNthCalledWith(2, {
-      to: '+15550002222',
-      body: expect.stringContaining('nobody@example.com'),
-    });
-
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ exists: true });
+    expect(sendEmail).not.toHaveBeenCalled();
+    expect(sendSms).not.toHaveBeenCalled();
     expect(await User.countDocuments()).toBe(1);
     expect(await Invitation.countDocuments()).toBe(0);
   });
 
-  test('an empty invite address uses the operator email', async () => {
-    process.env.INVITE_REQUEST_EMAIL = '   ';
-
+  test('a new request notifies the operator with the name and email', async () => {
     const res = await request(app)
       .post('/api/auth/request-invite')
-      .send({ email: 'ada@example.com' });
+      .send({ name: '  Grace Hopper  ', email: ' grace@example.com ' });
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ msg: 'Request received' });
+    expect(res.body).toEqual({ exists: false });
+
     expect(sendEmail).toHaveBeenCalledTimes(1);
-    expect(sendEmail).toHaveBeenCalledWith(expect.objectContaining({
-      to: 'ken@eratespecialists.com',
-      text: expect.stringContaining('ada@example.com'),
-    }));
-    expect(sendEmail).not.toHaveBeenCalledWith(expect.objectContaining({
-      to: 'ada@example.com',
-    }));
-    expect(await User.countDocuments()).toBe(0);
-    expect(await Invitation.countDocuments()).toBe(0);
-  });
+    const message = sendEmail.mock.calls[0][0];
+    expect(message.to).toBe('ken@eratespecialists.com');
+    expect(message.to).not.toBe('grace@example.com');
+    expect(message.to).not.toBe('redirect@example.com');
+    expect(message.text).toContain('Grace Hopper');
+    expect(message.text).toContain('grace@example.com');
+    expect(message.text).toContain('PlanItVibe');
 
-  test('sms is skipped when no operator phone is set', async () => {
-    delete process.env.NOTIFY_OVERRIDE_SMS;
+    expect(sendSms).toHaveBeenCalledTimes(1);
+    expect(sendSms).toHaveBeenCalledWith({
+      to: '+14044081476',
+      body: expect.stringContaining('Grace Hopper'),
+    });
+    expect(sendSms.mock.calls[0][0].body).toContain('grace@example.com');
+    expect(sendSms.mock.calls[0][0].to).not.toBe('+15550002222');
 
-    const res = await request(app)
-      .post('/api/auth/request-invite')
-      .send({ email: 'ada@example.com' });
-
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({ msg: 'Request received' });
-    expect(sendEmail).toHaveBeenCalledTimes(1);
-    expect(sendSms).not.toHaveBeenCalled();
     expect(await User.countDocuments()).toBe(0);
     expect(await Invitation.countDocuments()).toBe(0);
   });
