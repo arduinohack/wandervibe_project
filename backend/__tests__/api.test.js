@@ -13,15 +13,18 @@ const PlanUser = require('../models/PlanUser');
 const Invitation = require('../models/Invitation');
 const { Event } = require('../models/Event');
 const ActivityRevision = require('../models/ActivityRevision');
+const { allowRegister, clearRegisterInvite } = require('./inviteForRegister');
 
 jest.setTimeout(30000);
 
 let mongo;
 
 async function registerAndLogin({ firstName, lastName, email, password }) {
+  await allowRegister(email);
   const registerRes = await request(app)
     .post('/api/auth/register')
     .send({ firstName, lastName, email, password });
+  await clearRegisterInvite(email);
   const loginRes = await request(app)
     .post('/api/auth/login')
     .send({ email, password });
@@ -67,6 +70,75 @@ describe('auth', () => {
     expect(loginRes.status).toBe(200);
     expect(typeof token).toBe('string');
     expect(token.length).toBeGreaterThan(0);
+  });
+
+  test('register without a pending invitation is forbidden', async () => {
+    const missing = await request(app)
+      .post('/api/auth/register')
+      .send({
+        firstName: 'Ada',
+        lastName: 'Lovelace',
+        email: 'ada@example.com',
+        password: 'password1',
+      });
+    expect(missing.status).toBe(403);
+    expect(missing.body.msg).toBe('Signup is by invitation.');
+    expect(await User.countDocuments({ email: 'ada@example.com' })).toBe(0);
+
+    await Invitation.create({
+      _id: 'rejected-invite',
+      planId: 'plan-1',
+      email: 'ada@example.com',
+      invitedBy: 'owner-1',
+      role: 'Guest',
+      status: 'rejected',
+    });
+    const rejected = await request(app)
+      .post('/api/auth/register')
+      .send({
+        firstName: 'Ada',
+        lastName: 'Lovelace',
+        email: 'ada@example.com',
+        password: 'password1',
+      });
+    expect(rejected.status).toBe(403);
+    expect(rejected.body.msg).toBe('Signup is by invitation.');
+    expect(await User.countDocuments({ email: 'ada@example.com' })).toBe(0);
+  });
+
+  test('an invited person registers and the pending invite stays attached', async () => {
+    await Invitation.create({
+      _id: 'pending-invite',
+      planId: 'plan-1',
+      email: 'Ada@Example.com',
+      invitedBy: 'owner-1',
+      role: 'Guest',
+      status: 'pending',
+    });
+    const registered = await request(app)
+      .post('/api/auth/register')
+      .send({
+        firstName: 'Ada',
+        lastName: 'Lovelace',
+        email: 'ada@example.com',
+        password: 'password1',
+      });
+    expect(registered.status).toBe(201);
+    const user = await User.findOne({ email: 'ada@example.com' });
+    const stored = await Invitation.findById('pending-invite');
+    expect(stored.userId).toBe(String(user._id));
+    expect(stored.status).toBe('pending');
+
+    const again = await request(app)
+      .post('/api/auth/register')
+      .send({
+        firstName: 'Ada',
+        lastName: 'Lovelace',
+        email: 'ada@example.com',
+        password: 'password1',
+      });
+    expect(again.status).toBe(400);
+    expect(again.body.msg).toBe('User already exists with this email');
   });
 });
 

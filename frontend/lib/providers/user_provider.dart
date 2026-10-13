@@ -30,6 +30,20 @@ class UserProvider extends ChangeNotifier {
     return text;
   }
 
+  String _signupFailureMessage(http.Response response) {
+    try {
+      final decoded = json.decode(response.body);
+      if (decoded is Map) {
+        final message = decoded['message'] ?? decoded['msg'];
+        if (message != null) {
+          final text = message.toString().trim();
+          if (text.isNotEmpty) return text;
+        }
+      }
+    } catch (_) {}
+    return 'Signup failed: ${response.statusCode}';
+  }
+
   String _loginFailureMessage(http.Response response) {
     try {
       final decoded = json.decode(response.body);
@@ -146,9 +160,7 @@ class UserProvider extends ChangeNotifier {
         }
         logger.i('Signup successful: ${data['msg'] ?? data['message']}');
       } else {
-        throw Exception(
-          'Signup failed: ${response.statusCode} - ${response.body}',
-        );
+        throw Exception(_signupFailureMessage(response));
       }
     } catch (e) {
       logger.e('Signup error: $e');

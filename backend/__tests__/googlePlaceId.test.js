@@ -11,6 +11,7 @@ const Plan = require('../models/Plan');
 const PlanUser = require('../models/PlanUser');
 const Invitation = require('../models/Invitation');
 const { Event } = require('../models/Event');
+const { allowRegister, clearRegisterInvite } = require('./inviteForRegister');
 
 jest.setTimeout(30000);
 
@@ -20,9 +21,11 @@ const OTHER_PLACE_ID = 'ChIJN1t_tDeuEWoR7Lv2_1Q9A';
 let mongo;
 
 async function registerAndLogin(email) {
+  await allowRegister(email);
   const registerRes = await request(app)
     .post('/api/auth/register')
     .send({ firstName: 'Ada', lastName: 'Lovelace', email, password: 'password1' });
+  await clearRegisterInvite(email);
   expect(registerRes.status).toBe(201);
   const loginRes = await request(app)
     .post('/api/auth/login')

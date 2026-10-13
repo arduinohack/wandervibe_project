@@ -54,6 +54,13 @@ class _SignupScreenState extends State<SignupScreen> {
     super.dispose();
   }
 
+  String _signupErrorText(Object error) {
+    final text = error.toString();
+    const prefix = 'Exception: ';
+    if (text.startsWith(prefix)) return text.substring(prefix.length);
+    return text;
+  }
+
   Future<void> _signup() async {
     if (_formKey.currentState!.validate()) {
       setState(() => _isLoading = true);
@@ -87,7 +94,7 @@ class _SignupScreenState extends State<SignupScreen> {
         await continueAfterAuth(context);
       } catch (e) {
         if (!mounted) return;
-        messenger.showSnackBar(SnackBar(content: Text('Signup error: $e')));
+        messenger.showSnackBar(SnackBar(content: Text(_signupErrorText(e))));
       } finally {
         if (mounted) setState(() => _isLoading = false);
       }

@@ -12,6 +12,7 @@ const PlanUser = require('../models/PlanUser');
 const { Event } = require('../models/Event');
 const SupportLog = require('../models/SupportLog');
 const { shouldSkipRequestLog } = require('../middleware/requestLog');
+const { allowRegister, clearRegisterInvite } = require('./inviteForRegister');
 
 async function waitForCount(filter, count) {
   for (let i = 0; i < 25; i += 1) {
@@ -27,15 +28,18 @@ jest.setTimeout(30000);
 let mongo;
 
 async function registerAndLogin(extra = {}) {
+  const body = {
+    firstName: 'Ada',
+    lastName: 'Lovelace',
+    email: 'ada@example.com',
+    password: 'password1',
+    ...extra,
+  };
+  await allowRegister(body.email);
   const registerRes = await request(app)
     .post('/api/auth/register')
-    .send({
-      firstName: 'Ada',
-      lastName: 'Lovelace',
-      email: 'ada@example.com',
-      password: 'password1',
-      ...extra,
-    });
+    .send(body);
+  await clearRegisterInvite(body.email);
   const loginRes = await request(app)
     .post('/api/auth/login')
     .send({ email: 'ada@example.com', password: 'password1' });

@@ -96,7 +96,17 @@ router.post('/login', async (req, res) => {
   }
 });
 
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function normalizeEmail(value) {
+  if (typeof value !== 'string') return '';
+  return value.trim().toLowerCase();
+}
+
 // POST /api/auth/register (Creates new user, hashes password, returns token)
+// A new account requires a pending invitation for that email.
 router.post('/register', async (req, res) => {
   const userId = req.user?.id ?? 'User ID not in request';
   const { firstName, lastName, email, phoneNumber, password, address } = req.body;
@@ -137,10 +147,19 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ msg: 'User already exists with this email' });
     }
 
+    const inviteEmail = normalizeEmail(email);
+    const pendingInvite = await Invitation.findOne({
+      status: 'pending',
+      email: { $regex: `^${escapeRegex(inviteEmail)}$`, $options: 'i' },
+    }).select('_id');
+    if (!pendingInvite) {
+      return res.status(403).json({ msg: 'Signup is by invitation.' });
+    }
+
     // Create user (UUID for _id). User pre-save hashes the password once.
-    const userId = uuidv4();
+    const newUserId = uuidv4();
     const newUser = new User({
-      _id: userId,
+      _id: newUserId,
       firstName,
       lastName,
       email,
@@ -151,28 +170,27 @@ router.post('/register', async (req, res) => {
       role: 'member',
     });
     logger.info('Saving new user', {
-      userId: userId,
+      userId: newUserId,
       event: 'AuthRegister',
       context: { email: email }
     });
     await newUser.save();
 
-    const inviteEmail = String(email).trim().toLowerCase();
     await Invitation.updateMany(
       {
         status: 'pending',
-        email: inviteEmail,
+        email: { $regex: `^${escapeRegex(inviteEmail)}$`, $options: 'i' },
         $or: [{ userId: { $exists: false } }, { userId: null }, { userId: '' }],
       },
-      { $set: { userId } },
+      { $set: { userId: newUserId } },
     );
 
     // Generate JWT token (no password in payload)
-    const payload = { userId };
+    const payload = { userId: newUserId };
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' });
 
     logger.info('Generated new token and sent to newly registered user', {
-      userId: userId,
+      userId: newUserId,
       event: 'AuthRegister',
       context: { email: email }
     });

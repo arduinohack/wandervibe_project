@@ -8,6 +8,7 @@ const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const app = require('../app');
 const User = require('../models/User');
+const { allowRegister, clearRegisterInvite } = require('./inviteForRegister');
 const { sendEmail } = require('../utils/email/sendEmail');
 
 jest.setTimeout(30000);
@@ -44,6 +45,7 @@ afterAll(async () => {
 
 describe('forgot-password mail', () => {
   test('sends PlanItVibe to the account email through sendEmail', async () => {
+    await allowRegister('ada@example.com');
     const registerRes = await request(app)
       .post('/api/auth/register')
       .send({
@@ -52,6 +54,7 @@ describe('forgot-password mail', () => {
         email: 'ada@example.com',
         password: 'password1',
       });
+    await clearRegisterInvite('ada@example.com');
     expect(registerRes.status).toBe(201);
 
     const forgot = await request(app)

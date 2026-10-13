@@ -6,6 +6,7 @@ const request = require('supertest');
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const app = require('../app');
+const { allowRegister, clearRegisterInvite } = require('./inviteForRegister');
 const User = require('../models/User');
 const Plan = require('../models/Plan');
 const PlanUser = require('../models/PlanUser');
@@ -39,9 +40,11 @@ const fields = [
 ];
 
 async function registerAndLogin({ firstName, lastName, email }) {
+  await allowRegister(email);
   const registerRes = await request(app)
     .post('/api/auth/register')
     .send({ firstName, lastName, email, password: 'password1' });
+  await clearRegisterInvite(email);
   expect(registerRes.status).toBe(201);
   const loginRes = await request(app)
     .post('/api/auth/login')

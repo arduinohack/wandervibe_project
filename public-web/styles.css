@@ -114,6 +114,14 @@ section p {
   font-size: 1.15rem;
 }
 
+.hero p + p {
+  margin-top: 8px;
+}
+
+section p + ol {
+  margin-top: 12px;
+}
+
 section {
   margin-top: 40px;
   padding-top: 8px;

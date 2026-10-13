@@ -10,15 +10,18 @@ const User = require('../models/User');
 const Plan = require('../models/Plan');
 const PlanUser = require('../models/PlanUser');
 const { Event } = require('../models/Event');
+const { allowRegister, clearRegisterInvite } = require('./inviteForRegister');
 
 jest.setTimeout(30000);
 
 let mongo;
 
 async function registerAndLogin(email) {
+  await allowRegister(email);
   const registerRes = await request(app)
     .post('/api/auth/register')
     .send({ firstName: 'Ada', lastName: 'Lovelace', email, password: 'password1' });
+  await clearRegisterInvite(email);
   expect(registerRes.status).toBe(201);
   const loginRes = await request(app)
     .post('/api/auth/login')
