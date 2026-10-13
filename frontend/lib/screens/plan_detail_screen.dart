@@ -2163,7 +2163,9 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
   bool _startChanged = false;
   bool _endChanged = false;
   bool _parsingConfirmation = false;
+  bool _askingToLeave = false;
   String? _error;
+  late final String _openedForm;
   final List<_ExtraLeg> _extraLegs = [];
   final List<_ExtraLeg> _retiredLegs = [];
 
@@ -2230,6 +2232,89 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     _endZone = _openingEndZone(activity, _startZone);
     _endZoneCustom = _endZone != _startZone;
     _loadStoredLegs(activity);
+    _openedForm = _formSignature();
+  }
+
+  String _formToken(String value) => '${value.length}:$value;';
+
+  String _clockToken(DateTime? value) {
+    if (value == null) return _formToken('');
+    return _formToken(value.toUtc().microsecondsSinceEpoch.toString());
+  }
+
+  String _formSignature() {
+    final parts = <String>[
+      _formToken(_nameController.text),
+      _formToken(_durationController.text),
+      _formToken(_locationController.text),
+      _formToken(_googlePlaceIdController.text),
+      _formToken(_detailsController.text),
+      _formToken(_bookingReferenceController.text),
+      _formToken(_confirmationController.text),
+      _formToken(_originController.text),
+      _formToken(_destinationController.text),
+      _formToken(_shuttleOriginController.text),
+      _formToken(_shuttleOriginCountryController.text),
+      _formToken(_shuttleDestinationController.text),
+      _formToken(_shuttleConfirmationController.text),
+      _formToken(_legDurationController.text),
+      _formToken(_costController.text),
+      _formToken(_costType),
+      _formToken(_gateController.text),
+      _formToken(_baggageController.text),
+      _formToken(_roomController.text),
+      _formToken(_type),
+      _formToken(_startZone),
+      _formToken(_endZone),
+      _clockToken(_start),
+      _clockToken(_end),
+    ];
+    for (final leg in _extraLegs) {
+      parts.addAll([
+        _formToken(leg.origin.text),
+        _formToken(leg.destination.text),
+        _formToken(leg.duration.text),
+        _clockToken(leg.departure),
+        _clockToken(leg.arrival),
+        _formToken(leg.originZone),
+        _formToken(leg.destinationZone),
+      ]);
+    }
+    return parts.join();
+  }
+
+  bool _formChanged() => _formSignature() != _openedForm;
+
+  Future<void> _onLeaveAttempt() async {
+    if (!mounted || _askingToLeave) return;
+    if (!_formChanged()) {
+      _askingToLeave = true;
+      await Future<void>.value();
+      if (!mounted) return;
+      Navigator.pop(context);
+      return;
+    }
+    _askingToLeave = true;
+    final leave = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Leave this activity?'),
+        content: const Text('The unsaved changes will be dropped.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Stay'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Leave'),
+          ),
+        ],
+      ),
+    );
+    _askingToLeave = false;
+    if (!mounted) return;
+    if (leave == true) Navigator.pop(context);
   }
 
   void _loadStoredLegs(Activity? activity) {
@@ -3517,8 +3602,9 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final Widget form;
     if (widget.isScreen) {
-      return Scaffold(
+      form = Scaffold(
         appBar: AppBar(
           title: Text(widget.title),
           backgroundColor: Colors.blue,
@@ -3542,17 +3628,28 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
           ],
         ),
       );
+    } else {
+      form = AlertDialog(
+        title: Text(widget.title),
+        content: SingleChildScrollView(child: _fieldsColumn()),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.maybePop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(onPressed: _submit, child: Text(widget.actionLabel)),
+        ],
+      );
     }
-    return AlertDialog(
-      title: Text(widget.title),
-      content: SingleChildScrollView(child: _fieldsColumn()),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        TextButton(onPressed: _submit, child: Text(widget.actionLabel)),
-      ],
+    // canPop stays false so a keystroke does not have to rebuild.
+    // Back checks the opened snapshot. Save and delete call Navigator.pop.
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        _onLeaveAttempt();
+      },
+      child: form,
     );
   }
 }
