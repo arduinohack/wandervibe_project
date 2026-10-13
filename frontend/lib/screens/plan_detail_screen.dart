@@ -59,6 +59,153 @@ String activityTypeLabel(String type) {
   return type;
 }
 
+enum _ActivityInput {
+  type,
+  name,
+  paste,
+  shuttleOrigin,
+  shuttleOriginCountry,
+  shuttleDestination,
+  start,
+  end,
+  duration,
+  legs,
+  location,
+  placeId,
+  details,
+  bookingReference,
+  cost,
+  gate,
+  baggage,
+  room,
+  shuttleConfirmation,
+}
+
+/// Fields that belong at the top for that activity type.
+/// Every other field the form can edit stays under the separator.
+const _naturalActivityInputs = <String, List<_ActivityInput>>{
+  'shuttle': [
+    _ActivityInput.shuttleOrigin,
+    _ActivityInput.shuttleOriginCountry,
+    _ActivityInput.shuttleDestination,
+    _ActivityInput.start,
+    _ActivityInput.end,
+    _ActivityInput.bookingReference,
+    _ActivityInput.cost,
+    _ActivityInput.shuttleConfirmation,
+  ],
+  'flight': [
+    _ActivityInput.paste,
+    _ActivityInput.legs,
+    _ActivityInput.gate,
+    _ActivityInput.baggage,
+    _ActivityInput.bookingReference,
+  ],
+  'hotel': [
+    _ActivityInput.paste,
+    _ActivityInput.start,
+    _ActivityInput.end,
+    _ActivityInput.location,
+    _ActivityInput.room,
+    _ActivityInput.bookingReference,
+    _ActivityInput.cost,
+  ],
+  'train': [
+    _ActivityInput.start,
+    _ActivityInput.end,
+    _ActivityInput.bookingReference,
+  ],
+  'car': [
+    _ActivityInput.start,
+    _ActivityInput.end,
+    _ActivityInput.location,
+  ],
+  'car_service': [
+    _ActivityInput.start,
+    _ActivityInput.end,
+    _ActivityInput.location,
+    _ActivityInput.bookingReference,
+    _ActivityInput.cost,
+  ],
+  'dining': [
+    _ActivityInput.start,
+    _ActivityInput.end,
+    _ActivityInput.location,
+  ],
+  'tour': [
+    _ActivityInput.start,
+    _ActivityInput.end,
+    _ActivityInput.location,
+    _ActivityInput.bookingReference,
+    _ActivityInput.cost,
+  ],
+  'attraction': [
+    _ActivityInput.start,
+    _ActivityInput.end,
+    _ActivityInput.location,
+  ],
+  'cruise': [
+    _ActivityInput.start,
+    _ActivityInput.end,
+    _ActivityInput.location,
+    _ActivityInput.bookingReference,
+    _ActivityInput.cost,
+  ],
+  'ceremony': [
+    _ActivityInput.start,
+    _ActivityInput.end,
+    _ActivityInput.location,
+    _ActivityInput.room,
+  ],
+  'reception': [
+    _ActivityInput.start,
+    _ActivityInput.end,
+    _ActivityInput.location,
+    _ActivityInput.room,
+  ],
+  'custom': [
+    _ActivityInput.start,
+    _ActivityInput.end,
+    _ActivityInput.location,
+  ],
+  'activity': [
+    _ActivityInput.start,
+    _ActivityInput.end,
+    _ActivityInput.location,
+  ],
+};
+
+const _otherActivityInputs = <_ActivityInput>[
+  _ActivityInput.name,
+  _ActivityInput.start,
+  _ActivityInput.end,
+  _ActivityInput.duration,
+  _ActivityInput.location,
+  _ActivityInput.placeId,
+  _ActivityInput.details,
+  _ActivityInput.bookingReference,
+  _ActivityInput.cost,
+  _ActivityInput.gate,
+  _ActivityInput.baggage,
+  _ActivityInput.room,
+];
+
+class _FieldHint extends StatelessWidget {
+  final String message;
+
+  const _FieldHint(this.message);
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: message,
+      triggerMode: TooltipTriggerMode.tap,
+      showDuration: const Duration(seconds: 6),
+      child: const Icon(Icons.help_outline, size: 20),
+    );
+  }
+}
+
 bool canAddActivity(String? storedRole) {
   final role = storedRole?.trim();
   return role == 'Owner' || role == 'Collaborator';
@@ -602,12 +749,14 @@ class _UtcDateTimePicker extends StatelessWidget {
   final ValueChanged<String>? onZoneChanged;
   final bool enableClock;
   final bool showDaylightLabel;
+  final String hint;
 
   const _UtcDateTimePicker({
     required this.id,
     required this.label,
     required this.value,
     required this.onChanged,
+    this.hint = '',
     this.onClear,
     this.zone,
     this.onZoneChanged,
@@ -629,7 +778,12 @@ class _UtcDateTimePicker extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label),
+          Row(
+            children: [
+              Expanded(child: Text(label)),
+              if (hint.isNotEmpty) _FieldHint(hint),
+            ],
+          ),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
@@ -663,29 +817,43 @@ class _UtcDateTimePicker extends StatelessWidget {
           ),
           if (selectedZone != null && changeZone != null) ...[
             const SizedBox(height: 8),
-            DropdownButtonFormField<String>(
-              key: ValueKey('$id|$selectedZone'),
-              initialValue: selectedZone,
-              isExpanded: true,
-              decoration: const InputDecoration(labelText: 'Time zone'),
-              selectedItemBuilder: (context) => [
-                for (final choice in zoneChoices)
-                  Align(
-                    alignment: AlignmentDirectional.centerStart,
-                    child: Text(
-                      zoneDaylightLabel(zoneAnchor, choice),
-                      overflow: TextOverflow.ellipsis,
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    key: ValueKey('$id|$selectedZone'),
+                    initialValue: selectedZone,
+                    isExpanded: true,
+                    decoration: const InputDecoration(labelText: 'Time zone'),
+                    selectedItemBuilder: (context) => [
+                      for (final choice in zoneChoices)
+                        Align(
+                          alignment: AlignmentDirectional.centerStart,
+                          child: Text(
+                            zoneDaylightLabel(zoneAnchor, choice),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                    ],
+                    items: [
+                      for (final choice in zoneChoices)
+                        DropdownMenuItem(value: choice, child: Text(choice)),
+                    ],
+                    onChanged: (next) {
+                      if (next == null) return;
+                      changeZone(next);
+                    },
+                  ),
+                ),
+                if (hint.isNotEmpty)
+                  const Padding(
+                    padding: EdgeInsets.only(left: 4, top: 8),
+                    child: _FieldHint(
+                      'The time zone for this clock. The saved time stays in UTC.',
                     ),
                   ),
               ],
-              items: [
-                for (final choice in zoneChoices)
-                  DropdownMenuItem(value: choice, child: Text(choice)),
-              ],
-              onChanged: (next) {
-                if (next == null) return;
-                changeZone(next);
-              },
             ),
           ],
         ],
@@ -2880,7 +3048,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
   Widget _textField(
     TextEditingController controller,
     String label, {
-    String? hint,
+    required String hint,
     bool number = false,
     bool decimal = false,
     ValueChanged<String>? onChanged,
@@ -2888,16 +3056,27 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
   }) {
     return Padding(
       padding: const EdgeInsets.only(top: 12),
-      child: TextField(
-        controller: controller,
-        readOnly: readOnly,
-        keyboardType: decimal
-            ? const TextInputType.numberWithOptions(decimal: true)
-            : number
-            ? TextInputType.number
-            : null,
-        decoration: InputDecoration(labelText: label, hintText: hint),
-        onChanged: onChanged,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: TextField(
+              controller: controller,
+              readOnly: readOnly,
+              keyboardType: decimal
+                  ? const TextInputType.numberWithOptions(decimal: true)
+                  : number
+                  ? TextInputType.number
+                  : null,
+              decoration: InputDecoration(labelText: label),
+              onChanged: onChanged,
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 4, top: 8),
+            child: _FieldHint(hint),
+          ),
+        ],
       ),
     );
   }
@@ -2932,6 +3111,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     return _UtcDateTimePicker(
       id: id,
       label: 'Arrival',
+      hint: 'When this leg arrives. The clock uses the time zone under it.',
       value: value,
       zone: zone,
       onZoneChanged: onZoneChanged,
@@ -2947,6 +3127,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       _textField(
         _originController,
         'Origin',
+        hint: 'Where this leg starts.',
         onChanged: (_) {
           _syncFlightLocation();
           setState(() => _error = null);
@@ -2955,6 +3136,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       _UtcDateTimePicker(
         id: 'leg-1-departure',
         label: 'Departure',
+        hint: 'When this leg leaves. The clock uses the time zone under it.',
         value: _start,
         zone: _startZone,
         onZoneChanged: _onStartZone,
@@ -2964,6 +3146,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       _textField(
         _destinationController,
         'Destination',
+        hint: 'Where this leg ends.',
         onChanged: (_) {
           _syncFlightLocation();
           setState(() => _error = null);
@@ -2972,6 +3155,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       _textField(
         _legDurationController,
         'Duration (minutes)',
+        hint: 'How many minutes this leg takes. The arrival follows the departure.',
         number: true,
         onChanged: _onLeg1DurationChanged,
       ),
@@ -2990,11 +3174,13 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
         _textField(
           _extraLegs[index].origin,
           'Origin',
+          hint: 'Where this leg starts.',
           onChanged: (_) => setState(() => _error = null),
         ),
         _UtcDateTimePicker(
           id: 'leg-${index + 2}-departure',
           label: 'Departure',
+          hint: 'When this leg leaves. The clock uses the time zone under it.',
           value: _extraLegs[index].departure,
           zone: _extraLegs[index].originZone,
           onZoneChanged: (zone) => _onExtraOriginZone(index, zone),
@@ -3004,6 +3190,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
         _textField(
           _extraLegs[index].destination,
           'Destination',
+          hint: 'Where this leg ends.',
           onChanged: (_) {
             _syncFlightLocation();
             setState(() => _error = null);
@@ -3012,6 +3199,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
         _textField(
           _extraLegs[index].duration,
           'Duration (minutes)',
+          hint: 'How many minutes this leg takes. The arrival follows the departure.',
           number: true,
           onChanged: (text) => _onExtraDurationChanged(index, text),
         ),
@@ -3037,112 +3225,288 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
         _textField(
           _durationController,
           'Duration (minutes)',
+          hint: 'Minutes from the first departure to the last arrival.',
           number: true,
           readOnly: true,
         ),
     ];
   }
 
+  List<_ActivityInput> _naturalInputs() {
+    return _naturalActivityInputs[_type] ?? _naturalActivityInputs['activity']!;
+  }
+
+  bool _inputApplies(_ActivityInput input) {
+    switch (input) {
+      case _ActivityInput.type:
+      case _ActivityInput.name:
+      case _ActivityInput.location:
+      case _ActivityInput.placeId:
+      case _ActivityInput.details:
+      case _ActivityInput.bookingReference:
+      case _ActivityInput.cost:
+        return true;
+      case _ActivityInput.paste:
+        return _type == 'flight' || _type == 'hotel';
+      case _ActivityInput.legs:
+      case _ActivityInput.gate:
+      case _ActivityInput.baggage:
+        return _usesFlightFields;
+      case _ActivityInput.room:
+        return _usesRoom;
+      case _ActivityInput.shuttleOrigin:
+      case _ActivityInput.shuttleOriginCountry:
+      case _ActivityInput.shuttleDestination:
+      case _ActivityInput.shuttleConfirmation:
+        return _usesShuttleFields;
+      case _ActivityInput.start:
+      case _ActivityInput.end:
+      case _ActivityInput.duration:
+        return !_usesFlightFields;
+    }
+  }
+
+  Widget _inputWidget(_ActivityInput input) {
+    switch (input) {
+      case _ActivityInput.type:
+        return Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  initialValue: _type,
+                  decoration: const InputDecoration(labelText: 'Type'),
+                  items: [
+                    for (final type in activityTypeChoices(_type))
+                      DropdownMenuItem(
+                        value: type,
+                        child: Text(activityTypeLabel(type)),
+                      ),
+                  ],
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() => _type = value);
+                  },
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.only(left: 4, top: 8),
+                child: _FieldHint(
+                  'The kind of activity. Fields for that kind are listed first.',
+                ),
+              ),
+            ],
+          ),
+        );
+      case _ActivityInput.name:
+        return _textField(
+          _nameController,
+          'Name',
+          hint: 'The name shown on the itinerary.',
+        );
+      case _ActivityInput.paste:
+        return Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _confirmationController,
+                      minLines: 3,
+                      maxLines: 6,
+                      decoration: const InputDecoration(
+                        labelText: 'Confirmation',
+                        alignLabelWithHint: true,
+                      ),
+                    ),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.only(left: 4, top: 8),
+                    child: _FieldHint(
+                      'Paste a confirmation here. Fill from confirmation copies the fields it finds. This box is not saved.',
+                    ),
+                  ),
+                ],
+              ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton(
+                  onPressed: _parsingConfirmation ? null : _fillFromConfirmation,
+                  child: const Text('Fill from confirmation'),
+                ),
+              ),
+            ],
+          ),
+        );
+      case _ActivityInput.shuttleOrigin:
+        return _textField(
+          _shuttleOriginController,
+          'Origin',
+          hint: 'Where the shuttle picks up.',
+        );
+      case _ActivityInput.shuttleOriginCountry:
+        return _textField(
+          _shuttleOriginCountryController,
+          'Origin country',
+          hint: 'The country where the shuttle picks up.',
+        );
+      case _ActivityInput.shuttleDestination:
+        return _textField(
+          _shuttleDestinationController,
+          'Destination',
+          hint: 'Where the shuttle drops off.',
+        );
+      case _ActivityInput.start:
+        return _UtcDateTimePicker(
+          id: 'activity-start',
+          label: 'Start',
+          hint: 'When this activity starts. The clock uses the time zone under it.',
+          value: _start,
+          zone: _startZone,
+          onZoneChanged: _onStartZone,
+          onChanged: _setStart,
+          onClear: widget.isScreen ? _clearStart : null,
+        );
+      case _ActivityInput.end:
+        return _UtcDateTimePicker(
+          id: 'activity-end',
+          label: 'End',
+          hint: 'When this activity ends. The clock uses the time zone under it.',
+          value: _end,
+          zone: _endZone,
+          onZoneChanged: _onEndZone,
+          onChanged: _setEnd,
+          onClear: widget.isScreen ? _clearEnd : null,
+        );
+      case _ActivityInput.duration:
+        return _textField(
+          _durationController,
+          'Duration (minutes)',
+          hint: 'How long this activity lasts, in minutes. A number here sets the end from the start.',
+          number: true,
+          onChanged: _onDurationChanged,
+        );
+      case _ActivityInput.legs:
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: _flightLegFields(),
+        );
+      case _ActivityInput.location:
+        return _textField(
+          _locationController,
+          'Location',
+          hint: 'The place name or address.',
+        );
+      case _ActivityInput.placeId:
+        return _textField(
+          _googlePlaceIdController,
+          'Google Place ID',
+          hint: 'The Google place id used for directions.',
+        );
+      case _ActivityInput.details:
+        return _textField(
+          _detailsController,
+          'Details',
+          hint: 'Notes about this activity.',
+        );
+      case _ActivityInput.bookingReference:
+        return _textField(
+          _bookingReferenceController,
+          'Booking reference',
+          hint: 'The reservation code. This is not the confirmation.',
+        );
+      case _ActivityInput.cost:
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _textField(
+              _costController,
+              'Cost',
+              hint: 'What this activity costs.',
+              decimal: true,
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: SegmentedButton<String>(
+                      showSelectedIcon: false,
+                      segments: const [
+                        ButtonSegment(value: 'estimated', label: Text('Estimated')),
+                        ButtonSegment(value: 'actual', label: Text('Actual')),
+                      ],
+                      selected: {_costType},
+                      onSelectionChanged: (next) {
+                        setState(() => _costType = next.first);
+                      },
+                    ),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.only(left: 4),
+                    child: _FieldHint(
+                      'Estimated is a planned amount. Actual is the amount paid.',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      case _ActivityInput.gate:
+        return _textField(
+          _gateController,
+          'Gate',
+          hint: 'The departure gate.',
+        );
+      case _ActivityInput.baggage:
+        return _textField(
+          _baggageController,
+          'Baggage claim',
+          hint: 'Where checked bags are collected.',
+        );
+      case _ActivityInput.room:
+        return _textField(
+          _roomController,
+          'Room number',
+          hint: 'The room for this stay or event.',
+        );
+      case _ActivityInput.shuttleConfirmation:
+        return _textField(
+          _shuttleConfirmationController,
+          'Confirmation',
+          hint: 'The shuttle confirmation. This is separate from the booking reference.',
+        );
+    }
+  }
+
   Widget _fieldsColumn() {
-    final pastesConfirmation = _type == 'flight' || _type == 'hotel';
+    final above = [
+      for (final input in _naturalInputs())
+        if (_inputApplies(input)) input,
+    ];
+    final below = [
+      for (final input in _otherActivityInputs)
+        if (_inputApplies(input) && !above.contains(input)) input,
+    ];
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (pastesConfirmation) ...[
-          TextField(
-            controller: _confirmationController,
-            minLines: 3,
-            maxLines: 6,
-            decoration: const InputDecoration(
-              labelText: 'Confirmation',
-              alignLabelWithHint: true,
-            ),
-          ),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton(
-              onPressed: _parsingConfirmation ? null : _fillFromConfirmation,
-              child: const Text('Fill from confirmation'),
-            ),
-          ),
-        ],
-        TextField(
-          controller: _nameController,
-          decoration: const InputDecoration(labelText: 'Name'),
+        _inputWidget(_ActivityInput.type),
+        for (final input in above) _inputWidget(input),
+        const Padding(
+          padding: EdgeInsets.only(top: 20, bottom: 4),
+          child: Divider(),
         ),
-        const SizedBox(height: 12),
-        DropdownButtonFormField<String>(
-          initialValue: _type,
-          decoration: const InputDecoration(labelText: 'Type'),
-          items: [
-            for (final type in activityTypeChoices(_type))
-              DropdownMenuItem(value: type, child: Text(activityTypeLabel(type))),
-          ],
-          onChanged: (value) {
-            if (value == null) return;
-            setState(() => _type = value);
-          },
-        ),
-        if (_usesShuttleFields) ...[
-          _textField(_shuttleOriginController, 'Origin'),
-          _textField(_shuttleOriginCountryController, 'Origin country'),
-          _textField(_shuttleDestinationController, 'Destination'),
-        ],
-        if (!_usesFlightFields) ...[
-          _UtcDateTimePicker(
-            id: 'activity-start',
-            label: 'Start',
-            value: _start,
-            zone: _startZone,
-            onZoneChanged: _onStartZone,
-            onChanged: _setStart,
-            onClear: widget.isScreen ? _clearStart : null,
-          ),
-          _UtcDateTimePicker(
-            id: 'activity-end',
-            label: 'End',
-            value: _end,
-            zone: _endZone,
-            onZoneChanged: _onEndZone,
-            onChanged: _setEnd,
-            onClear: widget.isScreen ? _clearEnd : null,
-          ),
-          if (!_usesShuttleFields)
-            _textField(
-              _durationController,
-              'Duration (minutes)',
-              number: true,
-              onChanged: _onDurationChanged,
-            ),
-        ],
-        if (_usesFlightFields) ..._flightLegFields(),
-        if (!_usesShuttleFields) ...[
-          _textField(_locationController, 'Location'),
-          _textField(_googlePlaceIdController, 'Google Place ID'),
-          _textField(_detailsController, 'Details'),
-        ],
-        _textField(_bookingReferenceController, 'Booking reference'),
-        _textField(_costController, 'Cost', decimal: true),
-        const SizedBox(height: 12),
-        SegmentedButton<String>(
-          showSelectedIcon: false,
-          segments: const [
-            ButtonSegment(value: 'estimated', label: Text('Estimated')),
-            ButtonSegment(value: 'actual', label: Text('Actual')),
-          ],
-          selected: {_costType},
-          onSelectionChanged: (next) {
-            setState(() => _costType = next.first);
-          },
-        ),
-        if (_usesFlightFields) ...[
-          _textField(_gateController, 'Gate'),
-          _textField(_baggageController, 'Baggage claim'),
-        ],
-        if (_usesRoom) _textField(_roomController, 'Room number'),
-        if (_usesShuttleFields)
-          _textField(_shuttleConfirmationController, 'Confirmation'),
+        for (final input in below) _inputWidget(input),
         if (_error != null) ...[
           const SizedBox(height: 12),
           Text(_error!, style: const TextStyle(color: Colors.red)),
