@@ -307,35 +307,132 @@ describe('parse confirmation', () => {
     expect(await Event.countDocuments({})).toBe(0);
   });
 
-  test('a hotel confirmation stays on the labeled parser when a model key is set', async () => {
+  test('a hotel model returns the name and confirmation and no origin', async () => {
     const ada = await registerAndLogin({
       firstName: 'Ada',
       lastName: 'Lovelace',
       email: 'ada@example.com',
     });
     await createPlan(ada.token);
+    const text = [
+      'Hotel: Hilton Paris',
+      'Confirmation: CONF-88',
+      'Booking reference: H9981',
+      'Check-in: July 2, 2026',
+      'Check-out: July 5, 2026',
+      'From: JFK',
+    ].join('\n');
     process.env.XAI_API_KEY = 'test-key';
+    const post = jest.spyOn(axios, 'post').mockResolvedValue(modelPayload({
+      bookingReference: 'H9981',
+      confirmation: 'CONF-88',
+      name: 'Hilton Paris',
+      origin: 'JFK',
+      destination: 'Paris',
+      start: '2026-07-02',
+      end: '2026-07-05',
+    }));
+
+    const parsed = await request(app)
+      .post('/api/activities/parse-confirmation')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ text, type: 'hotel' });
+
+    expect(parsed.status).toBe(200);
+    expect(parsed.body).toEqual({
+      name: 'Hilton Paris',
+      bookingReference: 'H9981',
+      confirmation: 'CONF-88',
+      start: '2026-07-02',
+      end: '2026-07-05',
+    });
+    expect(parsed.body.origin).toBeUndefined();
+    expect(parsed.body.destination).toBeUndefined();
+    const schema = post.mock.calls[0][1].text.format.schema;
+    expect(schema.properties.origin).toBeUndefined();
+    expect(schema.properties.destination).toBeUndefined();
+    expect(schema.properties.name.type).toEqual(['string', 'null']);
+    expect(await Event.countDocuments({})).toBe(0);
+  });
+
+  test('train, shuttle, and cruise use the model and keep only values in the text', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+    });
+    await createPlan(ada.token);
+    const text = [
+      'Confirmation: CONF-88',
+      'Booking reference: TR441',
+      'Origin: Penn Station',
+      'Destination: Boston',
+      'Departure: 2026-07-02 08:15',
+      'Arrival: 2026-07-02 11:40',
+    ].join('\n');
+    process.env.XAI_API_KEY = 'test-key';
+    const post = jest.spyOn(axios, 'post').mockResolvedValue(modelPayload({
+      bookingReference: 'TR441',
+      confirmation: 'CONF-88',
+      origin: 'Penn Station',
+      destination: 'New York',
+      start: '2026-07-02T08:15',
+      end: '2026-07-02T11:40',
+    }));
+
+    for (const type of ['train', 'shuttle', 'cruise']) {
+      const parsed = await request(app)
+        .post('/api/activities/parse-confirmation')
+        .set('Authorization', `Bearer ${ada.token}`)
+        .send({ text, type });
+
+      expect(parsed.status).toBe(200);
+      expect(parsed.body).toEqual({
+        bookingReference: 'TR441',
+        confirmation: 'CONF-88',
+        origin: 'Penn Station',
+        start: '2026-07-02T08:15',
+        end: '2026-07-02T11:40',
+      });
+      expect(parsed.body.destination).toBeUndefined();
+      expect(parsed.body.name).toBeUndefined();
+    }
+    expect(post).toHaveBeenCalledTimes(3);
+    const schema = post.mock.calls[0][1].text.format.schema;
+    expect(schema.properties.origin.type).toEqual(['string', 'null']);
+    expect(schema.properties.destination.type).toEqual(['string', 'null']);
+    expect(schema.properties.name).toBeUndefined();
+    expect(await Event.countDocuments({})).toBe(0);
+  });
+
+  test('a train with no model key keeps the labeled parser', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+    });
+    await createPlan(ada.token);
     const post = jest.spyOn(axios, 'post');
 
     const parsed = await request(app)
       .post('/api/activities/parse-confirmation')
       .set('Authorization', `Bearer ${ada.token}`)
       .send({
-        type: 'hotel',
+        type: 'train',
         text: [
-          'Hotel: Hilton Paris',
-          'Booking reference: H9981',
-          'Check-in: July 2, 2026',
-          'Check-out: July 5, 2026',
+          'Booking reference: TR441',
+          'From: Penn Station',
+          'To: Boston',
+          'Departure: 2026-07-02 08:15',
+          'Arrival: 2026-07-02 11:40',
         ].join('\n'),
       });
 
     expect(parsed.status).toBe(200);
     expect(parsed.body).toEqual({
-      name: 'Hilton Paris',
-      bookingReference: 'H9981',
-      start: '2026-07-02',
-      end: '2026-07-05',
+      bookingReference: 'TR441',
+      start: '2026-07-02T08:15',
+      end: '2026-07-02T11:40',
     });
     expect(post).not.toHaveBeenCalled();
     expect(await Event.countDocuments({})).toBe(0);

@@ -85,6 +85,7 @@ enum _ActivityInput {
 /// Every other field the form can edit stays under the separator.
 const _naturalActivityInputs = <String, List<_ActivityInput>>{
   'shuttle': [
+    _ActivityInput.paste,
     _ActivityInput.shuttleOrigin,
     _ActivityInput.shuttleOriginCountry,
     _ActivityInput.shuttleDestination,
@@ -110,11 +111,16 @@ const _naturalActivityInputs = <String, List<_ActivityInput>>{
     _ActivityInput.room,
     _ActivityInput.bookingReference,
     _ActivityInput.cost,
+    _ActivityInput.shuttleConfirmation,
   ],
   'train': [
+    _ActivityInput.paste,
+    _ActivityInput.shuttleOrigin,
+    _ActivityInput.shuttleDestination,
     _ActivityInput.start,
     _ActivityInput.end,
     _ActivityInput.bookingReference,
+    _ActivityInput.shuttleConfirmation,
   ],
   'car': [
     _ActivityInput.start,
@@ -146,11 +152,15 @@ const _naturalActivityInputs = <String, List<_ActivityInput>>{
     _ActivityInput.location,
   ],
   'cruise': [
+    _ActivityInput.paste,
+    _ActivityInput.shuttleOrigin,
+    _ActivityInput.shuttleDestination,
     _ActivityInput.start,
     _ActivityInput.end,
     _ActivityInput.location,
     _ActivityInput.bookingReference,
     _ActivityInput.cost,
+    _ActivityInput.shuttleConfirmation,
   ],
   'ceremony': [
     _ActivityInput.start,
@@ -2607,6 +2617,14 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
 
   bool get _usesShuttleFields => _type == 'shuttle';
 
+  bool get _usesRoutePlaces =>
+      _type == 'shuttle' || _type == 'train' || _type == 'cruise';
+
+  bool get _fillsFromConfirmation =>
+      _usesFlightFields ||
+      _usesRoutePlaces ||
+      _type == 'hotel';
+
   bool get _usesRoom =>
       _type == 'hotel' || _type == 'ceremony' || _type == 'reception';
 
@@ -2864,14 +2882,14 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       gate: _usesFlightFields ? _gateController.text.trim() : null,
       baggageClaim: _usesFlightFields ? _baggageController.text.trim() : null,
       roomNumber: _usesRoom ? _roomController.text.trim() : null,
-      origin: _usesShuttleFields ? _shuttleOriginController.text.trim() : null,
+      origin: _usesRoutePlaces ? _shuttleOriginController.text.trim() : null,
       originCountry: _usesShuttleFields
           ? _shuttleOriginCountryController.text.trim()
           : null,
-      destination: _usesShuttleFields
+      destination: _usesRoutePlaces
           ? _shuttleDestinationController.text.trim()
           : null,
-      confirmation: _usesShuttleFields || _usesFlightFields
+      confirmation: _fillsFromConfirmation
           ? _shuttleConfirmationController.text.trim()
           : null,
       durationMinutes: minutes,
@@ -2926,11 +2944,13 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     if (parsedName != null && parsedName.isNotEmpty) {
       _nameController.text = parsedName;
     }
-    if (_type == 'flight') {
+    if (_fillsFromConfirmation) {
       final confirmation = values['confirmation'];
       if (confirmation != null && confirmation.isNotEmpty) {
         _shuttleConfirmationController.text = confirmation;
       }
+    }
+    if (_type == 'flight') {
       final origin = values['origin'];
       final destination = values['destination'];
       if (origin != null && origin.isNotEmpty) {
@@ -2943,6 +2963,15 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       if (_nameController.text.trim().isEmpty) {
         final place = _locationController.text.trim();
         if (place.isNotEmpty) _nameController.text = place;
+      }
+    } else if (_usesRoutePlaces) {
+      final origin = values['origin'];
+      final destination = values['destination'];
+      if (origin != null && origin.isNotEmpty) {
+        _shuttleOriginController.text = origin;
+      }
+      if (destination != null && destination.isNotEmpty) {
+        _shuttleDestinationController.text = destination;
       }
     }
     var filledStart = false;
@@ -3352,7 +3381,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       case _ActivityInput.cost:
         return true;
       case _ActivityInput.paste:
-        return _type == 'flight' || _type == 'hotel';
+        return _fillsFromConfirmation;
       case _ActivityInput.legs:
       case _ActivityInput.gate:
       case _ActivityInput.baggage:
@@ -3360,10 +3389,12 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       case _ActivityInput.room:
         return _usesRoom;
       case _ActivityInput.shuttleOrigin:
-      case _ActivityInput.shuttleOriginCountry:
       case _ActivityInput.shuttleDestination:
+        return _usesRoutePlaces;
+      case _ActivityInput.shuttleOriginCountry:
+        return _usesShuttleFields;
       case _ActivityInput.shuttleConfirmation:
-        return _usesShuttleFields || _usesFlightFields;
+        return _fillsFromConfirmation;
       case _ActivityInput.start:
       case _ActivityInput.end:
       case _ActivityInput.duration:
@@ -3453,7 +3484,9 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
         return _textField(
           _shuttleOriginController,
           'Origin',
-          hint: 'Where the shuttle picks up.',
+          hint: _usesShuttleFields
+              ? 'Where the shuttle picks up.'
+              : 'Where it leaves from.',
         );
       case _ActivityInput.shuttleOriginCountry:
         return _textField(
@@ -3465,7 +3498,9 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
         return _textField(
           _shuttleDestinationController,
           'Destination',
-          hint: 'Where the shuttle drops off.',
+          hint: _usesShuttleFields
+              ? 'Where the shuttle drops off.'
+              : 'Where it arrives.',
         );
       case _ActivityInput.start:
         return _UtcDateTimePicker(

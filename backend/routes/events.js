@@ -12,7 +12,7 @@ const { syncPlanDates } = require('../utils/syncPlanDates');
 const { resolveActivitySchedule, resolveActivityZones, compareStoredOrder } = require('../utils/activityTimes');
 const { applyFlightLegs, activityZoneError, zoneNameError } = require('../utils/flightLegs');
 const { parseConfirmation } = require('../utils/parseConfirmation');
-const { xaiApiKey, flightFieldsFromModel } = require('../utils/xaiConfirmation');
+const { xaiApiKey, confirmationFieldsFromModel } = require('../utils/xaiConfirmation');
 
 function applySchedule(target, schedule) {
   if (schedule.startTime) target.startTime = schedule.startTime;
@@ -262,15 +262,18 @@ router.post('/parse-confirmation', authMiddleware, async (req, res) => {
       });
     }
     const type = typeof req.body?.type === 'string' ? req.body.type.trim().toLowerCase() : '';
-    if (type !== 'flight' && type !== 'hotel') {
-      return res.status(400).json({ message: 'Type must be flight or hotel' });
+    const confirmationTypes = ['flight', 'train', 'shuttle', 'cruise', 'hotel'];
+    if (!confirmationTypes.includes(type)) {
+      return res.status(400).json({
+        message: 'Type must be flight, train, shuttle, cruise, or hotel',
+      });
     }
     if (typeof req.body?.text !== 'string') {
       return res.status(400).json({ message: 'Text is required' });
     }
     const parsed = parseConfirmation(req.body.text, type);
-    if (type === 'flight' && xaiApiKey()) {
-      const modeled = await flightFieldsFromModel(req.body.text);
+    if (xaiApiKey()) {
+      const modeled = await confirmationFieldsFromModel(req.body.text, type);
       if (modeled) return res.json(modeled);
     }
     return res.json(parsed);

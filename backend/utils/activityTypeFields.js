@@ -28,10 +28,10 @@ const FIELD_TYPES = {
   baggageClaim: ['flight'],
   roomNumber: ['hotel', 'ceremony', 'reception'],
   customType: ['custom'],
-  origin: ['shuttle'],
+  origin: ['shuttle', 'train', 'cruise'],
   originCountry: ['shuttle'],
-  destination: ['shuttle'],
-  confirmation: ['shuttle', 'flight'],
+  destination: ['shuttle', 'train', 'cruise'],
+  confirmation: ['shuttle', 'flight', 'train', 'cruise', 'hotel'],
 };
 
 const CLEARED_VALUE = {

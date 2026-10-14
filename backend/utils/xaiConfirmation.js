@@ -33,7 +33,7 @@ const MONTH_SHORT = [
   'dec',
 ];
 
-const SCHEMA = {
+const TRAVEL_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   required: [
@@ -49,6 +49,19 @@ const SCHEMA = {
     confirmation: { type: ['string', 'null'] },
     origin: { type: ['string', 'null'] },
     destination: { type: ['string', 'null'] },
+    start: { type: ['string', 'null'] },
+    end: { type: ['string', 'null'] },
+  },
+};
+
+const HOTEL_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['bookingReference', 'confirmation', 'name', 'start', 'end'],
+  properties: {
+    bookingReference: { type: ['string', 'null'] },
+    confirmation: { type: ['string', 'null'] },
+    name: { type: ['string', 'null'] },
     start: { type: ['string', 'null'] },
     end: { type: ['string', 'null'] },
   },
@@ -108,20 +121,25 @@ function dateValue(value, source) {
     : `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}`;
 }
 
-function onlyFound(model, source) {
+function onlyFound(model, source, type) {
   const found = {};
   const bookingReference = textValue(model.bookingReference, source);
   const confirmation = textValue(model.confirmation, source);
-  const origin = textValue(model.origin, source);
-  const destination = textValue(model.destination, source);
   const start = dateValue(model.start, source);
   const end = dateValue(model.end, source);
   if (bookingReference) found.bookingReference = bookingReference;
   if (confirmation) found.confirmation = confirmation;
-  if (origin) found.origin = origin;
-  if (destination) found.destination = destination;
   if (start) found.start = start;
   if (end) found.end = end;
+  if (type === 'hotel') {
+    const name = textValue(model.name, source);
+    if (name) found.name = name;
+    return found;
+  }
+  const origin = textValue(model.origin, source);
+  const destination = textValue(model.destination, source);
+  if (origin) found.origin = origin;
+  if (destination) found.destination = destination;
   return found;
 }
 
@@ -150,11 +168,19 @@ function parseModelJson(raw) {
   return data;
 }
 
-function promptFor(text) {
+function promptFor(text, type) {
+  const kind = type === 'hotel' ? 'hotel' : type;
+  const fields = type === 'hotel'
+    ? 'booking reference, confirmation, name, start, and end'
+    : 'booking reference, confirmation, origin, destination, start, and end';
+  const placeRule = type === 'hotel'
+    ? 'Do not return an origin or a destination.'
+    : 'Copy origin and destination as written.';
   return [
-    'Read this flight confirmation.',
-    'Return only booking reference, confirmation, origin, destination, start, and end when that value is written in the text.',
+    `Read this ${kind} confirmation.`,
+    `Return only ${fields} when that value is written in the text.`,
     'Booking reference and confirmation are different fields.',
+    placeRule,
     'Copy codes and place names as written.',
     'For start and end, use YYYY-MM-DDTHH:mm when a time is written, and YYYY-MM-DD when only a date is written.',
     'Use null when a value is not written. Do not guess.',
@@ -164,21 +190,22 @@ function promptFor(text) {
 }
 
 // Null means the model call failed. An object, including {}, means it succeeded.
-async function flightFieldsFromModel(text) {
+async function confirmationFieldsFromModel(text, type) {
   const key = xaiApiKey();
   if (!key) return null;
+  const hotel = type === 'hotel';
   try {
     const response = await axios.post(
       ENDPOINT,
       {
         model: MODEL,
-        input: promptFor(text),
+        input: promptFor(text, type),
         text: {
           format: {
             type: 'json_schema',
-            name: 'flight_confirmation',
+            name: hotel ? 'hotel_confirmation' : 'trip_confirmation',
             strict: true,
-            schema: SCHEMA,
+            schema: hotel ? HOTEL_SCHEMA : TRAVEL_SCHEMA,
           },
         },
       },
@@ -192,7 +219,7 @@ async function flightFieldsFromModel(text) {
     );
     const model = parseModelJson(outputText(response && response.data));
     if (!model) return null;
-    return onlyFound(model, String(text || ''));
+    return onlyFound(model, String(text || ''), type);
   } catch (error) {
     const message = error && error.message ? error.message : 'request failed';
     console.error('Confirmation model failed:', message);
@@ -200,4 +227,4 @@ async function flightFieldsFromModel(text) {
   }
 }
 
-module.exports = { xaiApiKey, flightFieldsFromModel };
+module.exports = { xaiApiKey, confirmationFieldsFromModel };

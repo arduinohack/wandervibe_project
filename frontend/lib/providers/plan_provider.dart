@@ -128,9 +128,14 @@ Map<String, dynamic> _activityWriteBody({
   if (type == 'hotel' || type == 'ceremony' || type == 'reception') {
     body['roomNumber'] = roomNumber ?? '';
   }
-  if (type == 'shuttle') {
+  if (type == 'hotel' && confirmation != null) {
+    body['confirmation'] = confirmation.trim();
+  }
+  if (type == 'shuttle' || type == 'train' || type == 'cruise') {
     if (origin != null) body['origin'] = origin.trim();
-    if (originCountry != null) body['originCountry'] = originCountry.trim();
+    if (type == 'shuttle' && originCountry != null) {
+      body['originCountry'] = originCountry.trim();
+    }
     if (destination != null) body['destination'] = destination.trim();
     if (confirmation != null) body['confirmation'] = confirmation.trim();
   }
