@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
@@ -215,6 +216,80 @@ class _FieldHint extends StatelessWidget {
       child: const Icon(Icons.help_outline, size: 20),
     );
   }
+}
+
+/// Hover on web and desktop. Long-press on touch.
+Widget _fieldTooltip(String message, Widget child) {
+  if (message.isEmpty) return child;
+  return Tooltip(message: message, child: child);
+}
+
+/// A text field wins the long-press gesture for selection, so touch uses a timer.
+class _TextInputTooltip extends StatefulWidget {
+  final String message;
+  final Widget child;
+
+  const _TextInputTooltip({required this.message, required this.child});
+
+  @override
+  State<_TextInputTooltip> createState() => _TextInputTooltipState();
+}
+
+class _TextInputTooltipState extends State<_TextInputTooltip> {
+  static const _touchKinds = <PointerDeviceKind>{
+    PointerDeviceKind.touch,
+    PointerDeviceKind.stylus,
+    PointerDeviceKind.invertedStylus,
+    PointerDeviceKind.unknown,
+    PointerDeviceKind.trackpad,
+  };
+
+  final GlobalKey<TooltipState> _tooltipKey = GlobalKey<TooltipState>();
+  int _pressGeneration = 0;
+  Offset? _downPosition;
+
+  void _cancelPress() {
+    _pressGeneration++;
+    _downPosition = null;
+  }
+
+  void _onPointerDown(PointerDownEvent event) {
+    if (!_touchKinds.contains(event.kind)) return;
+    _pressGeneration++;
+    final generation = _pressGeneration;
+    _downPosition = event.position;
+    Future<void>.delayed(kLongPressTimeout, () {
+      if (!mounted || generation != _pressGeneration) return;
+      _tooltipKey.currentState?.ensureTooltipVisible();
+    });
+  }
+
+  void _onPointerMove(PointerMoveEvent event) {
+    final origin = _downPosition;
+    if (origin == null) return;
+    if ((event.position - origin).distance > kTouchSlop) _cancelPress();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      key: _tooltipKey,
+      message: widget.message,
+      triggerMode: TooltipTriggerMode.manual,
+      child: Listener(
+        onPointerDown: _onPointerDown,
+        onPointerMove: _onPointerMove,
+        onPointerUp: (_) => _cancelPress(),
+        onPointerCancel: (_) => _cancelPress(),
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+Widget _textTooltip(String message, Widget child) {
+  if (message.isEmpty) return child;
+  return _TextInputTooltip(message: message, child: child);
 }
 
 bool canAddActivity(String? storedRole) {
@@ -761,6 +836,8 @@ class _UtcDateTimePicker extends StatelessWidget {
   final bool enableClock;
   final bool showDaylightLabel;
   final String hint;
+  final String tooltip;
+  final String zoneTooltip;
 
   const _UtcDateTimePicker({
     required this.id,
@@ -768,6 +845,8 @@ class _UtcDateTimePicker extends StatelessWidget {
     required this.value,
     required this.onChanged,
     this.hint = '',
+    this.tooltip = '',
+    this.zoneTooltip = '',
     this.onClear,
     this.zone,
     this.onZoneChanged,
@@ -791,7 +870,7 @@ class _UtcDateTimePicker extends StatelessWidget {
         children: [
           Row(
             children: [
-              Expanded(child: Text(label)),
+              Expanded(child: _fieldTooltip(tooltip, Text(label))),
               if (hint.isNotEmpty) _FieldHint(hint),
             ],
           ),
@@ -801,24 +880,27 @@ class _UtcDateTimePicker extends StatelessWidget {
             runSpacing: 8,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              OutlinedButton(
-                onPressed: enableClock
-                    ? () async {
-                        final next = await _pickDateAndTime(
-                          context,
-                          label: label,
-                          instant: instant,
-                          zone: selectedZone,
-                        );
-                        if (next == null || !context.mounted) return;
-                        onChanged(next);
-                      }
-                    : null,
-                child: Text(
-                  _dateTimeButtonLabel(
-                    instant,
-                    selectedZone,
-                    showDaylightLabel: showDaylightLabel,
+              _fieldTooltip(
+                tooltip,
+                OutlinedButton(
+                  onPressed: enableClock
+                      ? () async {
+                          final next = await _pickDateAndTime(
+                            context,
+                            label: label,
+                            instant: instant,
+                            zone: selectedZone,
+                          );
+                          if (next == null || !context.mounted) return;
+                          onChanged(next);
+                        }
+                      : null,
+                  child: Text(
+                    _dateTimeButtonLabel(
+                      instant,
+                      selectedZone,
+                      showDaylightLabel: showDaylightLabel,
+                    ),
                   ),
                 ),
               ),
@@ -832,29 +914,32 @@ class _UtcDateTimePicker extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
-                  child: DropdownButtonFormField<String>(
-                    key: ValueKey('$id|$selectedZone'),
-                    initialValue: selectedZone,
-                    isExpanded: true,
-                    decoration: const InputDecoration(labelText: 'Time zone'),
-                    selectedItemBuilder: (context) => [
-                      for (final choice in zoneChoices)
-                        Align(
-                          alignment: AlignmentDirectional.centerStart,
-                          child: Text(
-                            zoneDaylightLabel(zoneAnchor, choice),
-                            overflow: TextOverflow.ellipsis,
+                  child: _fieldTooltip(
+                    zoneTooltip,
+                    DropdownButtonFormField<String>(
+                      key: ValueKey('$id|$selectedZone'),
+                      initialValue: selectedZone,
+                      isExpanded: true,
+                      decoration: const InputDecoration(labelText: 'Time zone'),
+                      selectedItemBuilder: (context) => [
+                        for (final choice in zoneChoices)
+                          Align(
+                            alignment: AlignmentDirectional.centerStart,
+                            child: Text(
+                              zoneDaylightLabel(zoneAnchor, choice),
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
-                        ),
-                    ],
-                    items: [
-                      for (final choice in zoneChoices)
-                        DropdownMenuItem(value: choice, child: Text(choice)),
-                    ],
-                    onChanged: (next) {
-                      if (next == null) return;
-                      changeZone(next);
-                    },
+                      ],
+                      items: [
+                        for (final choice in zoneChoices)
+                          DropdownMenuItem(value: choice, child: Text(choice)),
+                      ],
+                      onChanged: (next) {
+                        if (next == null) return;
+                        changeZone(next);
+                      },
+                    ),
                   ),
                 ),
                 if (hint.isNotEmpty)
@@ -3233,6 +3318,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     TextEditingController controller,
     String label, {
     required String hint,
+    required String tooltip,
     bool number = false,
     bool decimal = false,
     ValueChanged<String>? onChanged,
@@ -3244,16 +3330,19 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            child: TextField(
-              controller: controller,
-              readOnly: readOnly,
-              keyboardType: decimal
-                  ? const TextInputType.numberWithOptions(decimal: true)
-                  : number
-                  ? TextInputType.number
-                  : null,
-              decoration: InputDecoration(labelText: label),
-              onChanged: onChanged,
+            child: _textTooltip(
+              tooltip,
+              TextField(
+                controller: controller,
+                readOnly: readOnly,
+                keyboardType: decimal
+                    ? const TextInputType.numberWithOptions(decimal: true)
+                    : number
+                    ? TextInputType.number
+                    : null,
+                decoration: InputDecoration(labelText: label),
+                onChanged: onChanged,
+              ),
             ),
           ),
           Padding(
@@ -3296,6 +3385,8 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       id: id,
       label: 'Arrival',
       hint: 'When this leg arrives. The clock uses the time zone under it.',
+      tooltip: 'Arrival time of this leg',
+      zoneTooltip: 'Time zone of the destination',
       value: value,
       zone: zone,
       onZoneChanged: onZoneChanged,
@@ -3311,6 +3402,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       _textField(
         _originController,
         'Origin',
+        tooltip: 'Origin of this flight leg',
         hint: 'Where this leg starts.',
         onChanged: (_) {
           _syncFlightLocation();
@@ -3321,6 +3413,8 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
         id: 'leg-1-departure',
         label: 'Departure',
         hint: 'When this leg leaves. The clock uses the time zone under it.',
+        tooltip: 'Departure time of this leg',
+        zoneTooltip: 'Time zone of the origin',
         value: _start,
         zone: _startZone,
         onZoneChanged: _onStartZone,
@@ -3330,6 +3424,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       _textField(
         _destinationController,
         'Destination',
+        tooltip: 'Destination of this flight leg',
         hint: 'Where this leg ends.',
         onChanged: (_) {
           _syncFlightLocation();
@@ -3339,6 +3434,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       _textField(
         _legDurationController,
         'Duration (minutes)',
+        tooltip: 'Length of this leg in minutes',
         hint: 'How many minutes this leg takes. The arrival follows the departure.',
         number: true,
         onChanged: _onLeg1DurationChanged,
@@ -3358,6 +3454,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
         _textField(
           _extraLegs[index].origin,
           'Origin',
+          tooltip: 'Origin of this flight leg',
           hint: 'Where this leg starts.',
           onChanged: (_) => setState(() => _error = null),
         ),
@@ -3365,6 +3462,8 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
           id: 'leg-${index + 2}-departure',
           label: 'Departure',
           hint: 'When this leg leaves. The clock uses the time zone under it.',
+          tooltip: 'Departure time of this leg',
+          zoneTooltip: 'Time zone of the origin',
           value: _extraLegs[index].departure,
           zone: _extraLegs[index].originZone,
           onZoneChanged: (zone) => _onExtraOriginZone(index, zone),
@@ -3374,6 +3473,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
         _textField(
           _extraLegs[index].destination,
           'Destination',
+          tooltip: 'Destination of this flight leg',
           hint: 'Where this leg ends.',
           onChanged: (_) {
             _syncFlightLocation();
@@ -3383,6 +3483,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
         _textField(
           _extraLegs[index].duration,
           'Duration (minutes)',
+          tooltip: 'Length of this leg in minutes',
           hint: 'How many minutes this leg takes. The arrival follows the departure.',
           number: true,
           onChanged: (text) => _onExtraDurationChanged(index, text),
@@ -3409,6 +3510,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
         _textField(
           _durationController,
           'Duration (minutes)',
+          tooltip: 'Length in minutes',
           hint: 'Minutes from the first departure to the last arrival.',
           number: true,
           readOnly: true,
@@ -3461,20 +3563,23 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                child: DropdownButtonFormField<String>(
-                  initialValue: _type,
-                  decoration: const InputDecoration(labelText: 'Type'),
-                  items: [
-                    for (final type in activityTypeChoices(_type))
-                      DropdownMenuItem(
-                        value: type,
-                        child: Text(activityTypeLabel(type)),
-                      ),
-                  ],
-                  onChanged: (value) {
-                    if (value == null) return;
-                    setState(() => _type = value);
-                  },
+                child: _fieldTooltip(
+                  'Kind of activity (flight, hotel, dining, etc.)',
+                  DropdownButtonFormField<String>(
+                    initialValue: _type,
+                    decoration: const InputDecoration(labelText: 'Type'),
+                    items: [
+                      for (final type in activityTypeChoices(_type))
+                        DropdownMenuItem(
+                          value: type,
+                          child: Text(activityTypeLabel(type)),
+                        ),
+                    ],
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() => _type = value);
+                    },
+                  ),
                 ),
               ),
               const Padding(
@@ -3490,6 +3595,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
         return _textField(
           _nameController,
           'Name',
+          tooltip: 'Short name of this activity',
           hint: 'The name shown on the itinerary.',
         );
       case _ActivityInput.paste:
@@ -3502,13 +3608,16 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
-                    child: TextField(
-                      controller: _confirmationController,
-                      minLines: 3,
-                      maxLines: 6,
-                      decoration: const InputDecoration(
-                        labelText: 'Confirmation',
-                        alignLabelWithHint: true,
+                    child: _textTooltip(
+                      'Confirmation text used to fill other fields. This box is not saved.',
+                      TextField(
+                        controller: _confirmationController,
+                        minLines: 3,
+                        maxLines: 6,
+                        decoration: const InputDecoration(
+                          labelText: 'Confirmation',
+                          alignLabelWithHint: true,
+                        ),
                       ),
                     ),
                   ),
@@ -3534,6 +3643,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
         return _textField(
           _shuttleOriginController,
           'Origin',
+          tooltip: 'Starting place (airport, station, etc.)',
           hint: _usesShuttleFields
               ? 'Where the shuttle picks up.'
               : 'Where it leaves from.',
@@ -3542,12 +3652,14 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
         return _textField(
           _shuttleOriginCountryController,
           'Origin country',
+          tooltip: 'Country where the shuttle picks up',
           hint: 'The country where the shuttle picks up.',
         );
       case _ActivityInput.shuttleDestination:
         return _textField(
           _shuttleDestinationController,
           'Destination',
+          tooltip: 'Ending place',
           hint: _usesShuttleFields
               ? 'Where the shuttle drops off.'
               : 'Where it arrives.',
@@ -3557,6 +3669,8 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
           id: 'activity-start',
           label: 'Start',
           hint: 'When this activity starts. The clock uses the time zone under it.',
+          tooltip: 'When this activity or leg starts',
+          zoneTooltip: 'Time zone of the origin',
           value: _start,
           zone: _startZone,
           onZoneChanged: _onStartZone,
@@ -3568,6 +3682,8 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
           id: 'activity-end',
           label: 'End',
           hint: 'When this activity ends. The clock uses the time zone under it.',
+          tooltip: 'When this activity or leg ends',
+          zoneTooltip: 'Time zone of the destination',
           value: _end,
           zone: _endZone,
           onZoneChanged: _onEndZone,
@@ -3578,6 +3694,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
         return _textField(
           _durationController,
           'Duration (minutes)',
+          tooltip: 'Length in minutes',
           hint: 'How long this activity lasts, in minutes. A number here sets the end from the start.',
           number: true,
           onChanged: _onDurationChanged,
@@ -3591,6 +3708,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
         return _textField(
           _locationController,
           'Location',
+          tooltip: 'Place name or address',
           hint: 'The place name or address.',
         );
       case _ActivityInput.placeId:
@@ -3600,10 +3718,13 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Expanded(
-                child: TextField(
-                  controller: _googlePlaceIdController,
-                  decoration: const InputDecoration(
-                    labelText: 'Google Place ID',
+                child: _textTooltip(
+                  'Optional Google Place ID for maps and directions',
+                  TextField(
+                    controller: _googlePlaceIdController,
+                    decoration: const InputDecoration(
+                      labelText: 'Google Place ID',
+                    ),
                   ),
                 ),
               ),
@@ -3621,12 +3742,14 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
         return _textField(
           _detailsController,
           'Details',
+          tooltip: 'Extra notes',
           hint: 'Notes about this activity.',
         );
       case _ActivityInput.bookingReference:
         return _textField(
           _bookingReferenceController,
           'Booking reference',
+          tooltip: 'Confirmation or booking code',
           hint: 'The reservation code. This is not the confirmation.',
         );
       case _ActivityInput.cost:
@@ -3636,6 +3759,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
             _textField(
               _costController,
               'Cost',
+              tooltip: 'Cost amount',
               hint: 'What this activity costs.',
               decimal: true,
             ),
@@ -3645,16 +3769,19 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Expanded(
-                    child: SegmentedButton<String>(
-                      showSelectedIcon: false,
-                      segments: const [
-                        ButtonSegment(value: 'estimated', label: Text('Estimated')),
-                        ButtonSegment(value: 'actual', label: Text('Actual')),
-                      ],
-                      selected: {_costType},
-                      onSelectionChanged: (next) {
-                        setState(() => _costType = next.first);
-                      },
+                    child: _fieldTooltip(
+                      'Estimated or actual',
+                      SegmentedButton<String>(
+                        showSelectedIcon: false,
+                        segments: const [
+                          ButtonSegment(value: 'estimated', label: Text('Estimated')),
+                          ButtonSegment(value: 'actual', label: Text('Actual')),
+                        ],
+                        selected: {_costType},
+                        onSelectionChanged: (next) {
+                          setState(() => _costType = next.first);
+                        },
+                      ),
                     ),
                   ),
                   const Padding(
@@ -3672,24 +3799,28 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
         return _textField(
           _gateController,
           'Gate',
+          tooltip: 'Departure gate',
           hint: 'The departure gate.',
         );
       case _ActivityInput.baggage:
         return _textField(
           _baggageController,
           'Baggage claim',
+          tooltip: 'Where checked bags are collected',
           hint: 'Where checked bags are collected.',
         );
       case _ActivityInput.room:
         return _textField(
           _roomController,
           'Room number',
+          tooltip: 'Room for this stay or event',
           hint: 'The room for this stay or event.',
         );
       case _ActivityInput.shuttleConfirmation:
         return _textField(
           _shuttleConfirmationController,
           'Confirmation',
+          tooltip: 'Confirmation code, separate from the booking reference',
           hint: _usesShuttleFields
               ? 'The shuttle confirmation. This is separate from the booking reference.'
               : 'The confirmation. This is separate from the booking reference.',
