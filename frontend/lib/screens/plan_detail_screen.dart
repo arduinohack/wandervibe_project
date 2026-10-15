@@ -3205,6 +3205,30 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     Navigator.pop(context);
   }
 
+  Future<void> _openPlaceIdSearch() async {
+    final location = _locationController.text.trim();
+    final uri = location.isEmpty
+        ? Uri.https('www.google.com', '/maps/search/', {'api': '1'})
+        : Uri.https('www.google.com', '/maps/search/', {
+            'api': '1',
+            'query': location,
+          });
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!opened && mounted) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Could not open Maps')),
+        );
+      }
+    } catch (_) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Could not open Maps')),
+      );
+    }
+  }
+
   Widget _textField(
     TextEditingController controller,
     String label, {
@@ -3570,10 +3594,28 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
           hint: 'The place name or address.',
         );
       case _ActivityInput.placeId:
-        return _textField(
-          _googlePlaceIdController,
-          'Google Place ID',
-          hint: 'The Google place id used for directions.',
+        return Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _googlePlaceIdController,
+                  decoration: const InputDecoration(
+                    labelText: 'Google Place ID',
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: _openPlaceIdSearch,
+                child: const Text('Find Place ID'),
+              ),
+              const _FieldHint(
+                'The Google place id used for directions.',
+              ),
+            ],
+          ),
         );
       case _ActivityInput.details:
         return _textField(
