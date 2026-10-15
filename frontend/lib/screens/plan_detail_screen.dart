@@ -1459,88 +1459,114 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    if (dragIndex != null && !activity.linked)
-                      ReorderableDragStartListener(
-                        index: dragIndex,
-                        child: const Tooltip(
-                          message: 'Reorder activity',
-                          child: Icon(Icons.drag_handle),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final narrow = constraints.maxWidth < 600;
+                    final name = Text(
+                      activity.name.trim(),
+                      maxLines: narrow ? null : 1,
+                      overflow: narrow ? null : TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    );
+                    final actions = <Widget>[
+                      if (_activityDirectionsUri(activity) != null)
+                        IconButton(
+                          tooltip: 'Directions',
+                          visualDensity: VisualDensity.compact,
+                          icon: const Icon(Icons.map),
+                          onPressed: () => _openDirections(activity),
                         ),
-                      ),
-                    Expanded(
-                      child: Text(
-                        activity.name.trim(),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
+                      if (activityId != null && activityId.isNotEmpty)
+                        IconButton(
+                          tooltip: 'History',
+                          visualDensity: VisualDensity.compact,
+                          icon: const Icon(Icons.history),
+                          onPressed: () => _openActivityHistory(activity),
                         ),
-                      ),
-                    ),
-                    if (_activityDirectionsUri(activity) != null)
-                      IconButton(
-                        tooltip: 'Directions',
-                        visualDensity: VisualDensity.compact,
-                        icon: const Icon(Icons.map),
-                        onPressed: () => _openDirections(activity),
-                      ),
-                    if (activityId != null && activityId.isNotEmpty)
-                      IconButton(
-                        tooltip: 'History',
-                        visualDensity: VisualDensity.compact,
-                        icon: const Icon(Icons.history),
-                        onPressed: () => _openActivityHistory(activity),
-                      ),
-                    if (canChange &&
-                        !activity.linked &&
-                        dragIndex != null &&
-                        activityId != null &&
-                        activityId.isNotEmpty) ...[
-                      IconButton(
-                        tooltip: 'Insert above',
-                        visualDensity: VisualDensity.compact,
-                        icon: const _PlusArrowIcon(up: true),
-                        onPressed: () {
-                          final anchor = _insertAnchorAbove(dragIndex, activity);
-                          _addActivity(
-                            insertBefore: activityId,
-                            insertIndex: dragIndex,
-                            initialStart: anchor,
-                            initialEnd: anchor,
-                            initialZone: startZone,
-                            useDefaultStart: false,
-                            shiftFollowing: anchor != null,
-                          );
-                        },
-                      ),
-                      IconButton(
-                        tooltip: 'Insert below',
-                        visualDensity: VisualDensity.compact,
-                        icon: const _PlusArrowIcon(up: false),
-                        onPressed: () {
-                          final anchor = activity.endTime ?? activity.startTime;
-                          _addActivity(
-                            insertAfter: activityId,
-                            insertIndex: dragIndex + 1,
-                            initialStart: anchor,
-                            initialEnd: anchor,
-                            initialZone: endZone,
-                            useDefaultStart: false,
-                            shiftFollowing: anchor != null,
-                          );
-                        },
-                      ),
-                      IconButton(
-                        tooltip: 'Edit activity',
-                        visualDensity: VisualDensity.compact,
-                        icon: const Icon(Icons.edit),
-                        onPressed: () => _openActivityEdit(activity),
-                      ),
-                    ],
-                  ],
+                      if (canChange &&
+                          !activity.linked &&
+                          dragIndex != null &&
+                          activityId != null &&
+                          activityId.isNotEmpty) ...[
+                        IconButton(
+                          tooltip: 'Insert above',
+                          visualDensity: VisualDensity.compact,
+                          icon: const _PlusArrowIcon(up: true),
+                          onPressed: () {
+                            final anchor =
+                                _insertAnchorAbove(dragIndex, activity);
+                            _addActivity(
+                              insertBefore: activityId,
+                              insertIndex: dragIndex,
+                              initialStart: anchor,
+                              initialEnd: anchor,
+                              initialZone: startZone,
+                              useDefaultStart: false,
+                              shiftFollowing: anchor != null,
+                            );
+                          },
+                        ),
+                        IconButton(
+                          tooltip: 'Insert below',
+                          visualDensity: VisualDensity.compact,
+                          icon: const _PlusArrowIcon(up: false),
+                          onPressed: () {
+                            final anchor =
+                                activity.endTime ?? activity.startTime;
+                            _addActivity(
+                              insertAfter: activityId,
+                              insertIndex: dragIndex + 1,
+                              initialStart: anchor,
+                              initialEnd: anchor,
+                              initialZone: endZone,
+                              useDefaultStart: false,
+                              shiftFollowing: anchor != null,
+                            );
+                          },
+                        ),
+                        IconButton(
+                          tooltip: 'Edit activity',
+                          visualDensity: VisualDensity.compact,
+                          icon: const Icon(Icons.edit),
+                          onPressed: () => _openActivityEdit(activity),
+                        ),
+                      ],
+                    ];
+                    final dragHandle = dragIndex != null && !activity.linked
+                        ? ReorderableDragStartListener(
+                            index: dragIndex,
+                            child: const Tooltip(
+                              message: 'Reorder activity',
+                              child: Icon(Icons.drag_handle),
+                            ),
+                          )
+                        : null;
+                    if (narrow) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          name,
+                          if (dragHandle != null || actions.isNotEmpty)
+                            Row(
+                              children: [
+                                if (dragHandle != null) dragHandle,
+                                ...actions,
+                              ],
+                            ),
+                        ],
+                      );
+                    }
+                    return Row(
+                      children: [
+                        if (dragHandle != null) dragHandle,
+                        Expanded(child: name),
+                        ...actions,
+                      ],
+                    );
+                  },
                 ),
                 Wrap(
                   spacing: 8,
