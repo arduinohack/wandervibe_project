@@ -679,6 +679,30 @@ List<String?> _dayHeaders(
   );
 }
 
+/// Itinerary order for the plan detail list. Compares the stored UTC start
+/// instant, so the order does not depend on the device time zone. An activity
+/// with no start sorts after one that has a start. Equal starts keep their
+/// current order. Own rows and linked rows share this list.
+List<Activity> activitiesByUtcStart(List<Activity> activities) {
+  final indexed = <({Activity activity, int index})>[
+    for (var index = 0; index < activities.length; index++)
+      (activity: activities[index], index: index),
+  ];
+  indexed.sort((a, b) {
+    final byStart = _compareUtcStart(a.activity.startTime, b.activity.startTime);
+    if (byStart != 0) return byStart;
+    return a.index.compareTo(b.index);
+  });
+  return [for (final item in indexed) item.activity];
+}
+
+int _compareUtcStart(DateTime? left, DateTime? right) {
+  if (left == null && right == null) return 0;
+  if (left == null) return 1;
+  if (right == null) return -1;
+  return left.toUtc().compareTo(right.toUtc());
+}
+
 int? _wholeMinutes(String text) {
   final trimmed = text.trim();
   if (!RegExp(r'^\d+$').hasMatch(trimmed)) return null;
@@ -1096,6 +1120,19 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     return above.endTime ?? above.startTime;
   }
 
+  /// Index in the loaded itinerary, which insert and the back-to-back chain use.
+  /// The drawn list is sorted by start, so a row's on-screen index is not this.
+  int _storedItineraryIndex(Activity activity) {
+    final activities =
+        Provider.of<PlanProvider>(context, listen: false).itineraryActivities;
+    final id = activity.id;
+    if (id != null && id.isNotEmpty) {
+      final index = activities.indexWhere((item) => item.id == id);
+      if (index >= 0) return index;
+    }
+    return activities.indexOf(activity);
+  }
+
   Future<void> _addActivity({
     String? insertAfter,
     String? insertBefore,
@@ -1309,7 +1346,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     final userProvider = Provider.of<UserProvider>(context, listen: false);
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
-    final ordered = List<Activity>.from(planProvider.itineraryActivities);
+    final ordered = activitiesByUtcStart(planProvider.itineraryActivities);
     if (oldIndex < 0 || oldIndex >= ordered.length || newIndex < 0 || newIndex >= ordered.length) {
       return;
     }
@@ -1567,11 +1604,14 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                           visualDensity: VisualDensity.compact,
                           icon: const _PlusArrowIcon(up: true),
                           onPressed: () {
-                            final anchor =
-                                _insertAnchorAbove(dragIndex, activity);
+                            final storedIndex = _storedItineraryIndex(activity);
+                            final anchor = _insertAnchorAbove(
+                              storedIndex,
+                              activity,
+                            );
                             _addActivity(
                               insertBefore: activityId,
-                              insertIndex: dragIndex,
+                              insertIndex: storedIndex,
                               initialStart: anchor,
                               initialEnd: anchor,
                               initialZone: startZone,
@@ -1585,11 +1625,14 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                           visualDensity: VisualDensity.compact,
                           icon: const _PlusArrowIcon(up: false),
                           onPressed: () {
+                            final storedIndex = _storedItineraryIndex(activity);
                             final anchor =
                                 activity.endTime ?? activity.startTime;
                             _addActivity(
                               insertAfter: activityId,
-                              insertIndex: dragIndex + 1,
+                              insertIndex: storedIndex < 0
+                                  ? null
+                                  : storedIndex + 1,
                               initialStart: anchor,
                               initialEnd: anchor,
                               initialZone: endZone,
@@ -1875,7 +1918,9 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
           final roleText = storedRole == null
               ? null
               : planRoleLabel(shown.type, storedRole);
-          final activities = planProvider.itineraryActivities;
+          final activities = activitiesByUtcStart(
+            planProvider.itineraryActivities,
+          );
           final canChange = canAddActivity(storedRole);
           final shownTimes = _shownActivityTimes(activities);
           final dayHeaders = _dayHeaders(shownTimes, shown.timeZone);
