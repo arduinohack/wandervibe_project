@@ -378,6 +378,30 @@ class PlanPlaceMapResult {
   const PlanPlaceMapResult({this.status, this.bytes});
 }
 
+class PlaceSuggestion {
+  final String placeId;
+  final String name;
+  final String address;
+
+  const PlaceSuggestion({
+    required this.placeId,
+    required this.name,
+    this.address = '',
+  });
+}
+
+class PlaceSearchResult {
+  final int? status;
+  final String? error;
+  final List<PlaceSuggestion> places;
+
+  const PlaceSearchResult({
+    this.status,
+    this.error,
+    this.places = const [],
+  });
+}
+
 class ActivityHistoryRevision {
   final String id;
   final String userId;
@@ -1492,6 +1516,55 @@ class PlanProvider extends ChangeNotifier {
     } catch (e) {
       logger.e('Error updating plan: $e');
       return const PlanUpdateResult();
+    }
+  }
+
+  /// GET /api/places/autocomplete?q=. 200 is a short list of places.
+  Future<PlaceSearchResult> searchPlaces({
+    required String query,
+    required String? token,
+  }) async {
+    try {
+      if (token == null || token.isEmpty) {
+        return const PlaceSearchResult(status: 401);
+      }
+      final response = await http.get(
+        Uri.parse(
+          '$backendBaseUrl$apiPlaceAutocomplete?q=${Uri.encodeQueryComponent(query)}',
+        ),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+      if (response.statusCode != 200) {
+        return PlaceSearchResult(
+          status: response.statusCode,
+          error: _apiErrorMessage(response.body),
+        );
+      }
+      final data = json.decode(response.body);
+      if (data is! List) {
+        return const PlaceSearchResult(status: 200);
+      }
+      final places = <PlaceSuggestion>[];
+      for (final item in data) {
+        if (item is! Map) continue;
+        final placeId = (item['placeId'] ?? '').toString().trim();
+        final name = (item['name'] ?? '').toString().trim();
+        if (placeId.isEmpty || name.isEmpty) continue;
+        places.add(
+          PlaceSuggestion(
+            placeId: placeId,
+            name: name,
+            address: (item['address'] ?? '').toString().trim(),
+          ),
+        );
+      }
+      return PlaceSearchResult(status: 200, places: places);
+    } catch (e) {
+      logger.e('Error searching places: $e');
+      return const PlaceSearchResult(error: 'Could not search places');
     }
   }
 

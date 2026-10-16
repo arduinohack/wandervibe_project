@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/cupertino.dart';
@@ -701,6 +702,32 @@ int _compareUtcStart(DateTime? left, DateTime? right) {
   if (left == null) return 1;
   if (right == null) return -1;
   return left.toUtc().compareTo(right.toUtc());
+}
+
+const placeSearchDebounce = Duration(milliseconds: 300);
+
+/// What a chosen place writes on the activity form.
+/// [location] is null when the location field already has text.
+class PlaceSelection {
+  final String googlePlaceId;
+  final String? location;
+
+  const PlaceSelection({required this.googlePlaceId, this.location});
+}
+
+/// Sets the Place ID from the chosen place. The location name is filled only
+/// when that field is empty.
+PlaceSelection applyPlaceSelection({
+  required String location,
+  required String placeId,
+  required String name,
+}) {
+  final current = location.trim();
+  final displayName = name.trim();
+  return PlaceSelection(
+    googlePlaceId: placeId.trim(),
+    location: current.isEmpty && displayName.isNotEmpty ? displayName : null,
+  );
 }
 
 int? _wholeMinutes(String text) {
@@ -2292,6 +2319,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
   late final TextEditingController _durationController;
   late final TextEditingController _locationController;
   late final TextEditingController _googlePlaceIdController;
+  late final TextEditingController _placeSearchController;
   late final TextEditingController _detailsController;
   late final TextEditingController _bookingReferenceController;
   late final TextEditingController _confirmationController;
@@ -2318,6 +2346,10 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
   bool _parsingConfirmation = false;
   bool _askingToLeave = false;
   String? _error;
+  Timer? _placeSearchTimer;
+  int _placeSearchSeq = 0;
+  List<PlaceSuggestion> _placeSuggestions = const [];
+  String? _placeSearchError;
   late final String _openedForm;
   final List<_ExtraLeg> _extraLegs = [];
   final List<_ExtraLeg> _retiredLegs = [];
@@ -2357,6 +2389,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     _googlePlaceIdController = TextEditingController(
       text: activity?.googlePlaceId ?? '',
     );
+    _placeSearchController = TextEditingController();
     _detailsController = TextEditingController(text: activity?.details ?? '');
     _bookingReferenceController = TextEditingController(
       text: (activity?.bookingReference ?? '').trim(),
@@ -2602,7 +2635,9 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     _nameController.dispose();
     _durationController.dispose();
     _locationController.dispose();
+    _placeSearchTimer?.cancel();
     _googlePlaceIdController.dispose();
+    _placeSearchController.dispose();
     _detailsController.dispose();
     _bookingReferenceController.dispose();
     _confirmationController.dispose();
@@ -3320,6 +3355,66 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     Navigator.pop(context);
   }
 
+  void _onPlaceSearchChanged(String value) {
+    _placeSearchTimer?.cancel();
+    final query = value.trim();
+    _placeSearchSeq += 1;
+    setState(() {
+      _placeSuggestions = const [];
+      _placeSearchError = null;
+    });
+    if (query.isEmpty) return;
+    final seq = _placeSearchSeq;
+    _placeSearchTimer = Timer(placeSearchDebounce, () {
+      _runPlaceSearch(query, seq);
+    });
+  }
+
+  Future<void> _runPlaceSearch(String query, int seq) async {
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final result = await planProvider.searchPlaces(
+      query: query,
+      token: userProvider.token,
+    );
+    if (!mounted || seq != _placeSearchSeq) return;
+    if (result.status == 401) {
+      await _endSession();
+      return;
+    }
+    if (result.status != 200) {
+      setState(() {
+        _placeSuggestions = const [];
+        _placeSearchError = result.error ?? 'Could not search places';
+      });
+      return;
+    }
+    setState(() {
+      _placeSuggestions = result.places;
+      _placeSearchError = result.places.isEmpty ? 'No places found' : null;
+    });
+  }
+
+  void _selectPlace(PlaceSuggestion place) {
+    final selection = applyPlaceSelection(
+      location: _locationController.text,
+      placeId: place.placeId,
+      name: place.name,
+    );
+    if (selection.googlePlaceId.isEmpty) return;
+    _placeSearchTimer?.cancel();
+    _placeSearchSeq += 1;
+    setState(() {
+      _googlePlaceIdController.text = selection.googlePlaceId;
+      if (selection.location != null) {
+        _locationController.text = selection.location!;
+      }
+      _placeSuggestions = const [];
+      _placeSearchError = null;
+      _placeSearchController.text = place.name;
+    });
+  }
+
   Future<void> _openPlaceIdSearch() async {
     final location = _locationController.text.trim();
     final uri = location.isEmpty
@@ -3745,26 +3840,72 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       case _ActivityInput.placeId:
         return Padding(
           padding: const EdgeInsets.only(top: 12),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Expanded(
-                child: _textTooltip(
-                  'Optional Google Place ID for maps and directions',
-                  TextField(
-                    controller: _googlePlaceIdController,
-                    decoration: const InputDecoration(
-                      labelText: 'Google Place ID',
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: _textTooltip(
+                      'Search for a place by name',
+                      TextField(
+                        controller: _placeSearchController,
+                        decoration: const InputDecoration(
+                          labelText: 'Search places',
+                        ),
+                        onChanged: _onPlaceSearchChanged,
+                      ),
+                    ),
+                  ),
+                  const _FieldHint(
+                    'Type a place name. Choosing a match fills the Place ID.',
+                  ),
+                ],
+              ),
+              if (_placeSearchError != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    _placeSearchError!,
+                    style: const TextStyle(color: Colors.red),
+                  ),
+                ),
+              for (final place in _placeSuggestions)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton(
+                    onPressed: () => _selectPlace(place),
+                    child: Text(
+                      place.address.isEmpty
+                          ? place.name
+                          : '${place.name}, ${place.address}',
+                      textAlign: TextAlign.start,
                     ),
                   ),
                 ),
-              ),
-              TextButton(
-                onPressed: _openPlaceIdSearch,
-                child: const Text('Find Place ID'),
-              ),
-              const _FieldHint(
-                'The Google place id used for directions.',
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: _textTooltip(
+                      'Optional Google Place ID for maps and directions',
+                      TextField(
+                        controller: _googlePlaceIdController,
+                        decoration: const InputDecoration(
+                          labelText: 'Google Place ID',
+                        ),
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: _openPlaceIdSearch,
+                    child: const Text('Find Place ID'),
+                  ),
+                  const _FieldHint(
+                    'The Google place id used for directions.',
+                  ),
+                ],
               ),
             ],
           ),

@@ -65,6 +65,9 @@ app.use('/api/plans', authMiddleware, plansRouter, planInviteRouter);
 const eventRoutes = require('./routes/events');
 app.use('/api/activities', eventRoutes);
 
+// Place search. Auth is on the route. Owner or Collaborator only.
+app.use('/api/places', require('./routes/places'));
+
 // Mount invites routes WITH authMiddleware (protects all /api/invites/*)
 app.use('/api/invites', authMiddleware, invitesRouter);
 
