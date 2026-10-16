@@ -2715,13 +2715,12 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
   }
 
   void _syncShownDuration() {
+    if (_durationController.text.trim().isNotEmpty) return;
     final start = _start;
     final end = _extraLegs.isEmpty ? _end : _extraLegs.last.arrival;
     if (start != null && end != null && !end.isBefore(start)) {
       _durationController.text = end.difference(start).inMinutes.toString();
-      return;
     }
-    if (_extraLegs.isNotEmpty) _durationController.clear();
   }
 
   bool get _usesFlightFields => _type == 'flight';
@@ -2903,8 +2902,6 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     final name = _nameController.text.trim();
     final start = _start;
     final end = _spanEnd;
-    var typedDuration = '';
-    int? minutes;
     if (_usesFlightFields) {
       final legDurations = <String>[
         _legDurationController.text,
@@ -2917,13 +2914,12 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
           return null;
         }
       }
-    } else {
-      typedDuration = _durationController.text.trim();
-      minutes = _wholeMinutes(typedDuration);
-      if (typedDuration.isNotEmpty && minutes == null) {
-        setState(() => _error = 'Enter duration as whole minutes');
-        return null;
-      }
+    }
+    final typedDuration = _durationController.text.trim();
+    var minutes = _wholeMinutes(typedDuration);
+    if (typedDuration.isNotEmpty && minutes == null) {
+      setState(() => _error = 'Enter duration as whole minutes');
+      return null;
     }
     final editing = widget.isScreen;
     if (name.isEmpty || (!editing && (start == null || end == null))) {
@@ -2965,7 +2961,10 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     if (_usesFlightFields) {
       writeStart = true;
       writeEnd = true;
-      if (start != null && end != null && !end.isBefore(start)) {
+      if (typedDuration.isNotEmpty) {
+        minutes = _wholeMinutes(typedDuration);
+        writeDuration = true;
+      } else if (start != null && end != null && !end.isBefore(start)) {
         minutes = end.difference(start).inMinutes;
         writeDuration = true;
       } else {
@@ -3321,9 +3320,12 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     required String tooltip,
     bool number = false,
     bool decimal = false,
+    int minLines = 1,
+    int maxLines = 1,
     ValueChanged<String>? onChanged,
     bool readOnly = false,
   }) {
+    final severalLines = maxLines > 1;
     return Padding(
       padding: const EdgeInsets.only(top: 12),
       child: Row(
@@ -3335,10 +3337,14 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
               TextField(
                 controller: controller,
                 readOnly: readOnly,
+                minLines: minLines,
+                maxLines: maxLines,
                 keyboardType: decimal
                     ? const TextInputType.numberWithOptions(decimal: true)
                     : number
                     ? TextInputType.number
+                    : severalLines
+                    ? TextInputType.multiline
                     : null,
                 decoration: InputDecoration(labelText: label),
                 onChanged: onChanged,
@@ -3506,15 +3512,6 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
           child: const Text('Add leg'),
         ),
       ),
-      if (_extraLegs.isNotEmpty)
-        _textField(
-          _durationController,
-          'Duration (minutes)',
-          tooltip: 'Length in minutes',
-          hint: 'Minutes from the first departure to the last arrival.',
-          number: true,
-          readOnly: true,
-        ),
     ];
   }
 
@@ -3549,8 +3546,9 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
         return _fillsFromConfirmation;
       case _ActivityInput.start:
       case _ActivityInput.end:
-      case _ActivityInput.duration:
         return !_usesFlightFields;
+      case _ActivityInput.duration:
+        return true;
     }
   }
 
@@ -3695,7 +3693,9 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
           _durationController,
           'Duration (minutes)',
           tooltip: 'Length in minutes',
-          hint: 'How long this activity lasts, in minutes. A number here sets the end from the start.',
+          hint: _usesFlightFields
+              ? 'Length in minutes. The end time still follows the last leg.'
+              : 'How long this activity lasts, in minutes. A number here sets the end from the start.',
           number: true,
           onChanged: _onDurationChanged,
         );
@@ -3744,6 +3744,8 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
           'Details',
           tooltip: 'Extra notes',
           hint: 'Notes about this activity.',
+          minLines: 3,
+          maxLines: 6,
         );
       case _ActivityInput.bookingReference:
         return _textField(
