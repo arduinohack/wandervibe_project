@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -301,8 +302,6 @@ bool canEditPlan(String? storedRole) {
   final role = storedRole?.trim();
   return role == 'Owner' || role == 'Collaborator';
 }
-
-String _twoDigits(int number) => number.toString().padLeft(2, '0');
 
 DateTime _clampCalendarDate(int year, int month, int day) {
   final date = DateTime(year, month, day);
@@ -767,48 +766,35 @@ class _ZoneDateTimeDialogState extends State<_ZoneDateTimeDialog> {
                   },
                 ),
               ),
-              Row(
-                children: [
-                  Expanded(
-                    child: DropdownButtonFormField<int>(
-                      key: ValueKey('hour-$_hour'),
-                      initialValue: _hour,
-                      isExpanded: true,
-                      decoration: const InputDecoration(labelText: 'Hour'),
-                      items: [
-                        for (var hour = 0; hour < 24; hour++)
-                          DropdownMenuItem(
-                            value: hour,
-                            child: Text(_twoDigits(hour)),
-                          ),
-                      ],
-                      onChanged: (value) {
-                        if (value == null) return;
-                        setState(() => _hour = value);
-                      },
+              const Text('Time', style: TextStyle(fontWeight: FontWeight.w600)),
+              SizedBox(
+                height: 160,
+                child: CupertinoTheme(
+                  data: CupertinoThemeData(
+                    brightness: Theme.of(context).brightness,
+                    textTheme: CupertinoTextThemeData(
+                      dateTimePickerTextStyle: Theme.of(context).textTheme.titleLarge,
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: DropdownButtonFormField<int>(
-                      key: ValueKey('minute-$_minute'),
-                      initialValue: _minute,
-                      isExpanded: true,
-                      decoration: const InputDecoration(labelText: 'Minute'),
-                      items: [
-                        for (var minute = 0; minute < 60; minute++)
-                          DropdownMenuItem(
-                            value: minute,
-                            child: Text(_twoDigits(minute)),
-                          ),
-                      ],
-                      onChanged: (value) {
-                        if (value == null) return;
-                        setState(() => _minute = value);
-                      },
+                  child: CupertinoDatePicker(
+                    mode: CupertinoDatePickerMode.time,
+                    use24hFormat: true,
+                    initialDateTime: DateTime(
+                      widget.date.year,
+                      widget.date.month,
+                      widget.date.day,
+                      widget.hour,
+                      widget.minute,
                     ),
+                    onDateTimeChanged: (picked) {
+                      if (picked.hour == _hour && picked.minute == _minute) return;
+                      setState(() {
+                        _hour = picked.hour;
+                        _minute = picked.minute;
+                      });
+                    },
                   ),
-                ],
+                ),
               ),
             ],
           ),
@@ -819,7 +805,7 @@ class _ZoneDateTimeDialogState extends State<_ZoneDateTimeDialog> {
           onPressed: () => Navigator.pop(context),
           child: const Text('Cancel'),
         ),
-        TextButton(onPressed: _confirm, child: const Text('OK')),
+        TextButton(onPressed: _confirm, child: const Text('Confirm')),
       ],
     );
   }
