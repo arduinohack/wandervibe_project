@@ -1,22 +1,24 @@
 const axios = require('axios');
 const { googleMapsKey, redactKey } = require('./placeMap');
 
-const AUTOCOMPLETE_URL = 'https://maps.googleapis.com/maps/api/place/autocomplete/json';
+const AUTOCOMPLETE_URL = 'https://places.googleapis.com/v1/places:autocomplete';
+const FIELD_MASK = [
+  'suggestions.placePrediction.placeId',
+  'suggestions.placePrediction.structuredFormat',
+  'suggestions.placePrediction.text',
+].join(',');
 const MAX_RESULTS = 5;
 
-function autocompleteUrl(query, key) {
-  const params = new URLSearchParams({ input: query, key });
-  return `${AUTOCOMPLETE_URL}?${params.toString()}`;
-}
-
-function bodyText(body) {
-  if (body == null) return '';
-  if (typeof body === 'string') return body;
-  try {
-    return JSON.stringify(body);
-  } catch (_) {
-    return '';
-  }
+function autocompleteRequest(query, key) {
+  return {
+    url: AUTOCOMPLETE_URL,
+    body: { input: query },
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Goog-Api-Key': key,
+      'X-Goog-FieldMask': FIELD_MASK,
+    },
+  };
 }
 
 function googleMessage(data) {
@@ -32,14 +34,22 @@ function googleMessage(data) {
   return '';
 }
 
+function textOf(value) {
+  if (typeof value === 'string') return value.trim();
+  if (value && typeof value === 'object' && typeof value.text === 'string') {
+    return value.text.trim();
+  }
+  return '';
+}
+
 function suggestionFromPrediction(prediction) {
   if (!prediction || typeof prediction !== 'object') return null;
-  const placeId = String(prediction.place_id || '').trim();
+  const placeId = String(prediction.placeId || '').trim();
   if (!placeId) return null;
-  const formatting = prediction.structured_formatting || {};
-  const main = String(formatting.main_text || '').trim();
-  const secondary = String(formatting.secondary_text || '').trim();
-  const description = String(prediction.description || '').trim();
+  const formatting = prediction.structuredFormat || {};
+  const main = textOf(formatting.mainText);
+  const secondary = textOf(formatting.secondaryText);
+  const description = textOf(prediction.text);
   const name = main || description;
   if (!name) return null;
   return {
@@ -61,13 +71,13 @@ function placesFromPayload(payload) {
   if (!data || typeof data !== 'object') {
     return { error: 'Could not search places' };
   }
-  const status = typeof data.status === 'string' ? data.status : '';
-  if (status && status !== 'OK' && status !== 'ZERO_RESULTS') {
+  if (data.error) {
     return { error: googleMessage(data) || 'Could not search places' };
   }
-  const predictions = Array.isArray(data.predictions) ? data.predictions : [];
+  const suggestions = Array.isArray(data.suggestions) ? data.suggestions : [];
   const places = [];
-  for (const prediction of predictions) {
+  for (const suggestion of suggestions) {
+    const prediction = suggestion && suggestion.placePrediction;
     const row = suggestionFromPrediction(prediction);
     if (!row) continue;
     places.push(row);
@@ -76,9 +86,10 @@ function placesFromPayload(payload) {
   return { places };
 }
 
-async function defaultGet(url) {
-  const res = await axios.get(url, {
+async function defaultPost(url, body, headers) {
+  const res = await axios.post(url, body, {
     timeout: 15000,
+    headers,
     validateStatus: () => true,
   });
   return {
@@ -87,8 +98,8 @@ async function defaultGet(url) {
   };
 }
 
-// Google Places Autocomplete. Returns a short list of placeId, name, and address.
-async function searchPlaces(query, { get } = {}) {
+// Places API (New) Autocomplete. Returns a short list of placeId, name, and address.
+async function searchPlaces(query, { post } = {}) {
   const key = googleMapsKey();
   if (!key) {
     return { status: 503, msg: 'Google Maps is not configured' };
@@ -98,10 +109,11 @@ async function searchPlaces(query, { get } = {}) {
     return { status: 400, msg: 'Query is required' };
   }
 
-  const fetchUrl = get || defaultGet;
+  const request = autocompleteRequest(q, key);
+  const fetchPlaces = post || defaultPost;
   let res;
   try {
-    res = await fetchUrl(autocompleteUrl(q, key));
+    res = await fetchPlaces(request.url, request.body, request.headers);
   } catch (_) {
     return { status: 502, msg: 'Could not search places' };
   }
@@ -116,8 +128,9 @@ async function searchPlaces(query, { get } = {}) {
 
 module.exports = {
   searchPlaces,
-  autocompleteUrl,
+  autocompleteRequest,
   placesFromPayload,
   AUTOCOMPLETE_URL,
+  FIELD_MASK,
   MAX_RESULTS,
 };
