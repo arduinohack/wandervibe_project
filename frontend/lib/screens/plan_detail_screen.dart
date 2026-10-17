@@ -715,6 +715,21 @@ class PlaceSelection {
   const PlaceSelection({required this.googlePlaceId, this.location});
 }
 
+/// Search text that should replace the box when Location changes.
+/// Null means leave the box alone. An empty string clears it.
+/// A search the user has changed does not follow Location.
+String? placeSearchTextFromLocation({
+  required String location,
+  required String search,
+  required String seed,
+}) {
+  final next = location.trim();
+  final current = search.trim();
+  if (current.isNotEmpty && current != seed.trim()) return null;
+  if (current == next) return null;
+  return next;
+}
+
 /// Sets the Place ID from the chosen place. The location name is filled only
 /// when that field is empty.
 PlaceSelection applyPlaceSelection({
@@ -2348,6 +2363,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
   String? _error;
   Timer? _placeSearchTimer;
   int _placeSearchSeq = 0;
+  String _placeSearchSeed = '';
   List<PlaceSuggestion> _placeSuggestions = const [];
   String? _placeSearchError;
   late final String _openedForm;
@@ -2389,7 +2405,15 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     _googlePlaceIdController = TextEditingController(
       text: activity?.googlePlaceId ?? '',
     );
-    _placeSearchController = TextEditingController();
+    final openingLocation = (activity?.location ?? '').trim();
+    _placeSearchController = TextEditingController(text: openingLocation);
+    _placeSearchSeed = openingLocation;
+    if (openingLocation.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _onPlaceSearchChanged(_placeSearchController.text);
+      });
+    }
     _detailsController = TextEditingController(text: activity?.details ?? '');
     _bookingReferenceController = TextEditingController(
       text: (activity?.bookingReference ?? '').trim(),
@@ -3355,6 +3379,18 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     Navigator.pop(context);
   }
 
+  void _applyLocationToPlaceSearch() {
+    final next = placeSearchTextFromLocation(
+      location: _locationController.text,
+      search: _placeSearchController.text,
+      seed: _placeSearchSeed,
+    );
+    if (next == null) return;
+    _placeSearchSeed = next;
+    _placeSearchController.text = next;
+    _onPlaceSearchChanged(next);
+  }
+
   void _onPlaceSearchChanged(String value) {
     _placeSearchTimer?.cancel();
     final query = value.trim();
@@ -3413,30 +3449,6 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       _placeSearchError = null;
       _placeSearchController.text = place.name;
     });
-  }
-
-  Future<void> _openPlaceIdSearch() async {
-    final location = _locationController.text.trim();
-    final uri = location.isEmpty
-        ? Uri.https('www.google.com', '/maps/search/', {'api': '1'})
-        : Uri.https('www.google.com', '/maps/search/', {
-            'api': '1',
-            'query': location,
-          });
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
-      if (!opened && mounted) {
-        messenger.showSnackBar(
-          const SnackBar(content: Text('Could not open Maps')),
-        );
-      }
-    } catch (_) {
-      if (!mounted) return;
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Could not open Maps')),
-      );
-    }
   }
 
   Widget _textField(
@@ -3836,6 +3848,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
           'Location',
           tooltip: 'Place name or address',
           hint: 'The place name or address.',
+          onChanged: (_) => _applyLocationToPlaceSearch(),
         );
       case _ActivityInput.placeId:
         return Padding(
@@ -3859,7 +3872,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
                     ),
                   ),
                   const _FieldHint(
-                    'Type a place name. Choosing a match fills the Place ID.',
+                    'Starts with the location. Choosing a match fills the Place ID.',
                   ),
                 ],
               ),
@@ -3897,10 +3910,6 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
                         ),
                       ),
                     ),
-                  ),
-                  TextButton(
-                    onPressed: _openPlaceIdSearch,
-                    child: const Text('Find Place ID'),
                   ),
                   const _FieldHint(
                     'The Google place id used for directions.',

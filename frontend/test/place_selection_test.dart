@@ -24,6 +24,49 @@ void main() {
     expect(selection.location, isNull);
   });
 
+  test('search starts from the location until the user changes it', () {
+    expect(
+      placeSearchTextFromLocation(
+        location: ' Seligman, AZ ',
+        search: '',
+        seed: '',
+      ),
+      'Seligman, AZ',
+    );
+    expect(
+      placeSearchTextFromLocation(
+        location: 'Seligman, AZ',
+        search: 'Seligman',
+        seed: 'Seligman',
+      ),
+      'Seligman, AZ',
+    );
+    expect(
+      placeSearchTextFromLocation(
+        location: '',
+        search: 'Seligman',
+        seed: 'Seligman',
+      ),
+      '',
+    );
+    expect(
+      placeSearchTextFromLocation(
+        location: 'Seligman, AZ',
+        search: 'Cafe',
+        seed: 'Seligman',
+      ),
+      isNull,
+    );
+    expect(
+      placeSearchTextFromLocation(
+        location: 'Seligman, AZ',
+        search: 'Seligman, AZ',
+        seed: 'Seligman, AZ',
+      ),
+      isNull,
+    );
+  });
+
   test('a blank place name does not clear an empty location', () {
     final selection = applyPlaceSelection(
       location: '   ',
