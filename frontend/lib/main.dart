@@ -29,7 +29,12 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'PlanItVibe',
-      theme: ThemeData(primarySwatch: Colors.blue),
+      theme: ThemeData(
+        useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF0D7377),
+        ),
+      ),
       home: const LoginScreen(), // Always start with LoginScreen (no auto-stub)
       routes: {
         '/signup': (context) {
