@@ -173,7 +173,8 @@ class _LoginScreenState extends State<LoginScreen> {
                       onPressed:
                           _getOnPressed(), // Fixed: Calls the helper (evaluates condition outside)
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue,
+                        backgroundColor: Theme.of(context).colorScheme.primary,
+                        foregroundColor: Theme.of(context).colorScheme.onPrimary,
                         padding: const EdgeInsets.symmetric(vertical: 16),
                       ),
                       child: _isLoading
