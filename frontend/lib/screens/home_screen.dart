@@ -75,7 +75,6 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('PlanItVibe'), // App title
-        backgroundColor: Colors.blue, // Matches theme
         actions: [
           IconButton(
             icon: const Icon(Icons.mail),

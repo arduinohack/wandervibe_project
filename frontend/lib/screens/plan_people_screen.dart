@@ -447,7 +447,6 @@ class _PlanPeopleScreenState extends State<PlanPeopleScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('People'),
-        backgroundColor: Colors.blue,
       ),
       body: _body(
         members: members,

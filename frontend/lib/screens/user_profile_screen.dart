@@ -132,7 +132,6 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
       child: Scaffold(
         appBar: AppBar(
           title: const Text('User Profile'),
-          backgroundColor: Colors.blue,
           actions: [
             IconButton(
               icon: Icon(_isSaving ? Icons.hourglass_empty : Icons.save),

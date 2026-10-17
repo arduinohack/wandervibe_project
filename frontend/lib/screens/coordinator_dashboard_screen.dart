@@ -53,7 +53,6 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
         title: Text(
           _showAllPlans ? 'Coordinator: All Trips' : 'Coordinator: My Trips',
         ), // Added: Dynamic title
-        backgroundColor: Colors.blue,
         bottom: TabBar(
           controller: _tabController,
           onTap: (index) {

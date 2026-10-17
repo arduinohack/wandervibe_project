@@ -82,7 +82,6 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Invitations'),
-        backgroundColor: Colors.blue,
       ),
       body: Consumer<InvitationProvider>(
         builder: (context, invitationProvider, child) {

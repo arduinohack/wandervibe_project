@@ -92,7 +92,6 @@ class _LoginScreenState extends State<LoginScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Login to PlanItVibe'),
-        backgroundColor: Colors.blue,
       ),
       body: Builder(
         builder: (context) {

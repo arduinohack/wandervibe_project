@@ -124,7 +124,6 @@ class _ActivityHistoryScreenState extends State<ActivityHistoryScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('History'),
-        backgroundColor: Colors.blue,
       ),
       body: !_loaded
           ? const Center(child: CircularProgressIndicator())

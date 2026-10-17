@@ -1912,7 +1912,6 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
           overflow: TextOverflow.ellipsis,
           maxLines: 1,
         ),
-        backgroundColor: Colors.blue,
         actions: [
           TextButton(
             onPressed: () => _openPeople(shownPlan),
@@ -4046,7 +4045,6 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       form = Scaffold(
         appBar: AppBar(
           title: Text(widget.title),
-          backgroundColor: Colors.blue,
           actions: [
             IconButton(
               tooltip: 'Save',
@@ -4399,7 +4397,6 @@ class _PlanEditScreenState extends State<_PlanEditScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Edit plan'),
-        backgroundColor: Colors.blue,
         actions: [
           if (widget.canDelete)
             IconButton(

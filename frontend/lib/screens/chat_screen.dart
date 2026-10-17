@@ -118,7 +118,6 @@ class _ChatScreenState extends State<ChatScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text('Chat - Trip ${widget.tripId}'),
-        backgroundColor: Colors.blue,
         actions: [
           IconButton(
             icon: Icon(_isConnected ? Icons.wifi : Icons.wifi_off),

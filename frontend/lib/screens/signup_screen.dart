@@ -106,7 +106,6 @@ class _SignupScreenState extends State<SignupScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Sign Up for PlanItVibe'),
-        backgroundColor: Colors.blue,
         actions: [
           TextButton(
             onPressed: () {
