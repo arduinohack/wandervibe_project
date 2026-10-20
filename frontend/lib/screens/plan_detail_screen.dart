@@ -84,125 +84,119 @@ enum _ActivityInput {
   shuttleConfirmation,
 }
 
-/// Fields that belong at the top for that activity type.
-/// Every other field the form can edit stays under the separator.
-const _naturalActivityInputs = <String, List<_ActivityInput>>{
-  'shuttle': [
-    _ActivityInput.paste,
-    _ActivityInput.shuttleOrigin,
-    _ActivityInput.shuttleOriginCountry,
-    _ActivityInput.shuttleDestination,
-    _ActivityInput.start,
-    _ActivityInput.end,
-    _ActivityInput.bookingReference,
-    _ActivityInput.cost,
-    _ActivityInput.shuttleConfirmation,
-  ],
-  'flight': [
-    _ActivityInput.paste,
-    _ActivityInput.legs,
-    _ActivityInput.gate,
-    _ActivityInput.baggage,
-    _ActivityInput.bookingReference,
-    _ActivityInput.shuttleConfirmation,
-  ],
-  'hotel': [
-    _ActivityInput.paste,
-    _ActivityInput.start,
-    _ActivityInput.end,
-    _ActivityInput.location,
-    _ActivityInput.room,
-    _ActivityInput.bookingReference,
-    _ActivityInput.cost,
-    _ActivityInput.shuttleConfirmation,
-  ],
-  'train': [
-    _ActivityInput.paste,
-    _ActivityInput.shuttleOrigin,
-    _ActivityInput.shuttleDestination,
-    _ActivityInput.start,
-    _ActivityInput.end,
-    _ActivityInput.bookingReference,
-    _ActivityInput.shuttleConfirmation,
-  ],
-  'car': [
-    _ActivityInput.start,
-    _ActivityInput.end,
-    _ActivityInput.location,
-  ],
-  'car_service': [
-    _ActivityInput.start,
-    _ActivityInput.end,
-    _ActivityInput.location,
-    _ActivityInput.bookingReference,
-    _ActivityInput.cost,
-  ],
-  'dining': [
-    _ActivityInput.start,
-    _ActivityInput.end,
-    _ActivityInput.location,
-  ],
-  'tour': [
-    _ActivityInput.start,
-    _ActivityInput.end,
-    _ActivityInput.location,
-    _ActivityInput.bookingReference,
-    _ActivityInput.cost,
-  ],
-  'attraction': [
-    _ActivityInput.start,
-    _ActivityInput.end,
-    _ActivityInput.location,
-  ],
-  'cruise': [
-    _ActivityInput.paste,
-    _ActivityInput.shuttleOrigin,
-    _ActivityInput.shuttleDestination,
-    _ActivityInput.start,
-    _ActivityInput.end,
-    _ActivityInput.location,
-    _ActivityInput.bookingReference,
-    _ActivityInput.cost,
-    _ActivityInput.shuttleConfirmation,
-  ],
-  'ceremony': [
-    _ActivityInput.start,
-    _ActivityInput.end,
-    _ActivityInput.location,
-    _ActivityInput.room,
-  ],
-  'reception': [
-    _ActivityInput.start,
-    _ActivityInput.end,
-    _ActivityInput.location,
-    _ActivityInput.room,
-  ],
-  'custom': [
-    _ActivityInput.start,
-    _ActivityInput.end,
-    _ActivityInput.location,
-  ],
-  'activity': [
-    _ActivityInput.start,
-    _ActivityInput.end,
-    _ActivityInput.location,
-  ],
+/// Name, start, end, duration, details, and cost stay above the separator
+/// for every type. These sets are the fields that sit below it.
+const _locationTypes = {
+  'car',
+  'drive',
+  'car_service',
+  'carservice',
+  'dining',
+  'hotel',
+  'tour',
+  'attraction',
+  'cruise',
+  'ceremony',
+  'reception',
+  'custom',
+  'ferry',
+  'bus',
+  'walk',
 };
 
-const _otherActivityInputs = <_ActivityInput>[
-  _ActivityInput.name,
-  _ActivityInput.start,
-  _ActivityInput.end,
-  _ActivityInput.duration,
-  _ActivityInput.location,
-  _ActivityInput.placeId,
-  _ActivityInput.details,
-  _ActivityInput.bookingReference,
-  _ActivityInput.cost,
-  _ActivityInput.gate,
-  _ActivityInput.baggage,
-  _ActivityInput.room,
-];
+const _placeIdTypes = {
+  'car',
+  'drive',
+  'car_service',
+  'carservice',
+  'shuttle',
+  'dining',
+  'hotel',
+  'tour',
+  'attraction',
+  'ceremony',
+  'reception',
+  'cruise',
+  'custom',
+  'flight',
+  'train',
+  'ferry',
+  'bus',
+  'transport',
+  'taxi',
+  'walk',
+};
+
+const _bookingReferenceTypes = {
+  'flight',
+  'hotel',
+  'cruise',
+  'ferry',
+  'shuttle',
+  'train',
+  'car_service',
+  'carservice',
+  'tour',
+  'bus',
+  'transport',
+  'carrental',
+  'car_rental',
+};
+
+const _routePlaceTypes = {'shuttle', 'train', 'cruise'};
+
+const _confirmationTypes = {'flight', 'shuttle', 'train', 'cruise', 'hotel'};
+
+const _roomTypes = {'hotel', 'ceremony', 'reception'};
+
+const _serviceProviderTypes = {
+  'flight',
+  'train',
+  'carrental',
+  'car_rental',
+  'car_service',
+  'carservice',
+  'bus',
+  'ferry',
+  'hotel',
+  'tour',
+  'transport',
+  'cruise',
+};
+
+String _storedTypeKey(String type) => type.trim().toLowerCase();
+
+bool _typeUsesLocation(String type) =>
+    _locationTypes.contains(_storedTypeKey(type));
+
+bool _typeUsesPlaceId(String type) =>
+    _placeIdTypes.contains(_storedTypeKey(type));
+
+bool _typeUsesBookingReference(String type) =>
+    _bookingReferenceTypes.contains(_storedTypeKey(type));
+
+bool _typeUsesRoutePlaces(String type) =>
+    _routePlaceTypes.contains(_storedTypeKey(type));
+
+bool _typeUsesConfirmation(String type) =>
+    _confirmationTypes.contains(_storedTypeKey(type));
+
+bool _typeUsesRoom(String type) => _roomTypes.contains(_storedTypeKey(type));
+
+bool _typeUsesFlightFields(String type) => _storedTypeKey(type) == 'flight';
+
+bool _typeUsesShuttleFields(String type) => _storedTypeKey(type) == 'shuttle';
+
+bool _typeUsesServiceProvider(String type) =>
+    _serviceProviderTypes.contains(_storedTypeKey(type));
+
+bool _typeUsesCustomType(String type) => _storedTypeKey(type) == 'custom';
+
+/// Status and links are shared storage. A plain Activity does not show them.
+bool _typeUsesStatusOrLinks(String type) {
+  final key = _storedTypeKey(type);
+  return key.isNotEmpty && key != 'activity';
+}
 
 class _FieldHint extends StatelessWidget {
   final String message;
@@ -517,63 +511,101 @@ int? _shownLegMinutes(FlightLeg leg) {
   return arrival.difference(departure).inMinutes;
 }
 
-List<Widget> _activityCardLines(
+class _ActivityCardContent {
+  final List<Widget> above;
+  final List<Widget> below;
+
+  const _ActivityCardContent({required this.above, required this.below});
+}
+
+String _activityStoredType(Activity activity) {
+  final label = activity.typeLabel.trim();
+  if (label.isNotEmpty) return label;
+  return activity.type.name;
+}
+
+_ActivityCardContent _activityCardContent(
   Activity activity,
   _ShownActivityTimes times,
   String planZone, {
   Set<String> hiddenFields = const {},
 }) {
-  final lines = <Widget>[];
-  final storedType = activity.typeLabel.trim().isEmpty
-      ? activity.type.name
-      : activity.typeLabel.trim();
+  final above = <Widget>[];
+  final below = <Widget>[];
+  final storedType = _activityStoredType(activity);
   final startZone = _activityStartZone(activity, planZone);
   final endZone = _activityEndZone(activity, planZone);
-  _addCardLine(lines, 'Type', activityTypeLabel(storedType));
-  _addCardLine(lines, 'Origin', activity.origin);
-  _addCardLine(lines, 'Origin country', activity.originCountry);
-  _addCardLine(lines, 'Destination', activity.destination);
   if (times.start != null) {
-    _addCardLine(lines, 'Start', _pdfClock(times.start, startZone));
+    _addCardLine(above, 'Start', _pdfClock(times.start, startZone));
   }
   if (times.end != null) {
-    _addCardLine(lines, 'End', _pdfClock(times.end, endZone));
+    _addCardLine(above, 'End', _pdfClock(times.end, endZone));
   }
-  for (var index = 0; index < activity.legs.length; index++) {
-    _addCardLine(
-      lines,
-      'Leg ${index + 1}',
-      _flightLegCardText(activity.legs[index], startZone, endZone),
-    );
-  }
-  _addCardLine(lines, 'Duration', _cardDurationLabel(activity));
-  _addCardLine(lines, 'Location', activity.location);
+  _addCardLine(above, 'Duration', _cardDurationLabel(activity));
   if (!hiddenFields.contains('details')) {
-    _addCardLine(lines, 'Details', activity.details);
+    _addCardLine(above, 'Details', activity.details);
   }
-  _addCardLine(lines, 'Google Place ID', activity.googlePlaceId);
-  if (!hiddenFields.contains('bookingReference')) {
-    _addCardLine(lines, 'Booking reference', activity.bookingReference);
-  }
-  _addCardLine(lines, 'Confirmation', activity.confirmation);
   final cost = activity.cost;
   if (cost != null && !hiddenFields.contains('cost')) {
     final mark = activity.costType == CostType.actual ? 'act' : 'est';
-    _addCardLine(lines, 'Cost($mark)', formatPlanMoney(cost));
+    _addCardLine(above, 'Cost($mark)', formatPlanMoney(cost));
   }
-  _addCardLine(lines, 'Gate', activity.gate);
-  _addCardLine(lines, 'Baggage claim', activity.baggageClaim);
-  _addCardLine(lines, 'Room number', activity.roomNumber);
-  _addCardLine(lines, 'Service provider', activity.serviceProvider);
-  _addCardLine(lines, 'Status', _cardStatusLabel(activity.status));
-  _addCardLine(lines, 'Custom type', activity.customType);
-  for (final link in activity.urlLinks) {
-    final url = link.linkUrl.trim();
-    if (url.isEmpty) continue;
-    final name = link.linkName.trim();
-    _addCardLine(lines, 'Link', name.isEmpty ? url : '$name ($url)');
+  if (_typeUsesFlightFields(storedType)) {
+    for (var index = 0; index < activity.legs.length; index++) {
+      _addCardLine(
+        below,
+        'Leg ${index + 1}',
+        _flightLegCardText(activity.legs[index], startZone, endZone),
+      );
+    }
+    _addCardLine(below, 'Gate', activity.gate);
+    _addCardLine(below, 'Baggage claim', activity.baggageClaim);
   }
-  return lines;
+  if (_typeUsesRoutePlaces(storedType)) {
+    _addCardLine(below, 'Origin', activity.origin);
+    if (_typeUsesShuttleFields(storedType)) {
+      _addCardLine(below, 'Origin country', activity.originCountry);
+    }
+    _addCardLine(below, 'Destination', activity.destination);
+  }
+  final placeId = activity.googlePlaceId.trim();
+  final placeReplacesLocation =
+      _typeUsesPlaceId(storedType) && placeId.isNotEmpty;
+  if (_typeUsesLocation(storedType) && !placeReplacesLocation) {
+    _addCardLine(below, 'Location', activity.location);
+  }
+  if (_typeUsesPlaceId(storedType)) {
+    _addCardLine(below, 'Google Place ID', placeId);
+  }
+  if (!hiddenFields.contains('bookingReference') &&
+      _typeUsesBookingReference(storedType)) {
+    _addCardLine(below, 'Booking reference', activity.bookingReference);
+  }
+  if (_typeUsesConfirmation(storedType)) {
+    _addCardLine(below, 'Confirmation', activity.confirmation);
+  }
+  if (_typeUsesRoom(storedType)) {
+    _addCardLine(below, 'Room number', activity.roomNumber);
+  }
+  if (_typeUsesServiceProvider(storedType)) {
+    _addCardLine(below, 'Service provider', activity.serviceProvider);
+  }
+  if (_typeUsesStatusOrLinks(storedType)) {
+    final status = activity.status?.trim().toLowerCase() ?? '';
+    if (status.isNotEmpty && status != 'draft') {
+      _addCardLine(below, 'Status', _cardStatusLabel(activity.status));
+    }
+    for (final link in activity.urlLinks) {
+      final url = link.linkUrl.trim();
+      if (url.isEmpty) continue;
+      final name = link.linkName.trim();
+      _addCardLine(below, 'Link', name.isEmpty ? url : '$name ($url)');
+    }
+  }
+  if (_typeUsesCustomType(storedType)) {
+    _addCardLine(below, 'Custom type', activity.customType);
+  }
+  return _ActivityCardContent(above: above, below: below);
 }
 
 /// Driving directions when the activity has a stored Google Place ID.
@@ -1421,7 +1453,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     final activityId = activity.id;
     final startZone = _activityStartZone(activity, planZone);
     final endZone = _activityEndZone(activity, planZone);
-    final lines = _activityCardLines(
+    final cardLines = _activityCardContent(
       activity,
       times,
       planZone,
@@ -1571,11 +1603,22 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                     );
                   },
                 ),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 4,
-                  children: lines,
+                if (cardLines.above.isNotEmpty)
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: cardLines.above,
+                  ),
+                const Padding(
+                  padding: EdgeInsets.only(top: 8, bottom: 4),
+                  child: Divider(),
                 ),
+                if (cardLines.below.isNotEmpty)
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: cardLines.below,
+                  ),
               ],
             ),
           ),
@@ -2256,7 +2299,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     _placeSearchSeed = openingLocation;
     if (openingLocation.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
+        if (!mounted || !_typeUsesPlaceId(_type)) return;
         _onPlaceSearchChanged(_placeSearchController.text);
       });
     }
@@ -3499,40 +3542,36 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     ];
   }
 
-  List<_ActivityInput> _naturalInputs() {
-    return _naturalActivityInputs[_type] ?? _naturalActivityInputs['activity']!;
-  }
-
   bool _inputApplies(_ActivityInput input) {
     switch (input) {
       case _ActivityInput.type:
       case _ActivityInput.name:
-      case _ActivityInput.location:
-      case _ActivityInput.placeId:
+      case _ActivityInput.start:
+      case _ActivityInput.end:
+      case _ActivityInput.duration:
       case _ActivityInput.details:
-      case _ActivityInput.bookingReference:
       case _ActivityInput.cost:
         return true;
       case _ActivityInput.paste:
-        return _fillsFromConfirmation;
+      case _ActivityInput.shuttleConfirmation:
+        return _typeUsesConfirmation(_type);
       case _ActivityInput.legs:
       case _ActivityInput.gate:
       case _ActivityInput.baggage:
-        return _usesFlightFields;
+        return _typeUsesFlightFields(_type);
       case _ActivityInput.room:
-        return _usesRoom;
+        return _typeUsesRoom(_type);
       case _ActivityInput.shuttleOrigin:
       case _ActivityInput.shuttleDestination:
-        return _usesRoutePlaces;
+        return _typeUsesRoutePlaces(_type);
       case _ActivityInput.shuttleOriginCountry:
-        return _usesShuttleFields;
-      case _ActivityInput.shuttleConfirmation:
-        return _fillsFromConfirmation;
-      case _ActivityInput.start:
-      case _ActivityInput.end:
-        return !_usesFlightFields;
-      case _ActivityInput.duration:
-        return true;
+        return _typeUsesShuttleFields(_type);
+      case _ActivityInput.location:
+        return _typeUsesLocation(_type);
+      case _ActivityInput.placeId:
+        return _typeUsesPlaceId(_type);
+      case _ActivityInput.bookingReference:
+        return _typeUsesBookingReference(_type);
     }
   }
 
@@ -3567,7 +3606,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
               const Padding(
                 padding: EdgeInsets.only(left: 4, top: 8),
                 child: _FieldHint(
-                  'The kind of activity. Fields for that kind are listed first.',
+                  'The kind of activity. Fields for that kind are below the line.',
                 ),
               ),
             ],
@@ -3660,6 +3699,21 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
           onClear: widget.isScreen ? _clearStart : null,
         );
       case _ActivityInput.end:
+        if (_usesFlightFields && _extraLegs.isNotEmpty) {
+          final lastLeg = _extraLegs.length - 1;
+          return _UtcDateTimePicker(
+            id: 'activity-end',
+            label: 'End',
+            hint: 'When this activity ends. The clock uses the time zone under it.',
+            tooltip: 'When this activity ends',
+            zoneTooltip: 'Time zone of the destination',
+            value: _spanEnd,
+            zone: _extraLegs[lastLeg].destinationZone,
+            onZoneChanged: (zone) => _onExtraDestinationZone(lastLeg, zone),
+            onChanged: (instant) => _setExtraArrival(lastLeg, instant),
+            onClear: widget.isScreen ? () => _clearExtraArrival(lastLeg) : null,
+          );
+        }
         return _UtcDateTimePicker(
           id: 'activity-end',
           label: 'End',
@@ -3858,25 +3912,41 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
   }
 
   Widget _fieldsColumn() {
-    final above = [
-      for (final input in _naturalInputs())
-        if (_inputApplies(input)) input,
+    const above = [
+      _ActivityInput.name,
+      _ActivityInput.start,
+      _ActivityInput.end,
+      _ActivityInput.duration,
+      _ActivityInput.details,
+      _ActivityInput.cost,
     ];
-    final below = [
-      for (final input in _otherActivityInputs)
-        if (_inputApplies(input) && !above.contains(input)) input,
+    const below = [
+      _ActivityInput.paste,
+      _ActivityInput.legs,
+      _ActivityInput.gate,
+      _ActivityInput.baggage,
+      _ActivityInput.shuttleOrigin,
+      _ActivityInput.shuttleOriginCountry,
+      _ActivityInput.shuttleDestination,
+      _ActivityInput.location,
+      _ActivityInput.placeId,
+      _ActivityInput.bookingReference,
+      _ActivityInput.shuttleConfirmation,
+      _ActivityInput.room,
     ];
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _inputWidget(_ActivityInput.type),
-        for (final input in above) _inputWidget(input),
+        for (final input in above)
+          if (_inputApplies(input)) _inputWidget(input),
         const Padding(
           padding: EdgeInsets.only(top: 20, bottom: 4),
           child: Divider(),
         ),
-        for (final input in below) _inputWidget(input),
+        for (final input in below)
+          if (_inputApplies(input)) _inputWidget(input),
         if (_error != null) ...[
           const SizedBox(height: 12),
           Text(_error!, style: const TextStyle(color: Colors.red)),
