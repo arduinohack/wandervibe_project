@@ -5,7 +5,10 @@ import 'providers/invitation_provider.dart';
 import 'providers/plan_provider.dart';
 import 'screens/login_screen.dart'; // Login if no token
 import 'screens/signup_screen.dart';
+import 'session_resume.dart';
 //import 'screens/home_screen.dart'; // Home if logged in
+
+final _rootNavigatorKey = GlobalKey<NavigatorState>();
 
 void main() {
   runApp(
@@ -31,7 +34,14 @@ class MyApp extends StatelessWidget {
       seedColor: const Color(0xFF0D7377),
     );
     return MaterialApp(
+      navigatorKey: _rootNavigatorKey,
       title: 'PlanItVibe',
+      builder: (context, child) {
+        return SessionResume(
+          navigatorKey: _rootNavigatorKey,
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: colorScheme,

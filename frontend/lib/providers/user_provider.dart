@@ -6,16 +6,24 @@ import '../config/constants.dart'; // Add this line for backendBaseUrl
 import '../models/user.dart'; // Your User model with Address/Preferences
 import '../config/config.dart';
 import '../storage/token_store.dart';
+import '../utils/jwt_expiry.dart';
 
 class UserProvider extends ChangeNotifier {
   String? currentUserId; // Current user ID
   UserRole? _currentUserRole; // Private stub role
   User? _currentUser; // Private full user object
   String? _jwtToken; // Stored token
+  int _sessionEpoch = 0;
 
   UserRole? get currentUserRole => _currentUserRole;
   User? get currentUser => _currentUser;
   String? get token => _jwtToken;
+
+  bool get hasSession {
+    final saved = _jwtToken;
+    if (saved != null && saved.isNotEmpty) return true;
+    return currentUserId != null || _currentUser != null;
+  }
 
   Map<String, dynamic> _jsonObject(String body) {
     final decoded = json.decode(body);
@@ -85,6 +93,7 @@ class UserProvider extends ChangeNotifier {
         final data = _jsonObject(response.body);
         final tokenValue = data['token'];
         if (tokenValue is String && tokenValue.isNotEmpty) {
+          _sessionEpoch++;
           try {
             await writeToken(tokenValue);
           } catch (e) {
@@ -148,6 +157,7 @@ class UserProvider extends ChangeNotifier {
         final data = json.decode(response.body);
         final token = data['token'];
         if (token is String && token.isNotEmpty) {
+          _sessionEpoch++;
           _jwtToken = token;
           final userId = _userIdFromJwt(token);
           if (userId != null) currentUserId = userId;
@@ -171,6 +181,7 @@ class UserProvider extends ChangeNotifier {
   // POST /api/auth/logout while the bearer token is still saved, then drop it.
   // A failed call still clears the saved token.
   Future<void> logout() async {
+    final epoch = ++_sessionEpoch;
     final memoryToken = _jwtToken;
     String? token = memoryToken != null && memoryToken.isNotEmpty
         ? memoryToken
@@ -204,11 +215,13 @@ class UserProvider extends ChangeNotifier {
       }
     }
 
+    if (epoch != _sessionEpoch) return;
     try {
       await deleteToken();
     } catch (e) {
       logger.e('Logout token delete error: $e');
     }
+    if (epoch != _sessionEpoch) return;
     _jwtToken = null;
     currentUserId = null;
     _currentUserRole = null;
@@ -217,44 +230,70 @@ class UserProvider extends ChangeNotifier {
     logger.i('Logged out—cleared local storage');
   }
 
+  /// Drops the saved token and in-memory session. Does not call the logout API.
+  Future<void> clearExpiredSession() async {
+    final epoch = ++_sessionEpoch;
+    _jwtToken = null;
+    currentUserId = null;
+    _currentUserRole = null;
+    _currentUser = null;
+    notifyListeners();
+    if (epoch != _sessionEpoch) return;
+    try {
+      await deleteToken();
+    } catch (e) {
+      logger.e('Expired session token delete error: $e');
+    }
+    logger.i('Expired session cleared');
+  }
+
   // Load stored token and verify user (real API POST /api/auth/verify-token)
   Future<void> loadStoredToken() async {
+    final epoch = _sessionEpoch;
     try {
-      final timeoutDuration = Duration(seconds: await AppConfig.timeoutSeconds);
-      _jwtToken = await readToken();
-      if (_jwtToken != null) {
-        // Verify token with backend
-        final response = await http
-            .post(
-              Uri.parse((backendBaseUrl) + apiAuthVerifyToken),
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer $_jwtToken',
-              },
-            )
-            .timeout(timeoutDuration);
-
-        if (response.statusCode == 200) {
-          final data = json.decode(response.body);
-          currentUserId = data['user']['_id'];
-          _currentUserRole = _roleFromString(
-            data['user']['role'],
-          ); // Parse real role from backend
-          _currentUser = User.fromJson(
-            data['user'],
-          ); // Parse real user from backend
-          notifyListeners();
-          logger.i(
-            'Loaded and verified user from backend: ${data['user']['firstName']} ($_currentUserRole)',
-          );
-        } else {
-          logger.i('Token invalid—clearing');
-          await logout(); // Clear invalid token
-        }
-      } else {
+      final stored = await readToken();
+      if (epoch != _sessionEpoch) return;
+      if (stored == null || stored.isEmpty) {
         logger.i('No stored token—user not logged in');
+        return;
+      }
+      if (jwtIsExpired(stored, DateTime.now())) {
+        await clearExpiredSession();
+        return;
+      }
+      if (epoch != _sessionEpoch) return;
+      _jwtToken = stored;
+      final timeoutDuration = Duration(seconds: await AppConfig.timeoutSeconds);
+      final response = await http
+          .post(
+            Uri.parse((backendBaseUrl) + apiAuthVerifyToken),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $stored',
+            },
+          )
+          .timeout(timeoutDuration);
+      if (epoch != _sessionEpoch) return;
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        currentUserId = data['user']['_id'];
+        _currentUserRole = _roleFromString(
+          data['user']['role'],
+        ); // Parse real role from backend
+        _currentUser = User.fromJson(
+          data['user'],
+        ); // Parse real user from backend
+        notifyListeners();
+        logger.i(
+          'Loaded and verified user from backend: ${data['user']['firstName']} ($_currentUserRole)',
+        );
+      } else {
+        logger.i('Token invalid—clearing');
+        await logout(); // Clear invalid token
       }
     } catch (e) {
+      if (epoch != _sessionEpoch) return;
       logger.e('Error loading stored token: $e');
       await logout(); // Clear on error
     }

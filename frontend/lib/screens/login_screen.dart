@@ -17,6 +17,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isLoading = false; // For loading spinner
+  bool _showPassword = false;
 
   @override
   void dispose() {
@@ -144,12 +145,23 @@ class _LoginScreenState extends State<LoginScreen> {
                   const SizedBox(height: 16),
                   TextFormField(
                     controller: _passwordController,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'Password',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.lock),
+                      border: const OutlineInputBorder(),
+                      prefixIcon: const Icon(Icons.lock),
+                      suffixIcon: IconButton(
+                        tooltip: _showPassword ? 'Hide password' : 'Show password',
+                        icon: Icon(
+                          _showPassword
+                              ? Icons.visibility_off
+                              : Icons.visibility,
+                        ),
+                        onPressed: () {
+                          setState(() => _showPassword = !_showPassword);
+                        },
+                      ),
                     ),
-                    obscureText: true,
+                    obscureText: !_showPassword,
                     textInputAction: TextInputAction.done,
                     onFieldSubmitted: _submitFromField,
                     validator: (value) {

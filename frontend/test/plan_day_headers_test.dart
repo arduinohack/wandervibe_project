@@ -12,7 +12,7 @@ void main() {
       planTimeZone: 'UTC',
     );
 
-    expect(headers, ['Day 1 · Mon', 'Day 7 · Sun']);
+    expect(headers, ['Day 1 · Mon 5-Oct', 'Day 7 · Sun 11-Oct']);
   });
 
   test('a gap is the calendar span, not the count of days with activities', () {
@@ -26,9 +26,9 @@ void main() {
     );
 
     expect(headers, [
-      'Day 1 · Thu',
-      'Day 3 · Sat',
-      'Day 6 · Tue',
+      'Day 1 · Thu 1-Oct',
+      'Day 3 · Sat 3-Oct',
+      'Day 6 · Tue 6-Oct',
     ]);
   });
 
@@ -44,10 +44,10 @@ void main() {
     );
 
     expect(headers, [
-      'Day 1 · Mon',
+      'Day 1 · Mon 5-Oct',
       null,
-      'Day 4 · Thu',
-      'Day 1 · Mon',
+      'Day 4 · Thu 8-Oct',
+      'Day 1 · Mon 5-Oct',
     ]);
   });
 
@@ -62,9 +62,9 @@ void main() {
     );
 
     expect(headers, [
-      'Day 1 · Sat',
-      'Day 2 · Sun',
-      'Day 7 · Fri',
+      'Day 1 · Sat 10-Oct',
+      'Day 2 · Sun 11-Oct',
+      'Day 7 · Fri 16-Oct',
     ]);
   });
 
@@ -79,8 +79,8 @@ void main() {
     );
 
     expect(headers, [
-      'Day 1 · Sat',
-      'Day 7 · Fri',
+      'Day 1 · Sat 10-Oct',
+      'Day 7 · Fri 16-Oct',
     ]);
   });
 
@@ -108,14 +108,14 @@ void main() {
         [first, alaska],
         planTimeZone: 'America/New_York',
       ),
-      ['Day 1 · Mon', null],
+      ['Day 1 · Mon 13-Jul', null],
     );
     expect(
       planItineraryDayHeaders(
         [first, alaska],
         planTimeZone: 'UTC',
       ),
-      ['Day 1 · Mon', 'Day 2 · Tue'],
+      ['Day 1 · Mon 13-Jul', 'Day 2 · Tue 14-Jul'],
     );
   });
 
@@ -141,7 +141,7 @@ void main() {
       deviceTimeZone: 'America/New_York',
     );
 
-    expect(headers, ['Day 1 · Mon']);
+    expect(headers, ['Day 1 · Mon 13-Jul']);
   });
 
   test('a start with no time stays day 1 until a date exists', () {
@@ -150,6 +150,15 @@ void main() {
       planTimeZone: 'UTC',
     );
 
-    expect(headers, ['Day 1', 'Day 1 · Mon']);
+    expect(headers, ['Day 1', 'Day 1 · Mon 5-Oct']);
+  });
+
+  test('the date has no leading zero and a three-letter month', () {
+    final headers = planItineraryDayHeaders(
+      [DateTime.utc(2026, 9, 7, 9)],
+      planTimeZone: 'UTC',
+    );
+
+    expect(headers, ['Day 1 · Mon 7-Sep']);
   });
 }
