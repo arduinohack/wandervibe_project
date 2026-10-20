@@ -342,6 +342,40 @@ Future<DateTime?> _pickDateAndTime(
   );
 }
 
+/// Activity start and flight departure. An empty instant uses the activity
+/// above, then 8:30 in the plan zone.
+Future<DateTime?> _pickStartTime(
+  BuildContext context, {
+  required String label,
+  required DateTime? instant,
+  required String? zone,
+  required String planTimeZone,
+  DateTime? aboveInstant,
+  DateTime? fallbackStart,
+}) {
+  final named = zone?.trim() ?? '';
+  final clockZone = named.isEmpty ? 'UTC' : named;
+  final planZone = planTimeZone.trim().isEmpty ? 'UTC' : planTimeZone.trim();
+  final seeded = instant ??
+      aboveInstant ??
+      fallbackStart ??
+      defaultChainStart(existingStarts: const [], planTimeZone: planZone);
+  final wall = wallValue(seeded, clockZone);
+  final clock = wall ?? seeded.toUtc();
+  return showDialog<DateTime>(
+    context: context,
+    builder: (context) => _StartTimePanel(
+      title: label,
+      zone: clockZone,
+      planTimeZone: planZone,
+      date: _clampCalendarDate(clock.year, clock.month, clock.day),
+      hour: clock.hour,
+      minute: clock.minute,
+      aboveInstant: aboveInstant,
+    ),
+  );
+}
+
 /// Last itinerary row that has a time. Its end, or its start when the end is empty.
 DateTime? _defaultActivityStart(List<Activity> activities) {
   for (var index = activities.length - 1; index >= 0; index--) {
@@ -856,6 +890,201 @@ class _ZoneDateTimeDialogState extends State<_ZoneDateTimeDialog> {
   }
 }
 
+class _StartTimePanel extends StatefulWidget {
+  final String title;
+  final String zone;
+  final String planTimeZone;
+  final DateTime date;
+  final int hour;
+  final int minute;
+  final DateTime? aboveInstant;
+
+  const _StartTimePanel({
+    required this.title,
+    required this.zone,
+    required this.planTimeZone,
+    required this.date,
+    required this.hour,
+    required this.minute,
+    required this.aboveInstant,
+  });
+
+  @override
+  State<_StartTimePanel> createState() => _StartTimePanelState();
+}
+
+class _StartTimePanelState extends State<_StartTimePanel> {
+  late DateTime _date;
+  late int _hour;
+  late int _minute;
+  int _wheelEpoch = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _date = widget.date;
+    _hour = widget.hour;
+    _minute = widget.minute;
+  }
+
+  DateTime get _instant => instantFromWall(
+    year: _date.year,
+    month: _date.month,
+    day: _date.day,
+    hour: _hour,
+    minute: _minute,
+    zone: widget.zone,
+  );
+
+  String get _zoneLabel => zoneDaylightLabel(_instant, widget.zone);
+
+  void _showInstant(DateTime instant) {
+    final clock = clockInZone(instant.toUtc(), widget.zone);
+    setState(() {
+      _date = _clampCalendarDate(clock.year, clock.month, clock.day);
+      _hour = clock.hour;
+      _minute = clock.minute;
+      _wheelEpoch++;
+    });
+  }
+
+  void _sameDay() {
+    final next = sameDayKeepingTime(
+      above: widget.aboveInstant,
+      current: _instant,
+      zone: widget.zone,
+    );
+    if (next == null) return;
+    _showInstant(next);
+  }
+
+  void _shift(int minutes) => _showInstant(shiftByMinutes(_instant, minutes));
+
+  void _nextMorning() =>
+      _showInstant(nextPlanMorning(_instant, widget.planTimeZone));
+
+  void _confirm() => Navigator.pop(context, _instant);
+
+  @override
+  Widget build(BuildContext context) {
+    final sameDayEnabled = widget.aboveInstant != null;
+    return AlertDialog(
+      title: Text(widget.title),
+      content: SizedBox(
+        width: 400,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  ActionChip(
+                    label: const Text('Same day'),
+                    tooltip: sameDayEnabled
+                        ? 'Use the day of the activity above. Keeps this time, or that activity’s end time.'
+                        : 'No activity is above this one.',
+                    onPressed: sameDayEnabled ? _sameDay : null,
+                  ),
+                  ActionChip(
+                    label: const Text('+30 min'),
+                    tooltip: '30 minutes later',
+                    onPressed: () => _shift(30),
+                  ),
+                  ActionChip(
+                    label: const Text('+1 hour'),
+                    tooltip: 'One hour later',
+                    onPressed: () => _shift(60),
+                  ),
+                  ActionChip(
+                    label: const Text('Next morning 8:30'),
+                    tooltip: '8:30 AM the next day in the plan time zone.',
+                    onPressed: _nextMorning,
+                  ),
+                ],
+              ),
+              SizedBox(
+                height: 300,
+                child: CalendarDatePicker(
+                  key: ValueKey('day-$_wheelEpoch'),
+                  initialDate: _date,
+                  firstDate: DateTime(2000),
+                  lastDate: DateTime(2100),
+                  onDateChanged: (picked) {
+                    setState(() {
+                      _date = _clampCalendarDate(
+                        picked.year,
+                        picked.month,
+                        picked.day,
+                      );
+                    });
+                  },
+                ),
+              ),
+              Row(
+                children: [
+                  const Text(
+                    'Time',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const Spacer(),
+                  Text(
+                    _zoneLabel,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+              SizedBox(
+                height: 160,
+                child: CupertinoTheme(
+                  data: CupertinoThemeData(
+                    brightness: Theme.of(context).brightness,
+                    textTheme: CupertinoTextThemeData(
+                      dateTimePickerTextStyle: Theme.of(
+                        context,
+                      ).textTheme.titleLarge,
+                    ),
+                  ),
+                  child: CupertinoDatePicker(
+                    key: ValueKey('time-$_wheelEpoch'),
+                    mode: CupertinoDatePickerMode.time,
+                    use24hFormat: true,
+                    initialDateTime: DateTime(
+                      _date.year,
+                      _date.month,
+                      _date.day,
+                      _hour,
+                      _minute,
+                    ),
+                    onDateTimeChanged: (picked) {
+                      if (picked.hour == _hour && picked.minute == _minute) {
+                        return;
+                      }
+                      setState(() {
+                        _hour = picked.hour;
+                        _minute = picked.minute;
+                      });
+                    },
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        TextButton(onPressed: _confirm, child: const Text('Confirm')),
+      ],
+    );
+  }
+}
+
 class _UtcDateTimePicker extends StatelessWidget {
   final String id;
   final String label;
@@ -866,6 +1095,10 @@ class _UtcDateTimePicker extends StatelessWidget {
   final ValueChanged<String>? onZoneChanged;
   final bool enableClock;
   final bool showDaylightLabel;
+  final bool useStartPanel;
+  final String planTimeZone;
+  final DateTime? aboveInstant;
+  final DateTime? fallbackStart;
   final String hint;
   final String tooltip;
   final String zoneTooltip;
@@ -883,6 +1116,10 @@ class _UtcDateTimePicker extends StatelessWidget {
     this.onZoneChanged,
     this.enableClock = true,
     this.showDaylightLabel = false,
+    this.useStartPanel = false,
+    this.planTimeZone = '',
+    this.aboveInstant,
+    this.fallbackStart,
   });
 
   @override
@@ -916,12 +1153,22 @@ class _UtcDateTimePicker extends StatelessWidget {
                 OutlinedButton(
                   onPressed: enableClock
                       ? () async {
-                          final next = await _pickDateAndTime(
-                            context,
-                            label: label,
-                            instant: instant,
-                            zone: selectedZone,
-                          );
+                          final next = useStartPanel
+                              ? await _pickStartTime(
+                                  context,
+                                  label: label,
+                                  instant: instant,
+                                  zone: selectedZone,
+                                  planTimeZone: planTimeZone,
+                                  aboveInstant: aboveInstant,
+                                  fallbackStart: fallbackStart,
+                                )
+                              : await _pickDateAndTime(
+                                  context,
+                                  label: label,
+                                  instant: instant,
+                                  zone: selectedZone,
+                                );
                           if (next == null || !context.mounted) return;
                           onChanged(next);
                         }
@@ -1160,6 +1407,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     int? insertIndex,
     DateTime? initialStart,
     DateTime? initialEnd,
+    DateTime? aboveInstant,
     String? initialZone,
     bool useDefaultStart = true,
   }) async {
@@ -1174,6 +1422,13 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
               planTimeZone: planZone,
             ))
         : initialStart;
+    final openingAbove = useDefaultStart ? previousStart : aboveInstant;
+    final fallbackStart = defaultChainStart(
+      existingStarts: [
+        for (final row in rows) row.startTime ?? row.endTime,
+      ],
+      planTimeZone: planZone,
+    );
     final openingEnd = useDefaultStart
         ? (previousStart == null ? openingStart : null)
         : (initialEnd ?? initialStart);
@@ -1193,6 +1448,8 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
         planTimeZone: _shownPlan(planProvider).timeZone,
         initialStart: openingStart,
         initialEnd: openingEnd,
+        aboveInstant: openingAbove,
+        fallbackStart: fallbackStart,
         initialZone: openingZone.isEmpty ? null : openingZone,
       ),
     );
@@ -1262,6 +1519,13 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     if (index > 0 && activity.startTime == null) {
       chainStart = _shownActivityTimes(activities)[index].start;
     }
+    final drawn = activitiesByUtcStart(activities);
+    final drawnIndex = drawn.indexWhere((item) => item.id == activityId);
+    DateTime? aboveInstant;
+    if (drawnIndex > 0) {
+      final prior = drawn[drawnIndex - 1];
+      aboveInstant = prior.endTime ?? prior.startTime;
+    }
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => _ActivityFormDialog(
@@ -1271,6 +1535,13 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
           planId: widget.plan.id,
           planTimeZone: _shownPlan(planProvider).timeZone,
           chainStart: chainStart,
+          aboveInstant: aboveInstant,
+          fallbackStart: defaultChainStart(
+            existingStarts: [
+              for (final row in activities) row.startTime ?? row.endTime,
+            ],
+            planTimeZone: _shownPlan(planProvider).timeZone,
+          ),
         ),
       ),
     );
@@ -1537,6 +1808,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                               insertIndex: storedIndex,
                               initialStart: anchor,
                               initialEnd: anchor,
+                              aboveInstant: atTop ? null : anchor,
                               initialZone: zone,
                               useDefaultStart: false,
                             );
@@ -1557,6 +1829,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                                   : storedIndex + 1,
                               initialStart: anchor,
                               initialEnd: anchor,
+                              aboveInstant: anchor,
                               initialZone: endZone,
                               useDefaultStart: false,
                             );
@@ -2198,6 +2471,8 @@ class _ActivityFormDialog extends StatefulWidget {
   final DateTime? initialStart;
   final DateTime? initialEnd;
   final DateTime? chainStart;
+  final DateTime? aboveInstant;
+  final DateTime? fallbackStart;
   final String? initialZone;
 
   const _ActivityFormDialog({
@@ -2209,6 +2484,8 @@ class _ActivityFormDialog extends StatefulWidget {
     this.initialStart,
     this.initialEnd,
     this.chainStart,
+    this.aboveInstant,
+    this.fallbackStart,
     this.initialZone,
   });
 
@@ -2608,16 +2885,23 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       });
       return;
     }
-    final minutes = _wholeMinutes(_durationController.text);
+    final typed = _wholeMinutes(_durationController.text);
+    final previousStart = _start;
+    final previousEnd = _end;
+    var preserved = typed;
+    if (preserved == null &&
+        previousStart != null &&
+        previousEnd != null &&
+        !previousEnd.isBefore(previousStart)) {
+      preserved = previousEnd.difference(previousStart).inMinutes;
+    }
     setState(() {
       _start = value;
       _startChanged = true;
       _error = null;
-      if (minutes != null) {
-        _end = value.add(Duration(minutes: minutes));
+      if (preserved != null) {
+        _end = value.add(Duration(minutes: preserved));
         _endChanged = true;
-      } else if (_end != null) {
-        _durationController.text = _end!.difference(value).inMinutes.toString();
       }
     });
   }
@@ -3450,6 +3734,10 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
         zoneTooltip: 'Time zone of the origin',
         value: _start,
         zone: _startZone,
+        useStartPanel: true,
+        planTimeZone: widget.planTimeZone,
+        aboveInstant: widget.aboveInstant,
+        fallbackStart: widget.fallbackStart,
         onZoneChanged: _onStartZone,
         onChanged: _setStart,
         onClear: widget.isScreen ? _clearStart : null,
@@ -3499,6 +3787,10 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
           zoneTooltip: 'Time zone of the origin',
           value: _extraLegs[index].departure,
           zone: _extraLegs[index].originZone,
+          useStartPanel: true,
+          planTimeZone: widget.planTimeZone,
+          aboveInstant: widget.aboveInstant,
+          fallbackStart: widget.fallbackStart,
           onZoneChanged: (zone) => _onExtraOriginZone(index, zone),
           onChanged: (instant) => _setExtraDeparture(index, instant),
           onClear: widget.isScreen ? () => _clearExtraDeparture(index) : null,
@@ -3689,11 +3981,16 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
         return _UtcDateTimePicker(
           id: 'activity-start',
           label: 'Start',
-          hint: 'When this activity starts. The clock uses the time zone under it.',
-          tooltip: 'When this activity or leg starts',
+          hint:
+              'When this activity starts. Opens the day and the time together. The clock uses the time zone under it.',
+          tooltip: 'When this activity starts',
           zoneTooltip: 'Time zone of the origin',
           value: _start,
           zone: _startZone,
+          useStartPanel: true,
+          planTimeZone: widget.planTimeZone,
+          aboveInstant: widget.aboveInstant,
+          fallbackStart: widget.fallbackStart,
           onZoneChanged: _onStartZone,
           onChanged: _setStart,
           onClear: widget.isScreen ? _clearStart : null,

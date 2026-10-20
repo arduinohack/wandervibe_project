@@ -181,6 +181,50 @@ List<String> planZoneOptions(String selected) {
   return [zone, ...planZoneChoices];
 }
 
+/// Day of [above] in [zone], keeping [current]'s hour and minute.
+/// A missing [current] uses the hour and minute of [above].
+/// A missing [above] returns null.
+DateTime? sameDayKeepingTime({
+  required DateTime? above,
+  required DateTime? current,
+  required String zone,
+}) {
+  if (above == null) return null;
+  final named = zone.trim().isEmpty ? 'UTC' : zone.trim();
+  final day = clockInZone(above.toUtc(), named);
+  final time = current == null ? day : clockInZone(current.toUtc(), named);
+  return instantFromWall(
+    year: day.year,
+    month: day.month,
+    day: day.day,
+    hour: time.hour,
+    minute: time.minute,
+    zone: named,
+  );
+}
+
+/// [minutes] later than [instant]. The result is a UTC instant.
+DateTime shiftByMinutes(DateTime instant, int minutes) {
+  return instant.toUtc().add(Duration(minutes: minutes));
+}
+
+/// 8:30 AM on the next calendar day in [planTimeZone].
+DateTime nextPlanMorning(DateTime current, String planTimeZone) {
+  final zone = planTimeZone.trim().isEmpty ? 'UTC' : planTimeZone.trim();
+  final clock = clockInZone(current.toUtc(), zone);
+  final nextDay = DateTime.utc(clock.year, clock.month, clock.day).add(
+    const Duration(days: 1),
+  );
+  return instantFromWall(
+    year: nextDay.year,
+    month: nextDay.month,
+    day: nextDay.day,
+    hour: 8,
+    minute: 30,
+    zone: zone,
+  );
+}
+
 /// Plan start and end button. The clock is the wall time in [zone].
 /// A July Eastern instant reads Eastern DT. A January Eastern instant reads Eastern ST.
 String planClockButtonLabel(DateTime? instant, String zone) {
