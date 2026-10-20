@@ -1,8 +1,15 @@
+import 'activity_time.dart';
+
 class ActivityChainTime {
   final DateTime? start;
   final DateTime? end;
+  final int? durationMinutes;
 
-  const ActivityChainTime({required this.start, required this.end});
+  const ActivityChainTime({
+    required this.start,
+    required this.end,
+    this.durationMinutes,
+  });
 }
 
 /// Times for one activity dropped after a target.
@@ -43,4 +50,82 @@ List<int> backToBackChainIndexes({
     priorEnd = end;
   }
   return indexes;
+}
+
+/// 8:30 AM in [planTimeZone], on the earliest activity's calendar day.
+/// An empty plan uses [now], or the current time when [now] is omitted.
+DateTime defaultChainStart({
+  required List<DateTime?> existingStarts,
+  required String planTimeZone,
+  DateTime? now,
+}) {
+  final zone = planTimeZone.trim().isEmpty ? 'UTC' : planTimeZone.trim();
+  DateTime? earliest;
+  for (final start in existingStarts) {
+    if (start == null) continue;
+    final utc = start.toUtc();
+    if (earliest == null || utc.isBefore(earliest)) earliest = utc;
+  }
+  final clock = clockInZone((earliest ?? (now ?? DateTime.now())).toUtc(), zone);
+  return instantFromWall(
+    year: clock.year,
+    month: clock.month,
+    day: clock.day,
+    hour: 8,
+    minute: 30,
+    zone: zone,
+  );
+}
+
+int? _preservedMinutes(ActivityChainTime row) {
+  final stored = row.durationMinutes;
+  if (stored != null && stored >= 0) return stored;
+  final start = row.start;
+  final end = row.end;
+  if (start == null || end == null) return null;
+  final minutes = end.toUtc().difference(start.toUtc()).inMinutes;
+  if (minutes < 0) return null;
+  return minutes;
+}
+
+/// Joined followers move onto [newPriorEnd]. Each keeps its duration.
+/// The walk is the same back-to-back chain, and it stops at the first gap.
+List<ActivityChainTime> shiftJoinedChain({
+  required List<ActivityChainTime> following,
+  required DateTime anchor,
+  required DateTime? newPriorEnd,
+}) {
+  if (newPriorEnd == null) return const [];
+  final indexes = backToBackChainIndexes(following: following, anchor: anchor);
+  final shifted = <ActivityChainTime>[];
+  var priorEnd = newPriorEnd.toUtc();
+  for (final index in indexes) {
+    final row = following[index];
+    final minutes = _preservedMinutes(row);
+    final start = priorEnd;
+    final end = minutes == null ? null : start.add(Duration(minutes: minutes));
+    shifted.add(
+      ActivityChainTime(
+        start: start,
+        end: end,
+        durationMinutes: row.durationMinutes ?? minutes,
+      ),
+    );
+    if (row.end == null || end == null) break;
+    priorEnd = end;
+  }
+  return shifted;
+}
+
+/// After a move, joined activities that were after the removed row close up.
+List<ActivityChainTime> closeJoinedHole({
+  required List<ActivityChainTime> following,
+  required DateTime removedEnd,
+  required DateTime? newPriorEnd,
+}) {
+  return shiftJoinedChain(
+    following: following,
+    anchor: removedEnd,
+    newPriorEnd: newPriorEnd,
+  );
 }

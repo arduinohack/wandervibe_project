@@ -575,6 +575,48 @@ class PlanProvider extends ChangeNotifier {
     return null;
   }
 
+  List<Activity>? _readItinerary(String body) {
+    final dynamic data = json.decode(body);
+    if (data is! Map || data['events'] is! List) return null;
+    final parsed = <Activity>[];
+    for (final item in data['events'] as List) {
+      if (item is! Map) continue;
+      parsed.add(Activity.fromJson(_itineraryActivityJson(item)));
+    }
+    return parsed.any((activity) => activity.linked)
+        ? _sortedByStartTime(parsed)
+        : parsed;
+  }
+
+  void _storeItinerary(List<Activity> ordered) {
+    _itinerary = ordered;
+    _activities = List<Activity>.from(ordered);
+    _itineraryError = null;
+  }
+
+  /// GET the itinerary and replace the open list. Does not show the page spinner.
+  Future<int?> refreshItinerary(String planId, String? token) async {
+    if (planId.isEmpty) return null;
+    try {
+      if (token == null || token.isEmpty) return 401;
+      final response = await http.get(
+        Uri.parse(
+          backendBaseUrl + apiPlansItinerary.replaceAll('{planId}', planId),
+        ),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (response.statusCode != 200) return response.statusCode;
+      final ordered = _readItinerary(response.body);
+      if (ordered == null) return response.statusCode;
+      _storeItinerary(ordered);
+      notifyListeners();
+      return 200;
+    } catch (e) {
+      logger.e('Error refreshing itinerary: $e');
+      return null;
+    }
+  }
+
   // GET /api/plans/:planId/itinerary. 200 with an empty list is not an error.
   Future<int?> fetchPlan(String planId, String? token) async {
     _currentPlanId = planId;
@@ -611,23 +653,12 @@ class PlanProvider extends ChangeNotifier {
         return response.statusCode;
       }
 
-      final dynamic data = json.decode(response.body);
-      if (data is! Map || data['events'] is! List) {
+      final ordered = _readItinerary(response.body);
+      if (ordered == null) {
         _itineraryError = 'Could not load activities';
         return response.statusCode;
       }
-
-      final parsed = <Activity>[];
-      for (final item in data['events'] as List) {
-        if (item is! Map) continue;
-        parsed.add(Activity.fromJson(_itineraryActivityJson(item)));
-      }
-      final ordered = parsed.any((activity) => activity.linked)
-          ? _sortedByStartTime(parsed)
-          : parsed;
-      _itinerary = ordered;
-      _activities = List<Activity>.from(ordered);
-      _itineraryError = null;
+      _storeItinerary(ordered);
       logger.i('Fetched ${_itinerary.length} activities for plan $planId');
       return 200;
     } catch (e) {
@@ -662,6 +693,36 @@ class PlanProvider extends ChangeNotifier {
     _itinerary = List<Activity>.from(activities);
     _activities = List<Activity>.from(activities);
     notifyListeners();
+  }
+
+  /// PUT /api/activities/:id/move. Reorders [activityIds] and applies the time chain.
+  Future<int?> moveActivity({
+    required String planId,
+    required String activityId,
+    required List<String> activityIds,
+    required String? token,
+  }) async {
+    try {
+      if (token == null || token.isEmpty) return 401;
+      final response = await http.put(
+        Uri.parse('$backendBaseUrl$apiActivities/$activityId/move'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode({
+          'planId': planId,
+          'activityIds': activityIds,
+        }),
+      );
+      if (response.statusCode == 200) {
+        await refreshItinerary(planId, token);
+      }
+      return response.statusCode;
+    } catch (e) {
+      logger.e('Error moving activity: $e');
+      return null;
+    }
   }
 
   /// PUT /api/activities/order. Stores [activityIds] as the itinerary order.
@@ -1329,22 +1390,24 @@ class PlanProvider extends ChangeNotifier {
       if (response.statusCode != 201) return response.statusCode;
 
       final dynamic data = json.decode(response.body);
-      if (data is! Map) return 201;
-      final created = Activity.fromJson(_itineraryActivityJson(data));
-      final mixesLinked = _itinerary.any((activity) => activity.linked) ||
-          _plans.any(
-            (plan) => plan.id == planId && plan.linkedActivityIds.isNotEmpty,
-          );
-      final next = List<Activity>.from(_itinerary);
-      if (insertIndex == null || insertIndex < 0 || insertIndex > next.length) {
-        next.add(created);
-      } else {
-        next.insert(insertIndex, created);
+      final refreshed = await refreshItinerary(planId, token);
+      if (refreshed != 200 && data is Map) {
+        final created = Activity.fromJson(_itineraryActivityJson(data));
+        final mixesLinked = _itinerary.any((activity) => activity.linked) ||
+            _plans.any(
+              (plan) => plan.id == planId && plan.linkedActivityIds.isNotEmpty,
+            );
+        final next = List<Activity>.from(_itinerary);
+        if (insertIndex == null || insertIndex < 0 || insertIndex > next.length) {
+          next.add(created);
+        } else {
+          next.insert(insertIndex, created);
+        }
+        final shown = mixesLinked ? _sortedByStartTime(next) : next;
+        _itinerary = shown;
+        _activities = List<Activity>.from(shown);
+        notifyListeners();
       }
-      final shown = mixesLinked ? _sortedByStartTime(next) : next;
-      _itinerary = shown;
-      _activities = List<Activity>.from(shown);
-      notifyListeners();
       await _reloadPlan(planId, token);
       return 201;
     } catch (e) {
@@ -1429,7 +1492,10 @@ class PlanProvider extends ChangeNotifier {
       if (response.statusCode != 200) return response.statusCode;
 
       final dynamic data = json.decode(response.body);
-      if (data is Map) {
+      final refreshed = planId.isEmpty
+          ? null
+          : await refreshItinerary(planId, token);
+      if (refreshed != 200 && data is Map) {
         final updated = Activity.fromJson(_itineraryActivityJson(data));
         final next = [
           for (final activity in _itinerary)

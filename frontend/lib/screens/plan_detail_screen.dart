@@ -617,59 +617,6 @@ class _PlusArrowIcon extends StatelessWidget {
   }
 }
 
-bool _sameInstant(DateTime? left, DateTime? right) {
-  if (left == null || right == null) return left == null && right == null;
-  return left.toUtc().isAtSameMomentAs(right.toUtc());
-}
-
-String _activityTypeName(Activity activity) {
-  final stored = activity.typeLabel.trim();
-  if (stored.isNotEmpty) return stored;
-  return activity.type.name;
-}
-
-Activity _activityWithTimes(Activity activity, DateTime? start, DateTime? end) {
-  return Activity(
-    id: activity.id,
-    planId: activity.planId,
-    name: activity.name,
-    location: activity.location,
-    googlePlaceId: activity.googlePlaceId,
-    type: activity.type,
-    typeLabel: activity.typeLabel,
-    cost: activity.cost,
-    costType: activity.costType,
-    startTime: start,
-    duration: activity.duration,
-    endTime: end,
-    activityNum: activity.activityNum,
-    status: activity.status,
-    missingFields: activity.missingFields,
-    subActivities: activity.subActivities,
-    urlLinks: activity.urlLinks,
-    details: activity.details,
-    gate: activity.gate,
-    baggageClaim: activity.baggageClaim,
-    roomNumber: activity.roomNumber,
-    originTimeZone: activity.originTimeZone,
-    destinationTimeZone: activity.destinationTimeZone,
-    timeZone: activity.timeZone,
-    startTimeZone: activity.startTimeZone,
-    endTimeZone: activity.endTimeZone,
-    customType: activity.customType,
-    serviceProvider: activity.serviceProvider,
-    bookingReference: activity.bookingReference,
-    origin: activity.origin,
-    originCountry: activity.originCountry,
-    destination: activity.destination,
-    confirmation: activity.confirmation,
-    legs: activity.legs,
-    extras: activity.extras,
-    createdAt: activity.createdAt,
-    linked: activity.linked,
-  );
-}
-
 List<String?> _dayHeaders(
   List<_ShownActivityTimes> times,
   String planZone,
@@ -1183,14 +1130,21 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     DateTime? initialEnd,
     String? initialZone,
     bool useDefaultStart = true,
-    bool shiftFollowing = false,
   }) async {
     final planProvider = Provider.of<PlanProvider>(context, listen: false);
     final rows = planProvider.itineraryActivities;
+    final planZone = _shownPlan(planProvider).timeZone;
+    final previousStart = useDefaultStart ? _defaultActivityStart(rows) : null;
     final openingStart = useDefaultStart
-        ? _defaultActivityStart(rows)
+        ? (previousStart ??
+            defaultChainStart(
+              existingStarts: const [],
+              planTimeZone: planZone,
+            ))
         : initialStart;
-    final openingEnd = useDefaultStart ? null : (initialEnd ?? initialStart);
+    final openingEnd = useDefaultStart
+        ? (previousStart == null ? openingStart : null)
+        : (initialEnd ?? initialStart);
     var openingZone = initialZone?.trim() ?? '';
     if (openingZone.isEmpty && useDefaultStart && rows.isNotEmpty) {
       final previous = rows.last;
@@ -1214,7 +1168,6 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     final userProvider = Provider.of<UserProvider>(context, listen: false);
     final navigator = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
-    final snapshot = List<Activity>.from(planProvider.itineraryActivities);
     final status = await planProvider.createActivity(
       planId: widget.plan.id,
       name: draft.name,
@@ -1257,94 +1210,6 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
       messenger.showSnackBar(
         const SnackBar(content: Text('Could not add activity')),
       );
-      return;
-    }
-    if (!shiftFollowing || insertIndex == null) return;
-    final chainStart = draft.start;
-    final chainEnd = draft.end;
-    if (chainStart == null || chainEnd == null) return;
-    // The inserted start is the end from before a duration was set.
-    final added = chainEnd.difference(chainStart);
-    if (added <= Duration.zero) return;
-    if (insertIndex < 0 || insertIndex > snapshot.length) return;
-    await _shiftBackToBackChain(
-      following: snapshot.sublist(insertIndex),
-      anchor: chainStart,
-      added: added,
-      planProvider: planProvider,
-      userProvider: userProvider,
-      messenger: messenger,
-      navigator: navigator,
-    );
-  }
-
-  Future<void> _shiftBackToBackChain({
-    required List<Activity> following,
-    required DateTime anchor,
-    required Duration added,
-    required PlanProvider planProvider,
-    required UserProvider userProvider,
-    required ScaffoldMessengerState messenger,
-    required NavigatorState navigator,
-  }) async {
-    final indexes = backToBackChainIndexes(
-      following: [
-        for (final activity in following)
-          ActivityChainTime(start: activity.startTime, end: activity.endTime),
-      ],
-      anchor: anchor,
-    );
-    final planZone = _shownPlan(planProvider).timeZone;
-    for (final index in indexes) {
-      final activity = following[index];
-      final activityId = activity.id;
-      final start = activity.startTime;
-      if (activityId == null || activityId.isEmpty || start == null) {
-        messenger.showSnackBar(
-          const SnackBar(content: Text('Could not update activity')),
-        );
-        return;
-      }
-      final status = await planProvider.updateActivity(
-        activityId: activityId,
-        name: activity.name,
-        type: _activityTypeName(activity),
-        startTime: start.add(added),
-        endTime: activity.endTime?.add(added),
-        timeZone: _activityStartZone(activity, planZone),
-        startTimeZone: _activityStartZone(activity, planZone),
-        endTimeZone: _activityEndZone(activity, planZone),
-        location: activity.location ?? '',
-        googlePlaceId: activity.googlePlaceId,
-        details: activity.details ?? '',
-        bookingReference: (activity.bookingReference ?? '').trim(),
-        cost: activity.cost,
-        costType: _storedCostType(activity),
-        gate: activity.gate,
-        baggageClaim: activity.baggageClaim,
-        roomNumber: activity.roomNumber,
-        durationMinutes: activity.duration?.inMinutes,
-        writeStartTime: true,
-        writeEndTime: activity.endTime != null,
-        writeDuration: activity.duration != null,
-        planId: widget.plan.id,
-        token: userProvider.token,
-      );
-      if (!mounted) return;
-      if (status == 401) {
-        await _endSession(userProvider, planProvider, navigator);
-        return;
-      }
-      if (status == 403) {
-        messenger.showSnackBar(const SnackBar(content: Text('Not allowed')));
-        return;
-      }
-      if (status != 200) {
-        messenger.showSnackBar(
-          const SnackBar(content: Text('Could not update activity')),
-        );
-        return;
-      }
     }
   }
 
@@ -1392,52 +1257,23 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     if (oldIndex < 0 || oldIndex >= ordered.length || newIndex < 0 || newIndex >= ordered.length) {
       return;
     }
-    if (newIndex == 0) return;
     final moved = ordered.removeAt(oldIndex);
+    if (moved.linked) return;
     ordered.insert(newIndex, moved);
-    final target = ordered[newIndex - 1];
-    final times = timesAfterTarget(
-      targetStart: target.startTime,
-      targetEnd: target.endTime,
-      durationMinutes: moved.duration?.inMinutes,
-    );
-    if (times == null || times.start == null) return;
-    if (_sameInstant(moved.startTime, times.start) &&
-        _sameInstant(moved.endTime, times.end)) {
-      return;
-    }
     final activityId = moved.id;
     if (activityId == null || activityId.isEmpty) return;
-    planProvider.replaceItineraryActivities([
-      for (var index = 0; index < ordered.length; index++)
-        if (index == newIndex)
-          _activityWithTimes(moved, times.start, times.end)
-        else
-          ordered[index],
-    ]);
+    final activityIds = <String>[];
+    for (final activity in ordered) {
+      final id = activity.id;
+      if (id == null || id.isEmpty) return;
+      activityIds.add(id);
+    }
     _applyingOrder = true;
-    final planZone = _shownPlan(planProvider).timeZone;
     try {
-      final status = await planProvider.updateActivity(
-        activityId: activityId,
-        name: moved.name,
-        type: _activityTypeName(moved),
-        startTime: times.start,
-        endTime: times.end,
-        timeZone: _activityStartZone(moved, planZone),
-        startTimeZone: _activityStartZone(moved, planZone),
-        endTimeZone: _activityEndZone(moved, planZone),
-        location: moved.location ?? '',
-        googlePlaceId: moved.googlePlaceId,
-        details: moved.details ?? '',
-        bookingReference: (moved.bookingReference ?? '').trim(),
-        cost: moved.cost,
-        costType: _storedCostType(moved),
-        gate: moved.gate,
-        baggageClaim: moved.baggageClaim,
-        roomNumber: moved.roomNumber,
-        durationMinutes: moved.duration?.inMinutes,
+      final status = await planProvider.moveActivity(
         planId: widget.plan.id,
+        activityId: activityId,
+        activityIds: activityIds,
         token: userProvider.token,
       );
       if (!mounted) return;
@@ -1451,7 +1287,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
       }
       if (status != 200) {
         messenger.showSnackBar(
-          const SnackBar(content: Text('Could not update activity')),
+          const SnackBar(content: Text('Could not move activity')),
         );
       }
     } finally {
@@ -1647,18 +1483,30 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                           icon: const _PlusArrowIcon(up: true),
                           onPressed: () {
                             final storedIndex = _storedItineraryIndex(activity);
-                            final anchor = _insertAnchorAbove(
-                              storedIndex,
-                              activity,
-                            );
+                            final atTop = storedIndex <= 0;
+                            final rows = Provider.of<PlanProvider>(
+                              context,
+                              listen: false,
+                            ).itineraryActivities;
+                            final anchor = atTop
+                                ? defaultChainStart(
+                                    existingStarts: [
+                                      for (final row in rows)
+                                        row.startTime ?? row.endTime,
+                                    ],
+                                    planTimeZone: planZone,
+                                  )
+                                : _insertAnchorAbove(storedIndex, activity);
+                            final zone = atTop && planZone.trim().isNotEmpty
+                                ? planZone
+                                : startZone;
                             _addActivity(
                               insertBefore: activityId,
                               insertIndex: storedIndex,
                               initialStart: anchor,
                               initialEnd: anchor,
-                              initialZone: startZone,
+                              initialZone: zone,
                               useDefaultStart: false,
-                              shiftFollowing: anchor != null,
                             );
                           },
                         ),
@@ -1679,7 +1527,6 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                               initialEnd: anchor,
                               initialZone: endZone,
                               useDefaultStart: false,
-                              shiftFollowing: anchor != null,
                             );
                           },
                         ),
