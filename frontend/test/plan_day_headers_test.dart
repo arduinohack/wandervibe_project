@@ -12,7 +12,7 @@ void main() {
       planTimeZone: 'UTC',
     );
 
-    expect(headers, ['Day 1 · 2026-10-05', 'Day 7 · 2026-10-11']);
+    expect(headers, ['Day 1 · Mon', 'Day 7 · Sun']);
   });
 
   test('a gap is the calendar span, not the count of days with activities', () {
@@ -26,9 +26,9 @@ void main() {
     );
 
     expect(headers, [
-      'Day 1 · 2026-10-01',
-      'Day 3 · 2026-10-03',
-      'Day 6 · 2026-10-06',
+      'Day 1 · Thu',
+      'Day 3 · Sat',
+      'Day 6 · Tue',
     ]);
   });
 
@@ -44,10 +44,10 @@ void main() {
     );
 
     expect(headers, [
-      'Day 1 · 2026-10-05',
+      'Day 1 · Mon',
       null,
-      'Day 4 · 2026-10-08',
-      'Day 1 · 2026-10-05',
+      'Day 4 · Thu',
+      'Day 1 · Mon',
     ]);
   });
 
@@ -62,9 +62,9 @@ void main() {
     );
 
     expect(headers, [
-      'Day 1 · 2026-10-10',
-      'Day 2 · 2026-10-11',
-      'Day 7 · 2026-10-16',
+      'Day 1 · Sat',
+      'Day 2 · Sun',
+      'Day 7 · Fri',
     ]);
   });
 
@@ -79,8 +79,8 @@ void main() {
     );
 
     expect(headers, [
-      'Day 1 · 2026-10-10',
-      'Day 7 · 2026-10-16',
+      'Day 1 · Sat',
+      'Day 7 · Fri',
     ]);
   });
 
@@ -108,14 +108,14 @@ void main() {
         [first, alaska],
         planTimeZone: 'America/New_York',
       ),
-      ['Day 1 · 2026-07-13', null],
+      ['Day 1 · Mon', null],
     );
     expect(
       planItineraryDayHeaders(
         [first, alaska],
         planTimeZone: 'UTC',
       ),
-      ['Day 1 · 2026-07-13', 'Day 2 · 2026-07-14'],
+      ['Day 1 · Mon', 'Day 2 · Tue'],
     );
   });
 
@@ -141,7 +141,7 @@ void main() {
       deviceTimeZone: 'America/New_York',
     );
 
-    expect(headers, ['Day 1 · 2026-07-13']);
+    expect(headers, ['Day 1 · Mon']);
   });
 
   test('a start with no time stays day 1 until a date exists', () {
@@ -150,6 +150,6 @@ void main() {
       planTimeZone: 'UTC',
     );
 
-    expect(headers, ['Day 1', 'Day 1 · 2026-10-05']);
+    expect(headers, ['Day 1', 'Day 1 · Mon']);
   });
 }

@@ -94,10 +94,17 @@ DateTime _ymdDate(String value) {
   );
 }
 
-/// Day headers for an itinerary. The first activity that has a start is Day 1.
-/// A later calendar day keeps the gap, so six days later is Day 7. The same
-/// calendar day keeps that number and does not repeat the header. Dates use
-/// [planTimeZone]. An empty plan zone uses [deviceTimeZone], then the device zone.
+const _weekdayAbbreviations = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+String _weekdayAbbreviation(String dayKey) {
+  return _weekdayAbbreviations[_ymdDate(dayKey).weekday - 1];
+}
+
+/// Day headers for an itinerary and the PDF. The first activity that has a
+/// start is Day 1. A later calendar day keeps the gap, so six days later is
+/// Day 7. The same calendar day keeps that number and does not repeat the
+/// header. The label adds the English 3-letter weekday of that calendar date
+/// in [planTimeZone]. An empty plan zone uses [deviceTimeZone], then the device zone.
 List<String?> planItineraryDayHeaders(
   List<DateTime?> starts, {
   String planTimeZone = '',
@@ -129,7 +136,9 @@ List<String?> planItineraryDayHeaders(
     final number = origin == null || dayKey == null
         ? 1
         : _ymdDate(dayKey).difference(_ymdDate(origin)).inDays + 1;
-    headers[index] = dayKey == null ? 'Day $number' : 'Day $number · $dayKey';
+    headers[index] = dayKey == null
+        ? 'Day $number'
+        : 'Day $number · ${_weekdayAbbreviation(dayKey)}';
   }
   return headers;
 }

@@ -101,6 +101,6 @@ void main() {
       planTimeZone: 'UTC',
     );
 
-    expect(headers, ['Day 1 · 2026-10-25', 'Day 2 · 2026-10-26']);
+    expect(headers, ['Day 1 · Sun', 'Day 2 · Mon']);
   });
 }
