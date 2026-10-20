@@ -10,6 +10,13 @@ const { applyTypeChange, assertTypeRequirements } = require('../utils/activityTy
 const { recordActivityRevision } = require('../utils/recordActivityRevision');
 const { syncPlanDates } = require('../utils/syncPlanDates');
 const { resolveActivitySchedule, resolveActivityZones, compareStoredOrder } = require('../utils/activityTimes');
+const {
+  activityOrderError,
+  placementStart,
+  cascadeStored,
+  applyActivityMove,
+  sameInstant,
+} = require('../utils/activityChain');
 const { applyFlightLegs, activityZoneError, zoneNameError } = require('../utils/flightLegs');
 const { parseConfirmation } = require('../utils/parseConfirmation');
 const { xaiApiKey, confirmationFieldsFromModel } = require('../utils/xaiConfirmation');
@@ -139,10 +146,9 @@ router.post('/', authMiddleware, async (req, res) => {
     if (placement.error) {
       return res.status(placement.status || 400).json({ message: placement.error });
     }
-    const missingStart = startMissing(req.body);
     let source = req.body;
-    if (insertAfterId && missingStart) {
-      const anchor = placement.target && (placement.target.endTime || placement.target.startTime);
+    if (startMissing(req.body)) {
+      const anchor = await placementStart(planId, { insertAfterId, insertBeforeId });
       if (anchor) source = { ...req.body, startTime: new Date(anchor).toISOString() };
     }
     const legged = applyFlightLegs(source, source && source.type);
@@ -169,7 +175,6 @@ router.post('/', authMiddleware, async (req, res) => {
       isCreate: true,
       planId,
       body: source,
-      keepEmptyStart: Boolean(insertBeforeId) && missingStart,
     });
     if (schedule.error) {
       return res.status(400).json({ message: schedule.error });
@@ -186,6 +191,12 @@ router.post('/', authMiddleware, async (req, res) => {
     const newEvent = new Event(payload);
     const savedEvent = await newEvent.save();
     await recordActivityRevision(savedEvent, 'create', callerId);
+    if (savedEvent.startTime) {
+      await cascadeStored(savedEvent.planId, savedEvent._id, {
+        anchorEnd: savedEvent.startTime,
+        newEnd: savedEvent.endTime,
+      }, callerId);
+    }
     await syncPlanDates(savedEvent.planId);
     res.status(201).json(savedEvent);
   } catch (error) {
@@ -211,32 +222,9 @@ router.put('/order', authMiddleware, async (req, res) => {
       Plan.findById(planId).select('sourcePlanId linkedActivityIds').lean(),
       Event.find({ planId }).select('_id').lean(),
     ]);
-    const sourcePlanId = plan && typeof plan.sourcePlanId === 'string'
-      ? plan.sourcePlanId.trim()
-      : '';
-    const linkedIds = new Set(
-      sourcePlanId && Array.isArray(plan.linkedActivityIds)
-        ? plan.linkedActivityIds.map((id) => String(id))
-        : [],
-    );
+    const orderError = activityOrderError(plan, rows, activityIds);
+    if (orderError) return res.status(400).json({ message: orderError });
     const ownIds = new Set(rows.map((row) => String(row._id)));
-    const seen = new Set();
-    const ownInOrder = [];
-    for (const id of activityIds) {
-      const key = String(id);
-      if (!key || seen.has(key)) {
-        return res.status(400).json({ message: 'activityIds must list each activity once' });
-      }
-      seen.add(key);
-      if (ownIds.has(key)) {
-        ownInOrder.push(key);
-      } else if (!(sourcePlanId && linkedIds.has(key))) {
-        return res.status(400).json({ message: 'activityIds must list each activity once' });
-      }
-    }
-    if (ownInOrder.length !== ownIds.size || (!sourcePlanId && activityIds.length !== rows.length)) {
-      return res.status(400).json({ message: 'activityIds must list each activity once' });
-    }
     for (let index = 0; index < activityIds.length; index += 1) {
       const key = String(activityIds[index]);
       if (!ownIds.has(key)) continue;
@@ -379,11 +367,49 @@ router.post('/:id/restore', authMiddleware, async (req, res) => {
   }
 });
 
+// Move one activity. Closes the joined chain it left, then places it on the
+// activity now before it and continues that chain until a gap.
+router.put('/:id/move', authMiddleware, async (req, res) => {
+  try {
+    const event = await Event.findById(req.params.id);
+    if (!event) return res.status(404).json({ message: 'Event not found' });
+    const callerId = req.user.userId || req.user.id;
+    const planId = event.planId;
+    const allowed = await callerMayEditActivities(planId, callerId);
+    if (!allowed) {
+      return res.status(403).json({ message: 'Only Owner or Collaborator can change activities' });
+    }
+    const bodyPlanId = textId(req.body, 'planId');
+    if (bodyPlanId && bodyPlanId !== String(planId)) {
+      return res.status(400).json({ message: 'Activity is not on this plan' });
+    }
+    const activityIds = req.body && req.body.activityIds;
+    if (!Array.isArray(activityIds)) {
+      return res.status(400).json({ message: 'activityIds is required' });
+    }
+    const moved = await applyActivityMove({
+      planId,
+      movedId: event._id,
+      activityIds,
+      callerId,
+    });
+    if (moved.error) {
+      return res.status(moved.status || 400).json({ message: moved.error });
+    }
+    await syncPlanDates(planId);
+    res.json({ activityIds: moved.activityIds });
+  } catch (error) {
+    console.error('Move activity error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // PUT update event (handles recursive subEvents)
 router.put('/:id', authMiddleware, async (req, res) => {
   try {
     const event = await Event.findById(req.params.id);
     if (!event) return res.status(404).json({ message: 'Event not found' });
+    const originalEnd = event.endTime ? new Date(event.endTime) : null;
     const callerId = req.user.userId || req.user.id;
     const allowed = await callerMayEditActivities(event.planId, callerId);
     if (!allowed) {
@@ -446,6 +472,12 @@ router.put('/:id', authMiddleware, async (req, res) => {
     else event.durationMinutes = schedule.durationMinutes;
     const updatedEvent = await event.save();
     await recordActivityRevision(updatedEvent, 'update', callerId);
+    if (originalEnd && !sameInstant(originalEnd, updatedEvent.endTime)) {
+      await cascadeStored(updatedEvent.planId, updatedEvent._id, {
+        anchorEnd: originalEnd,
+        newEnd: updatedEvent.endTime,
+      }, callerId);
+    }
     await syncPlanDates(updatedEvent.planId);
     res.json(updatedEvent);
   } catch (error) {

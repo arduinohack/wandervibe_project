@@ -1,5 +1,5 @@
 jest.mock('axios', () => ({
-  get: jest.fn(),
+  post: jest.fn(),
 }));
 
 const request = require('supertest');
@@ -12,7 +12,7 @@ const User = require('../models/User');
 const Plan = require('../models/Plan');
 const PlanUser = require('../models/PlanUser');
 const Invitation = require('../models/Invitation');
-const { AUTOCOMPLETE_URL } = require('../utils/placeAutocomplete');
+const { AUTOCOMPLETE_URL, FIELD_MASK } = require('../utils/placeAutocomplete');
 
 jest.setTimeout(30000);
 
@@ -24,19 +24,27 @@ function googleOk() {
   return {
     status: 200,
     data: {
-      status: 'OK',
-      predictions: [
+      suggestions: [
         {
-          description: 'Cafe Paris, Paris, France',
-          place_id: PLACE_ID,
-          structured_formatting: {
-            main_text: 'Cafe Paris',
-            secondary_text: 'Paris, France',
+          placePrediction: {
+            placeId: PLACE_ID,
+            text: { text: 'Cafe Paris, Paris, France' },
+            structuredFormat: {
+              mainText: { text: 'Cafe Paris' },
+              secondaryText: { text: 'Paris, France' },
+            },
           },
         },
         {
-          description: 'Skipped',
-          place_id: '   ',
+          placePrediction: {
+            placeId: '   ',
+            text: { text: 'Skipped' },
+          },
+        },
+        {
+          queryPrediction: {
+            text: { text: 'Cafe' },
+          },
         },
       ],
     },
@@ -93,7 +101,7 @@ beforeAll(async () => {
 });
 
 afterEach(async () => {
-  axios.get.mockReset();
+  axios.post.mockReset();
   if (previousKey == null) delete process.env.GOOGLE_MAPS_API_KEY;
   else process.env.GOOGLE_MAPS_API_KEY = previousKey;
   await Promise.all([
@@ -114,7 +122,7 @@ afterAll(async () => {
 describe('GET /api/places/autocomplete', () => {
   test('autocomplete returns places when the key is present', async () => {
     process.env.GOOGLE_MAPS_API_KEY = 'test-key';
-    axios.get.mockResolvedValue(googleOk());
+    axios.post.mockResolvedValue(googleOk());
     const ada = await registerAndLogin({
       firstName: 'Ada',
       lastName: 'Lovelace',
@@ -148,12 +156,14 @@ describe('GET /api/places/autocomplete', () => {
         address: 'Paris, France',
       },
     ]);
-    expect(axios.get).toHaveBeenCalledTimes(1);
-    const url = axios.get.mock.calls[0][0];
-    expect(url.startsWith(`${AUTOCOMPLETE_URL}?`)).toBe(true);
-    const params = new URL(url).searchParams;
-    expect(params.get('input')).toBe('Cafe Paris');
-    expect(params.get('key')).toBe('test-key');
+    expect(axios.post).toHaveBeenCalledTimes(1);
+    const [url, body, options] = axios.post.mock.calls[0];
+    expect(url).toBe(AUTOCOMPLETE_URL);
+    expect(body).toEqual({ input: 'Cafe Paris' });
+    expect(options.headers['X-Goog-Api-Key']).toBe('test-key');
+    expect(options.headers['X-Goog-FieldMask']).toBe(FIELD_MASK);
+    expect(url).not.toContain('test-key');
+    expect(JSON.stringify(body)).not.toContain('test-key');
     expect(JSON.stringify(found.body)).not.toContain('test-key');
   });
 
@@ -173,7 +183,7 @@ describe('GET /api/places/autocomplete', () => {
 
     expect(missing.status).toBe(503);
     expect(missing.body.message).toBe('Google Maps is not configured');
-    expect(axios.get).not.toHaveBeenCalled();
+    expect(axios.post).not.toHaveBeenCalled();
   });
 
   test('a guest cannot search places', async () => {
@@ -198,7 +208,7 @@ describe('GET /api/places/autocomplete', () => {
 
     expect(denied.status).toBe(403);
     expect(denied.body.message).toBe('Only Owner or Collaborator can search places');
-    expect(axios.get).not.toHaveBeenCalled();
+    expect(axios.post).not.toHaveBeenCalled();
   });
 
   test('no token is 401', async () => {
@@ -208,6 +218,6 @@ describe('GET /api/places/autocomplete', () => {
 
     expect(missing.status).toBe(401);
     expect(missing.body.message).toBe('No token, authorization denied');
-    expect(axios.get).not.toHaveBeenCalled();
+    expect(axios.post).not.toHaveBeenCalled();
   });
 });
