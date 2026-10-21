@@ -3880,7 +3880,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
                   'Kind of activity (flight, hotel, dining, etc.)',
                   DropdownButtonFormField<String>(
                     initialValue: _type,
-                    decoration: const InputDecoration(labelText: 'Type'),
+                    decoration: const InputDecoration(labelText: 'Activity Type'),
                     items: [
                       for (final type in activityTypeChoices(_type))
                         DropdownMenuItem(
@@ -4210,7 +4210,6 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
 
   Widget _fieldsColumn() {
     const above = [
-      _ActivityInput.name,
       _ActivityInput.start,
       _ActivityInput.end,
       _ActivityInput.duration,
@@ -4235,6 +4234,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        _inputWidget(_ActivityInput.name),
         _inputWidget(_ActivityInput.type),
         for (final input in above)
           if (_inputApplies(input)) _inputWidget(input),
@@ -4394,12 +4394,22 @@ class _PlanEditScreenState extends State<_PlanEditScreen> {
   late final TextEditingController _nameController;
   late final TextEditingController _destinationController;
   late final TextEditingController _budgetController;
+  late final Listenable _planText;
+  late final String _openedName;
+  late final String _openedDestination;
+  late final String _openedBudget;
+  late final String _openedTimeZone;
+  late final bool _openedAutoStart;
+  late final bool _openedAutoEnd;
+  late final Set<String> _openedHidden;
   late bool _autoStart;
   late bool _autoEnd;
   late final Set<String> _hiddenFields;
   late String _timeZone;
   DateTime? _start;
   DateTime? _end;
+  DateTime? _openedStart;
+  DateTime? _openedEnd;
   String? _error;
 
   @override
@@ -4409,8 +4419,15 @@ class _PlanEditScreenState extends State<_PlanEditScreen> {
     _nameController = TextEditingController(text: plan.name);
     _destinationController = TextEditingController(text: plan.destination);
     _budgetController = TextEditingController(text: _costBoxText(plan.budget));
+    _planText = Listenable.merge([
+      _nameController,
+      _destinationController,
+      _budgetController,
+    ]);
     _start = plan.startDate;
     _end = plan.endDate;
+    _openedStart = plan.startDate;
+    _openedEnd = plan.endDate;
     final storedZone = plan.timeZone.trim();
     _timeZone = storedZone.isEmpty ? 'UTC' : storedZone;
     _autoStart = plan.autoCalculateStartDate;
@@ -4419,6 +4436,13 @@ class _PlanEditScreenState extends State<_PlanEditScreen> {
       for (final name in plan.hiddenFields)
         if (guestHiddenFieldNames.contains(name)) name,
     };
+    _openedName = plan.name.trim();
+    _openedDestination = plan.destination.trim();
+    _openedBudget = _budgetController.text.trim();
+    _openedTimeZone = _timeZone;
+    _openedAutoStart = _autoStart;
+    _openedAutoEnd = _autoEnd;
+    _openedHidden = Set<String>.from(_hiddenFields);
   }
 
   @override
@@ -4427,6 +4451,32 @@ class _PlanEditScreenState extends State<_PlanEditScreen> {
     _destinationController.dispose();
     _budgetController.dispose();
     super.dispose();
+  }
+
+  bool _sameInstant(DateTime? left, DateTime? right) {
+    if (left == null || right == null) return left == null && right == null;
+    return left.toUtc().microsecondsSinceEpoch ==
+        right.toUtc().microsecondsSinceEpoch;
+  }
+
+  bool _sameHidden(Set<String> left, Set<String> right) {
+    if (left.length != right.length) return false;
+    for (final name in left) {
+      if (!right.contains(name)) return false;
+    }
+    return true;
+  }
+
+  bool _planChanged() {
+    return _nameController.text.trim() != _openedName ||
+        _destinationController.text.trim() != _openedDestination ||
+        _budgetController.text.trim() != _openedBudget ||
+        _timeZone != _openedTimeZone ||
+        !_sameInstant(_start, _openedStart) ||
+        !_sameInstant(_end, _openedEnd) ||
+        _autoStart != _openedAutoStart ||
+        _autoEnd != _openedAutoEnd ||
+        !_sameHidden(_hiddenFields, _openedHidden);
   }
 
   DateTime get _planZoneAnchor => _start ?? _end ?? DateTime.now().toUtc();
@@ -4612,6 +4662,19 @@ class _PlanEditScreenState extends State<_PlanEditScreen> {
       appBar: AppBar(
         title: const Text('Edit plan'),
         actions: [
+          ListenableBuilder(
+            listenable: _planText,
+            builder: (context, _) {
+              if (!_planChanged()) return const SizedBox.shrink();
+              return TextButton(
+                onPressed: _submit,
+                style: TextButton.styleFrom(
+                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                ),
+                child: const Text('Save'),
+              );
+            },
+          ),
           if (widget.canDelete)
             IconButton(
               tooltip: 'Delete plan',
@@ -4697,14 +4760,6 @@ class _PlanEditScreenState extends State<_PlanEditScreen> {
             const SizedBox(height: 12),
             Text(_error!, style: const TextStyle(color: Colors.red)),
           ],
-          const SizedBox(height: 24),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton(
-              onPressed: _submit,
-              child: const Text('Save'),
-            ),
-          ),
         ],
       ),
     );
