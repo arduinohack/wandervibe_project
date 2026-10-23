@@ -165,6 +165,99 @@ List<String?> planItineraryDayHeaders(
   return headers;
 }
 
+/// One calendar day in the itinerary span. [label] matches the day header,
+/// such as `Day 2 · Fri 2-Oct`.
+class PlanItineraryDay {
+  final int number;
+  final String dayKey;
+  final String label;
+
+  const PlanItineraryDay({
+    required this.number,
+    required this.dayKey,
+    required this.label,
+  });
+}
+
+/// Every calendar day from the earliest start through the latest end, in the
+/// plan time zone. A day with no activity is included. Empty when nothing has
+/// a start. An empty plan zone uses [deviceTimeZone], then the device zone.
+List<PlanItineraryDay> planItinerarySpan({
+  required List<DateTime?> starts,
+  required List<DateTime?> ends,
+  String planTimeZone = '',
+  String? deviceTimeZone,
+}) {
+  String? keyOf(DateTime? instant) {
+    if (instant == null) return null;
+    return formatPlanHeaderDate(
+      instant,
+      planTimeZone: planTimeZone,
+      deviceTimeZone: deviceTimeZone,
+    );
+  }
+
+  String? origin;
+  String? last;
+  for (final start in starts) {
+    final key = keyOf(start);
+    if (key == null) continue;
+    if (origin == null || key.compareTo(origin) < 0) origin = key;
+    if (last == null || key.compareTo(last) > 0) last = key;
+  }
+  if (origin == null || last == null) return const [];
+  var latest = last;
+  final count = ends.length < starts.length ? ends.length : starts.length;
+  for (var index = 0; index < count; index++) {
+    final key = keyOf(ends[index]) ?? keyOf(starts[index]);
+    if (key != null && key.compareTo(latest) > 0) latest = key;
+  }
+
+  final days = <PlanItineraryDay>[];
+  var cursor = _ymdDate(origin);
+  final endDate = _ymdDate(latest);
+  var number = 1;
+  while (!cursor.isAfter(endDate)) {
+    final key = _ymd(cursor.year, cursor.month, cursor.day);
+    days.add(
+      PlanItineraryDay(
+        number: number,
+        dayKey: key,
+        label:
+            'Day $number · ${_weekdayAbbreviation(key)} ${_dayMonthLabel(key)}',
+      ),
+    );
+    cursor = DateTime.utc(cursor.year, cursor.month, cursor.day + 1);
+    number++;
+  }
+  return days;
+}
+
+/// Activity indexes for each day in [days], in [starts] order. A day with no
+/// start is an empty list. A null start is not placed on a day.
+List<List<int>> planItineraryDayIndexes({
+  required List<DateTime?> starts,
+  required List<PlanItineraryDay> days,
+  String planTimeZone = '',
+  String? deviceTimeZone,
+}) {
+  final buckets = <String, List<int>>{
+    for (final day in days) day.dayKey: <int>[],
+  };
+  for (var index = 0; index < starts.length; index++) {
+    final start = starts[index];
+    if (start == null) continue;
+    final key = formatPlanHeaderDate(
+      start,
+      planTimeZone: planTimeZone,
+      deviceTimeZone: deviceTimeZone,
+    );
+    final bucket = buckets[key];
+    if (bucket != null) bucket.add(index);
+  }
+  return [for (final day in days) buckets[day.dayKey] ?? <int>[]];
+}
+
 const guestHiddenFieldNames = <String>[
   'destination',
   'budget',

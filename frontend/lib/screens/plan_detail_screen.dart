@@ -608,9 +608,6 @@ _ActivityCardContent _activityCardContent(
   if (_typeUsesLocation(storedType) && !placeReplacesLocation) {
     _addCardLine(below, 'Location', activity.location);
   }
-  if (_typeUsesPlaceId(storedType)) {
-    _addCardLine(below, 'Google Place ID', placeId);
-  }
   if (!hiddenFields.contains('bookingReference') &&
       _typeUsesBookingReference(storedType)) {
     _addCardLine(below, 'Booking reference', activity.bookingReference);
@@ -1251,6 +1248,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
   late Plan _plan;
   Plan? _linkedSource;
   List<PlanMember> _linkedPlanners = const [];
+  int? _itineraryDay;
 
   @override
   void initState() {
@@ -1711,6 +1709,150 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     }
   }
 
+  Widget _itineraryDayHeader(String label) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 8),
+      child: Text(
+        label,
+        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+      ),
+    );
+  }
+
+  Widget _itineraryActivityList({
+    required List<Activity> activities,
+    required List<_ShownActivityTimes> shownTimes,
+    required List<String?> dayHeaders,
+    required String planZone,
+    required bool canChange,
+    required Set<String> hiddenFields,
+  }) {
+    if (!canChange) {
+      return Column(
+        children: [
+          for (var index = 0; index < activities.length; index++)
+            _activityBlock(
+              blockKey: ValueKey('guest-$index'),
+              activity: activities[index],
+              times: shownTimes[index],
+              dayHeader: dayHeaders[index],
+              planZone: planZone,
+              canChange: false,
+              hiddenFields: hiddenFields,
+            ),
+        ],
+      );
+    }
+    return ReorderableListView.builder(
+      shrinkWrap: true,
+      primary: false,
+      physics: const NeverScrollableScrollPhysics(),
+      buildDefaultDragHandles: false,
+      itemCount: activities.length,
+      onReorderItem: (oldIndex, newIndex) {
+        _reorderActivities(oldIndex, newIndex);
+      },
+      itemBuilder: (context, index) {
+        final activity = activities[index];
+        final activityId = activity.id;
+        return _activityBlock(
+          blockKey: ValueKey(
+            activityId == null || activityId.isEmpty
+                ? 'activity-$index'
+                : activityId,
+          ),
+          activity: activity,
+          times: shownTimes[index],
+          dayHeader: dayHeaders[index],
+          planZone: planZone,
+          canChange: true,
+          hiddenFields: hiddenFields,
+          dragIndex: index,
+        );
+      },
+    );
+  }
+
+  Widget _itineraryDaySection({
+    required PlanItineraryDay day,
+    required List<int> indexes,
+    required List<Activity> activities,
+    required List<_ShownActivityTimes> shownTimes,
+    required String planZone,
+    required bool canChange,
+    required Set<String> hiddenFields,
+  }) {
+    final blocks = <Widget>[_itineraryDayHeader(day.label)];
+    if (indexes.isEmpty) {
+      blocks.add(
+        const Padding(
+          padding: EdgeInsets.only(bottom: 8),
+          child: Text('No activities defined for this day'),
+        ),
+      );
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: blocks,
+      );
+    }
+    if (!canChange) {
+      for (final index in indexes) {
+        blocks.add(
+          _activityBlock(
+            blockKey: ValueKey('guest-$index'),
+            activity: activities[index],
+            times: shownTimes[index],
+            dayHeader: null,
+            planZone: planZone,
+            canChange: false,
+            hiddenFields: hiddenFields,
+          ),
+        );
+      }
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: blocks,
+      );
+    }
+    final start = indexes.first;
+    blocks.add(
+      ReorderableListView.builder(
+        key: ValueKey('day-${day.number}'),
+        shrinkWrap: true,
+        primary: false,
+        physics: const NeverScrollableScrollPhysics(),
+        buildDefaultDragHandles: false,
+        itemCount: indexes.length,
+        onReorderItem: (oldIndex, newIndex) {
+          _reorderActivities(start + oldIndex, start + newIndex);
+        },
+        itemBuilder: (context, localIndex) {
+          final index = indexes[localIndex];
+          final activity = activities[index];
+          final activityId = activity.id;
+          return _activityBlock(
+            blockKey: ValueKey(
+              activityId == null || activityId.isEmpty
+                  ? 'activity-$index'
+                  : activityId,
+            ),
+            activity: activity,
+            times: shownTimes[index],
+            dayHeader: null,
+            planZone: planZone,
+            canChange: true,
+            hiddenFields: hiddenFields,
+            dragIndex: localIndex,
+          );
+        },
+      ),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: blocks,
+    );
+  }
+
   Widget _activityBlock({
     required Key blockKey,
     required Activity activity,
@@ -2127,7 +2269,19 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
           );
           final canChange = canAddActivity(storedRole);
           final shownTimes = _shownActivityTimes(activities);
-          final dayHeaders = _dayHeaders(shownTimes, shown.timeZone);
+          final daySpan = planItinerarySpan(
+            starts: [for (final time in shownTimes) time.start],
+            ends: [for (final time in shownTimes) time.end ?? time.start],
+            planTimeZone: shown.timeZone,
+          );
+          final dayIndexes = planItineraryDayIndexes(
+            starts: [for (final time in shownTimes) time.start],
+            days: daySpan,
+            planTimeZone: shown.timeZone,
+          );
+          final selectedDay = daySpan.any((day) => day.number == _itineraryDay)
+              ? _itineraryDay
+              : null;
           final hiddenFields = _guestHiddenFields(shown, storedRole);
           final dateLine = planHeaderDateLine(
             activities,
@@ -2218,6 +2372,25 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                     ),
                 ],
               ),
+              if (daySpan.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                DropdownButton<int?>(
+                  value: selectedDay,
+                  isExpanded: true,
+                  items: [
+                    const DropdownMenuItem<int?>(
+                      value: null,
+                      child: Text('All'),
+                    ),
+                    for (final day in daySpan)
+                      DropdownMenuItem<int?>(
+                        value: day.number,
+                        child: Text(day.label),
+                      ),
+                  ],
+                  onChanged: (value) => setState(() => _itineraryDay = value),
+                ),
+              ],
               const SizedBox(height: 8),
               if (activities.isEmpty)
                 const Center(
@@ -2227,45 +2400,28 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                     textAlign: TextAlign.center,
                   ),
                 )
-              else if (canChange)
-                ReorderableListView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  buildDefaultDragHandles: false,
-                  itemCount: activities.length,
-                  onReorderItem: (oldIndex, newIndex) {
-                    _reorderActivities(oldIndex, newIndex);
-                  },
-                  itemBuilder: (context, index) {
-                    final activity = activities[index];
-                    final activityId = activity.id;
-                    return _activityBlock(
-                      blockKey: ValueKey(
-                        activityId == null || activityId.isEmpty
-                            ? 'activity-$index'
-                            : activityId,
-                      ),
-                      activity: activity,
-                      times: shownTimes[index],
-                      dayHeader: dayHeaders[index],
-                      planZone: shown.timeZone,
-                      canChange: true,
-                      hiddenFields: hiddenFields,
-                      dragIndex: index,
-                    );
-                  },
+              else if (daySpan.isEmpty)
+                _itineraryActivityList(
+                  activities: activities,
+                  shownTimes: shownTimes,
+                  dayHeaders: _dayHeaders(shownTimes, shown.timeZone),
+                  planZone: shown.timeZone,
+                  canChange: canChange,
+                  hiddenFields: hiddenFields,
                 )
               else
-                for (var index = 0; index < activities.length; index++)
-                  _activityBlock(
-                    blockKey: ValueKey('guest-$index'),
-                    activity: activities[index],
-                    times: shownTimes[index],
-                    dayHeader: dayHeaders[index],
-                    planZone: shown.timeZone,
-                    canChange: false,
-                    hiddenFields: hiddenFields,
-                  ),
+                for (var dayIndex = 0; dayIndex < daySpan.length; dayIndex++)
+                  if (selectedDay == null ||
+                      daySpan[dayIndex].number == selectedDay)
+                    _itineraryDaySection(
+                      day: daySpan[dayIndex],
+                      indexes: dayIndexes[dayIndex],
+                      activities: activities,
+                      shownTimes: shownTimes,
+                      planZone: shown.timeZone,
+                      canChange: canChange,
+                      hiddenFields: hiddenFields,
+                    ),
             ],
           );
         },

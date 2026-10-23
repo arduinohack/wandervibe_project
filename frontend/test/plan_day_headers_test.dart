@@ -153,6 +153,45 @@ void main() {
     expect(headers, ['Day 1', 'Day 1 · Mon 5-Oct']);
   });
 
+  test('the span keeps every calendar day through the latest end', () {
+    final days = planItinerarySpan(
+      starts: [
+        DateTime.utc(2026, 10, 1, 8),
+        DateTime.utc(2026, 10, 4, 8),
+      ],
+      ends: [
+        DateTime.utc(2026, 10, 1, 12),
+        DateTime.utc(2026, 10, 6, 8),
+      ],
+      planTimeZone: 'UTC',
+    );
+
+    expect(
+      days.map((day) => day.label).toList(),
+      [
+        'Day 1 · Thu 1-Oct',
+        'Day 2 · Fri 2-Oct',
+        'Day 3 · Sat 3-Oct',
+        'Day 4 · Sun 4-Oct',
+        'Day 5 · Mon 5-Oct',
+        'Day 6 · Tue 6-Oct',
+      ],
+    );
+    final indexes = planItineraryDayIndexes(
+      starts: [
+        DateTime.utc(2026, 10, 1, 8),
+        DateTime.utc(2026, 10, 4, 8),
+      ],
+      days: days,
+      planTimeZone: 'UTC',
+    );
+    expect(indexes[0], [0]);
+    expect(indexes[1], isEmpty);
+    expect(indexes[2], isEmpty);
+    expect(indexes[3], [1]);
+    expect(indexes[5], isEmpty);
+  });
+
   test('the date has no leading zero and a three-letter month', () {
     final headers = planItineraryDayHeaders(
       [DateTime.utc(2026, 9, 7, 9)],
