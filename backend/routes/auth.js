@@ -9,6 +9,13 @@ const authMiddleware = require('../middleware/auth.js');  // Add this line for t
 const { v4: uuidv4 } = require('uuid');  // For reset token
 const { sendEmail, selectedProviderName } = require('../utils/email/sendEmail');
 const { sendSms } = require('../utils/sms');
+const {
+  issueSession,
+  signAccessToken,
+  rotateRefresh,
+  deleteRefresh,
+  revokeSessionRefresh,
+} = require('../utils/sessionTokens');
 
 const INVITE_REQUEST_EMAIL = 'ken@eratespecialists.com';
 const INVITE_REQUEST_SMS = '+14044081476';
@@ -73,18 +80,14 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ message: 'Invalid credentials' });
     }
 
-    // Generate token (payload with ID only—no password)
-    const token = jwt.sign(
-      { userId: user._id, role: user.role || 'Wanderer' },
-      process.env.JWT_SECRET || 'your_secret_key',
-      { expiresIn: '1h' }
-    );
+    // Access JWT stays { userId, role }. Refresh is an opaque Redis token.
+    const { token, refreshToken } = await issueSession(user, { includeRole: true });
 
     // Return token and user without password
     const userWithoutPassword = user.toObject();  // Convert to plain object
     delete userWithoutPassword.password;  // Hide password
     noteSupportAccount(req, { actorUserId: user._id, actorEmail: user.email });
-    res.status(200).json({ token, user: userWithoutPassword });
+    res.status(200).json({ token, refreshToken, user: userWithoutPassword });
     logger.info('Login successful', {
       userId: user._id,
       event: 'AuthLogin',
@@ -201,16 +204,25 @@ router.post('/register', async (req, res) => {
       { $set: { userId: newUserId } },
     );
 
-    // Generate JWT token (no password in payload)
-    const payload = { userId: newUserId };
-    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' });
+    const savedUser = await User.findById(newUserId).select('-password');
+    const { token, refreshToken } = await issueSession(
+      { _id: newUserId, role: savedUser ? savedUser.role : 'member' },
+      { includeRole: false },
+    );
+    const userWithoutPassword = savedUser ? savedUser.toObject() : { _id: newUserId };
+    delete userWithoutPassword.password;
 
     logger.info('Generated new token and sent to newly registered user', {
       userId: newUserId,
       event: 'AuthRegister',
       context: { email: email }
     });
-    res.status(201).json({ msg: 'User registered successfully!', token });
+    res.status(201).json({
+      msg: 'User registered successfully!',
+      token,
+      refreshToken,
+      user: userWithoutPassword,
+    });
   } catch (err) {
       logger.error('Server error', {
         userId: userId,
@@ -514,6 +526,42 @@ router.patch('/users/:userId', authMiddleware, async (req, res) => {
   }
 });
 
+// POST /api/auth/refresh — public. The access token may already be expired.
+router.post('/refresh', async (req, res) => {
+  const refreshToken = req.body && typeof req.body.refreshToken === 'string'
+    ? req.body.refreshToken.trim()
+    : '';
+  if (!refreshToken) {
+    return res.status(401).json({ message: 'Invalid token' });
+  }
+  try {
+    const rotated = await rotateRefresh(refreshToken);
+    if (!rotated) {
+      return res.status(401).json({ message: 'Invalid token' });
+    }
+    const user = await User.findById(rotated.userId).select('-password');
+    if (!user) {
+      await deleteRefresh(rotated.refreshToken, rotated.userId);
+      return res.status(401).json({ message: 'Invalid token' });
+    }
+    const token = signAccessToken(user, { includeRole: true });
+    const userWithoutPassword = user.toObject();
+    delete userWithoutPassword.password;
+    return res.status(200).json({
+      token,
+      refreshToken: rotated.refreshToken,
+      user: userWithoutPassword,
+    });
+  } catch (error) {
+    logger.error('Server error', {
+      userId: 'User ID not in request',
+      event: 'AuthRefresh',
+      context: { error: error.message },
+    });
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // Logout endpoint: POST /api/auth/logout
 router.post('/logout', authMiddleware, async (req, res) => {
   const actorUserId = String((req.user && (req.user.userId || req.user.id)) || '');
@@ -544,6 +592,10 @@ router.post('/logout', authMiddleware, async (req, res) => {
         context: {}
       });
     }
+    const presented = req.body && typeof req.body.refreshToken === 'string'
+      ? req.body.refreshToken.trim()
+      : '';
+    await revokeSessionRefresh(actorUserId, presented);
     logger.info('User logged out', {
       userId: req.user.userId,
       event: 'AuthLogout',

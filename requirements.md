@@ -399,7 +399,7 @@ This section is the glossary for settings that live outside the database. It ans
 
 The Node backend reads configuration from environment variables when the process starts. On the laptop those variables are written in the backend `.env` file (same folder as `package.json`, or the backend folder in the monorepo). That file is not committed to Git because it can hold secrets (database URI, JWT secret, mail API keys). A `.env.example` file may list the names with fake values so another machine knows what to set.
 
-MongoDB holds users, plans, activities, and invitations. Redis holds only the optional logout blacklist. Neither stores `EMAIL_FROM` or `JWT_SECRET`.
+MongoDB holds users, plans, activities, and invitations. Redis holds the optional logout blacklist and refresh tokens. Neither stores `EMAIL_FROM` or `JWT_SECRET`.
 
 ### What “empty” means in this document
 
@@ -430,9 +430,10 @@ Do not put real secrets in this file.
 | `PORT` | HTTP port the API listens on. | Missing or blank. | Use `3000`. |
 | `MONGODB_URI` | Connection string for MongoDB (local or Atlas). | Missing or blank. | Required to start. Do not guess a URI. |
 | `JWT_SECRET` | Secret used to sign login tokens. | Missing or blank. | Required in any real environment. Never log it. |
-| `JWT_EXPIRES_IN` | How long a login token lasts. | Missing or blank. | Use `7d` unless you choose another duration. |
+| `JWT_ACCESS_EXPIRES_IN` | How long an access token lasts. | Missing, blank, or not a number plus `s`, `m`, `h`, or `d`. | Use `15m`. |
+| `JWT_REFRESH_EXPIRES_IN` | How long a refresh token lasts. | Missing, blank, or not a number plus `s`, `m`, `h`, or `d`. | Use `30d`. |
 | `NODE_ENV` | Runtime mode. `development` vs production (or similar). | Missing or blank. | Treat as not-development. The Ken Gmail override in `notifyUsers` only applies when this is exactly `development`. |
-| `REDIS_URL` | Where Redis/Memurai lives, used only for logout token blacklist. | Missing or blank. | Try `localhost:6379`. If Redis is down, logout blacklist is skipped (degraded). Mongo remains the system of record. |
+| `REDIS_URL` | Where Redis/Memurai lives. It stores the logout token blacklist and refresh tokens. | Missing or blank. | Try `localhost:6379`. If Redis is down, logout blacklist is skipped and a refresh later fails (degraded). Mongo remains the system of record. |
 | `EMAIL_PROVIDER` | Which mail sender to use: `resend`, `sendgrid`, or `console`. | Missing or blank. | Use `resend`. `console` logs mail instead of sending. Forgot-password is still raw SendGrid in `auth.js` until that path is switched. |
 | `EMAIL_FROM` | From address on mail the app sends. This is not the recipient. | Missing, blank, or only spaces. | Use `ken@eratespecialists.com`. Alpha/production should set this to an address on the verified domain `mail.eratespecialists.com` (not `onboarding@resend.dev`). |
 | `NOTIFY_OVERRIDE_EMAIL` | Force every `notifyUsers` recipient to one inbox (To address). | Missing, blank, or only spaces. | Do not override. Next rule: if `NODE_ENV=development`, To is `w.ken.allen@gmail.com`; otherwise To is each user’s email. Skips users with no email or `notificationPreferences.email === false`. Forgot-password does not use this override. |
@@ -457,7 +458,8 @@ NODE_ENV=development
 PORT=3000
 MONGODB_URI=<your Atlas or local URI>
 JWT_SECRET=<long random string>
-JWT_EXPIRES_IN=7d
+JWT_ACCESS_EXPIRES_IN=15m
+JWT_REFRESH_EXPIRES_IN=30d
 REDIS_URL=redis://127.0.0.1:6379
 EMAIL_PROVIDER=resend
 EMAIL_FROM=WanderVibe <noreply@mail.eratespecialists.com>
