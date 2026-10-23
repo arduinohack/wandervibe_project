@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../biometric_unlock.dart';
 import '../providers/user_provider.dart'; // For login
 import 'auth_landing.dart';
 import 'signup_screen.dart'; // For sign up navigation
@@ -18,9 +19,29 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   bool _isLoading = false; // For loading spinner
   bool _showPassword = false;
+  UserProvider? _user;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _user = Provider.of<UserProvider>(context, listen: false);
+      _user!.addListener(_onUser);
+      _onUser();
+    });
+  }
+
+  void _onUser() {
+    if (!mounted) return;
+    final user = _user;
+    if (user == null || !user.consumeBiometricEntry()) return;
+    continueAfterAuth(context);
+  }
 
   @override
   void dispose() {
+    _user?.removeListener(_onUser);
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
@@ -49,6 +70,8 @@ class _LoginScreenState extends State<LoginScreen> {
         _showError('token was null');
         return;
       }
+      await offerBiometricUnlock(context);
+      if (!mounted) return;
       await continueAfterAuth(context);
     } catch (e) {
       if (!mounted) return;

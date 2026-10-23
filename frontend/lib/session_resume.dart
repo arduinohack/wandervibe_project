@@ -5,13 +5,11 @@ import 'providers/invitation_provider.dart';
 import 'providers/plan_provider.dart';
 import 'providers/user_provider.dart';
 import 'screens/login_screen.dart';
-import 'storage/token_store.dart';
+import 'session_bridge.dart';
 import 'utils/jwt_expiry.dart';
-import 'utils/logger.dart';
 
-/// On resume, and on the next pointer or key, leave for login when the stored
-/// token is missing or past its expiry. A valid token stays on the open screen.
-/// This does not call POST /api/auth/logout.
+/// On resume, and on the next pointer or key, refresh an expired access token.
+/// Biometric unlock, when enabled, runs first. This does not call logout.
 class SessionResume extends StatefulWidget {
   final GlobalKey<NavigatorState> navigatorKey;
   final Widget child;
@@ -30,24 +28,36 @@ class _SessionResumeState extends State<SessionResume>
     with WidgetsBindingObserver {
   bool _checking = false;
   bool _openingLogin = false;
+  SessionEndedCallback? _previousEnded;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     HardwareKeyboard.instance.addHandler(_onKey);
+    _previousEnded = onSessionEnded;
+    onSessionEnded = _sessionEnded;
   }
 
   @override
   void dispose() {
+    if (identical(onSessionEnded, _sessionEnded)) {
+      onSessionEnded = _previousEnded;
+    }
     WidgetsBinding.instance.removeObserver(this);
     HardwareKeyboard.instance.removeHandler(_onKey);
     super.dispose();
   }
 
+  void _sessionEnded() {
+    final previous = _previousEnded;
+    if (previous != null) previous();
+    _goToLogin();
+  }
+
   bool _onKey(KeyEvent event) {
     if (event is KeyDownEvent) {
-      _checkSession(readStorage: false);
+      _checkSession(fromResume: false);
     }
     return false;
   }
@@ -55,40 +65,35 @@ class _SessionResumeState extends State<SessionResume>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _checkSession(readStorage: true);
+      _checkSession(fromResume: true);
     }
   }
 
-  Future<void> _checkSession({required bool readStorage}) async {
+  Future<void> _checkSession({required bool fromResume}) async {
     if (_checking || !mounted) return;
     final user = Provider.of<UserProvider>(context, listen: false);
-    if (!readStorage) {
+    if (fromResume) {
+      user.noteAppResumed();
+    } else if (user.biometricDeclined) {
+      return;
+    }
+    if (!fromResume) {
       final memory = user.token;
-      if (memory == null || memory.isEmpty) {
-        if (!user.hasSession) return;
-      } else if (!jwtIsExpired(memory, DateTime.now())) {
+      if (memory != null &&
+          memory.isNotEmpty &&
+          !jwtIsExpired(memory, DateTime.now())) {
         return;
       }
+      if ((memory == null || memory.isEmpty) && !user.hasSession) return;
     }
     _checking = true;
     try {
-      String? stored;
-      try {
-        stored = readStorage ? await readToken() : user.token;
-      } catch (e) {
-        logger.e('Session token read error: $e');
-        return;
-      }
+      final result = await user.keepSessionAlive(promptBiometric: true);
       if (!mounted) return;
-      final token = stored != null && stored.isNotEmpty ? stored : null;
-      final expired = token == null || jwtIsExpired(token, DateTime.now());
-      if (!expired) return;
-      if (!user.hasSession && token == null) return;
+      if (result != SessionKeep.login) return;
       Provider.of<PlanProvider>(context, listen: false).clearPlans();
       Provider.of<InvitationProvider>(context, listen: false)
           .clearInvitations();
-      await user.clearExpiredSession();
-      if (!mounted) return;
       _goToLogin();
     } finally {
       _checking = false;
@@ -114,7 +119,7 @@ class _SessionResumeState extends State<SessionResume>
   Widget build(BuildContext context) {
     return Listener(
       behavior: HitTestBehavior.translucent,
-      onPointerDown: (_) => _checkSession(readStorage: false),
+      onPointerDown: (_) => _checkSession(fromResume: false),
       child: widget.child,
     );
   }

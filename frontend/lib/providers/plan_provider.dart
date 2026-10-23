@@ -1,6 +1,6 @@
 // For ChangeNotifier
-import 'package:http/http.dart'
-    as http; // For API calls (add to pubspec.yaml if not there)
+import '../api/api_client.dart'
+    as http; // Retries once after a silent token refresh
 import 'dart:convert'; // For JSON
 import 'dart:typed_data';
 // Added for Provider.of (token from UserProvider)

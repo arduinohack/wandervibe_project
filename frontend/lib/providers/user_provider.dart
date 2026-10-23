@@ -1,6 +1,10 @@
 import 'package:flutter/foundation.dart'; // For ChangeNotifier
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import '../api/api_client.dart' as api;
+import '../biometric_unlock.dart';
+import '../session_bridge.dart';
+import '../session_refresh.dart';
 import '../utils/logger.dart';
 import '../config/constants.dart'; // Add this line for backendBaseUrl
 import '../models/user.dart'; // Your User model with Address/Preferences
@@ -8,12 +12,34 @@ import '../config/config.dart';
 import '../storage/token_store.dart';
 import '../utils/jwt_expiry.dart';
 
+enum SessionKeep { stay, login, idle }
+
 class UserProvider extends ChangeNotifier {
   String? currentUserId; // Current user ID
   UserRole? _currentUserRole; // Private stub role
   User? _currentUser; // Private full user object
   String? _jwtToken; // Stored token
   int _sessionEpoch = 0;
+  bool _biometricEntry = false;
+  bool _biometricDeclined = false;
+
+  UserProvider() {
+    onSessionRefreshed = (access) {
+      _jwtToken = access;
+      notifyListeners();
+    };
+    onSessionEnded = _handleSessionEnded;
+  }
+
+  void _handleSessionEnded() {
+    _sessionEpoch++;
+    _jwtToken = null;
+    currentUserId = null;
+    _currentUserRole = null;
+    _currentUser = null;
+    _biometricEntry = false;
+    notifyListeners();
+  }
 
   UserRole? get currentUserRole => _currentUserRole;
   User? get currentUser => _currentUser;
@@ -23,6 +49,19 @@ class UserProvider extends ChangeNotifier {
     final saved = _jwtToken;
     if (saved != null && saved.isNotEmpty) return true;
     return currentUserId != null || _currentUser != null;
+  }
+
+  bool get biometricDeclined => _biometricDeclined;
+
+  void noteAppResumed() {
+    _biometricDeclined = false;
+  }
+
+  /// True once, after a biometric unlock that should open the app.
+  bool consumeBiometricEntry() {
+    if (!_biometricEntry) return false;
+    _biometricEntry = false;
+    return true;
   }
 
   Map<String, dynamic> _jsonObject(String body) {
@@ -86,19 +125,18 @@ class UserProvider extends ChangeNotifier {
           .timeout(timeoutDuration);
 
       logger.i('Flutter received status: ${response.statusCode}');
-      logger.i(
-        'Flutter received body: ${response.body}',
-      ); // Log response (JSON or error)
       if (response.statusCode == 200) {
         final data = _jsonObject(response.body);
         final tokenValue = data['token'];
         if (tokenValue is String && tokenValue.isNotEmpty) {
           _sessionEpoch++;
+          _biometricDeclined = false;
           try {
             await writeToken(tokenValue);
           } catch (e) {
             logger.e('Token storage error: $e');
           }
+          await _storeRefresh(data['refreshToken']);
           final userValue = data['user'];
           final userMap = userValue is Map
               ? Map<String, dynamic>.from(userValue)
@@ -166,6 +204,7 @@ class UserProvider extends ChangeNotifier {
           } catch (e) {
             logger.e('Token storage error: $e');
           }
+          await _storeRefresh(data['refreshToken']);
           notifyListeners();
         }
         logger.i('Signup successful: ${data['msg'] ?? data['message']}');
@@ -178,13 +217,44 @@ class UserProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> _storeRefresh(Object? value) async {
+    if (value is! String || value.isEmpty) return;
+    try {
+      await writeRefreshToken(value);
+    } catch (e) {
+      logger.e('Refresh token storage error: $e');
+    }
+  }
+
+  Future<http.Response> _postLogout(
+    String token,
+    String? refresh,
+    Duration timeout,
+  ) {
+    final body = <String, String>{};
+    if (refresh != null && refresh.isNotEmpty) {
+      body['refreshToken'] = refresh;
+    }
+    return http
+        .post(
+          Uri.parse(backendBaseUrl + apiAuthLogout),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+          body: json.encode(body),
+        )
+        .timeout(timeout);
+  }
+
   // POST /api/auth/logout while the bearer token is still saved, then drop it.
-  // A failed call still clears the saved token.
+  // A failed call still clears the saved tokens and the biometric preference.
   Future<void> logout() async {
     final epoch = ++_sessionEpoch;
-    final memoryToken = _jwtToken;
-    String? token = memoryToken != null && memoryToken.isNotEmpty
-        ? memoryToken
+    _biometricDeclined = false;
+    _biometricEntry = false;
+    String? token = _jwtToken != null && _jwtToken!.isNotEmpty
+        ? _jwtToken
         : null;
     if (token == null) {
       try {
@@ -193,20 +263,50 @@ class UserProvider extends ChangeNotifier {
         logger.e('Logout token read error: $e');
       }
     }
+    String? refresh;
+    try {
+      refresh = await readRefreshToken();
+    } catch (e) {
+      logger.e('Logout refresh read error: $e');
+    }
+    if (epoch != _sessionEpoch) return;
+    if (token != null &&
+        token.isNotEmpty &&
+        jwtIsExpired(token, DateTime.now()) &&
+        refresh != null &&
+        refresh.isNotEmpty) {
+      final refreshed = await refreshSession();
+      if (epoch != _sessionEpoch) return;
+      if (refreshed) {
+        token = _jwtToken;
+        try {
+          refresh = await readRefreshToken();
+        } catch (e) {
+          logger.e('Logout refresh read error: $e');
+        }
+      }
+    }
     if (token != null && token.isNotEmpty) {
       try {
         final timeoutDuration = Duration(
           seconds: await AppConfig.timeoutSeconds,
         );
-        final response = await http
-            .post(
-              Uri.parse(backendBaseUrl + apiAuthLogout),
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer $token',
-              },
-            )
-            .timeout(timeoutDuration);
+        var response = await _postLogout(token, refresh, timeoutDuration);
+        if (response.statusCode == 401 &&
+            refresh != null &&
+            refresh.isNotEmpty) {
+          final refreshed = await refreshSession();
+          if (epoch != _sessionEpoch) return;
+          if (refreshed) {
+            token = _jwtToken ?? token;
+            try {
+              refresh = await readRefreshToken();
+            } catch (e) {
+              logger.e('Logout refresh read error: $e');
+            }
+            response = await _postLogout(token, refresh, timeoutDuration);
+          }
+        }
         if (response.statusCode != 200) {
           logger.i('Backend logout failed: ${response.statusCode}');
         }
@@ -216,11 +316,7 @@ class UserProvider extends ChangeNotifier {
     }
 
     if (epoch != _sessionEpoch) return;
-    try {
-      await deleteToken();
-    } catch (e) {
-      logger.e('Logout token delete error: $e');
-    }
+    await _deleteLocalCredentials();
     if (epoch != _sessionEpoch) return;
     _jwtToken = null;
     currentUserId = null;
@@ -228,6 +324,24 @@ class UserProvider extends ChangeNotifier {
     _currentUser = null;
     notifyListeners();
     logger.i('Logged out—cleared local storage');
+  }
+
+  Future<void> _deleteLocalCredentials() async {
+    try {
+      await deleteToken();
+    } catch (e) {
+      logger.e('Logout token delete error: $e');
+    }
+    try {
+      await deleteRefreshToken();
+    } catch (e) {
+      logger.e('Logout refresh delete error: $e');
+    }
+    try {
+      await clearBiometricPreference();
+    } catch (e) {
+      logger.e('Logout biometric clear error: $e');
+    }
   }
 
   /// Drops the saved token and in-memory session. Does not call the logout API.
@@ -247,55 +361,205 @@ class UserProvider extends ChangeNotifier {
     logger.i('Expired session cleared');
   }
 
-  // Load stored token and verify user (real API POST /api/auth/verify-token)
-  Future<void> loadStoredToken() async {
-    final epoch = _sessionEpoch;
+  /// Drops the in-memory session and the access token. Keeps the refresh
+  /// token and the biometric preference so the next unlock can try again.
+  Future<void> _dropUnlockedAccess() async {
+    final epoch = ++_sessionEpoch;
+    _jwtToken = null;
+    currentUserId = null;
+    _currentUserRole = null;
+    _currentUser = null;
+    _biometricEntry = false;
+    notifyListeners();
+    if (epoch != _sessionEpoch) return;
     try {
-      final stored = await readToken();
-      if (epoch != _sessionEpoch) return;
-      if (stored == null || stored.isEmpty) {
-        logger.i('No stored token—user not logged in');
-        return;
-      }
-      if (jwtIsExpired(stored, DateTime.now())) {
-        await clearExpiredSession();
-        return;
-      }
-      if (epoch != _sessionEpoch) return;
-      _jwtToken = stored;
+      await deleteToken();
+    } catch (e) {
+      logger.e('Unlock cancel token delete error: $e');
+    }
+  }
+
+  /// Drops both tokens. Keeps the biometric preference.
+  Future<void> _clearStoredSession() async {
+    final epoch = ++_sessionEpoch;
+    _jwtToken = null;
+    currentUserId = null;
+    _currentUserRole = null;
+    _currentUser = null;
+    _biometricEntry = false;
+    notifyListeners();
+    if (epoch != _sessionEpoch) return;
+    try {
+      await deleteToken();
+    } catch (e) {
+      logger.e('Session token delete error: $e');
+    }
+    try {
+      await deleteRefreshToken();
+    } catch (e) {
+      logger.e('Session refresh delete error: $e');
+    }
+  }
+
+  Future<bool> _verifyStored(String token) async {
+    try {
       final timeoutDuration = Duration(seconds: await AppConfig.timeoutSeconds);
       final response = await http
           .post(
-            Uri.parse((backendBaseUrl) + apiAuthVerifyToken),
+            Uri.parse(backendBaseUrl + apiAuthVerifyToken),
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': 'Bearer $stored',
+              'Authorization': 'Bearer $token',
             },
           )
           .timeout(timeoutDuration);
-      if (epoch != _sessionEpoch) return;
+      if (response.statusCode != 200) return false;
+      final data = json.decode(response.body);
+      final userValue = data is Map ? data['user'] : null;
+      if (userValue is! Map) return false;
+      final userMap = Map<String, dynamic>.from(userValue);
+      final id = userMap['_id'];
+      currentUserId = id?.toString();
+      final role = userMap['role'];
+      _currentUserRole = _roleFromString(role is String ? role : '');
+      _currentUser = User.fromJson(userMap);
+      _jwtToken = token;
+      notifyListeners();
+      logger.i(
+        'Loaded and verified user from backend: ${userMap['firstName']} ($_currentUserRole)',
+      );
+      return true;
+    } catch (e) {
+      logger.e('Error verifying stored token: $e');
+      return false;
+    }
+  }
 
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        currentUserId = data['user']['_id'];
-        _currentUserRole = _roleFromString(
-          data['user']['role'],
-        ); // Parse real role from backend
-        _currentUser = User.fromJson(
-          data['user'],
-        ); // Parse real user from backend
-        notifyListeners();
-        logger.i(
-          'Loaded and verified user from backend: ${data['user']['firstName']} ($_currentUserRole)',
-        );
-      } else {
+  Future<bool> _restoreAccess() async {
+    var access = _jwtToken;
+    if (access == null || access.isEmpty) {
+      try {
+        access = await readToken();
+      } catch (e) {
+        logger.e('Session token read error: $e');
+      }
+    }
+    if (access != null &&
+        access.isNotEmpty &&
+        !jwtIsExpired(access, DateTime.now())) {
+      _jwtToken = access;
+      if (_currentUser == null) {
+        return _verifyStored(access);
+      }
+      return true;
+    }
+    if (!await hasRefreshTokenFlag()) return false;
+    final refreshed = await refreshSession();
+    if (!refreshed) return false;
+    final next = _jwtToken;
+    if (next == null || next.isEmpty) return false;
+    if (_currentUser == null) return _verifyStored(next);
+    return true;
+  }
+
+  /// When the access token is past its expiry, refresh it. A biometric
+  /// gate runs before the refresh token is read. Cancel keeps that token.
+  Future<SessionKeep> keepSessionAlive({required bool promptBiometric}) async {
+    final memory = _jwtToken;
+    if (memory != null &&
+        memory.isNotEmpty &&
+        !jwtIsExpired(memory, DateTime.now())) {
+      return SessionKeep.stay;
+    }
+    if (promptBiometric && _biometricDeclined) return SessionKeep.idle;
+
+    final gate = promptBiometric && await shouldGateOnBiometric();
+    if (gate) {
+      final unlocked = await unlockWithBiometric();
+      if (!unlocked) {
+        _biometricDeclined = true;
+        await _dropUnlockedAccess();
+        return SessionKeep.login;
+      }
+    } else {
+      final hasRefresh = await hasRefreshTokenFlag();
+      if (!hasSession && !hasRefresh && (memory == null || memory.isEmpty)) {
+        return SessionKeep.idle;
+      }
+    }
+
+    final restored = await _restoreAccess();
+    if (!restored) {
+      await _clearStoredSession();
+      return SessionKeep.login;
+    }
+    if (gate) {
+      _biometricEntry = true;
+      notifyListeners();
+    }
+    return SessionKeep.stay;
+  }
+
+  // Load stored token and verify user (real API POST /api/auth/verify-token).
+  // Biometric unlock, when enabled, runs before the refresh token is read.
+  Future<void> loadStoredToken() async {
+    final epoch = _sessionEpoch;
+    try {
+      final gate = await shouldGateOnBiometric();
+      if (epoch != _sessionEpoch) return;
+      if (gate) {
+        final unlocked = await unlockWithBiometric();
+        if (epoch != _sessionEpoch) return;
+        if (!unlocked) {
+          _biometricDeclined = true;
+          return;
+        }
+      }
+      String? stored;
+      try {
+        stored = await readToken();
+      } catch (e) {
+        logger.e('Error loading stored token: $e');
+        return;
+      }
+      if (epoch != _sessionEpoch) return;
+      final expired =
+          stored == null || stored.isEmpty || jwtIsExpired(stored, DateTime.now());
+      if (expired) {
+        final hasRefresh = await hasRefreshTokenFlag();
+        if (!hasRefresh) {
+          if (stored != null && stored.isNotEmpty) {
+            await clearExpiredSession();
+          } else {
+            logger.i('No stored token—user not logged in');
+          }
+          return;
+        }
+        final refreshed = await refreshSession();
+        if (epoch != _sessionEpoch) return;
+        if (!refreshed) {
+          await _clearStoredSession();
+          return;
+        }
+        stored = _jwtToken;
+      }
+      if (stored == null || stored.isEmpty) return;
+      if (epoch != _sessionEpoch) return;
+      final verified = await _verifyStored(stored);
+      if (epoch != _sessionEpoch) return;
+      if (!verified) {
         logger.i('Token invalid—clearing');
-        await logout(); // Clear invalid token
+        await logout();
+        return;
+      }
+      if (gate) {
+        _biometricEntry = true;
+        notifyListeners();
       }
     } catch (e) {
       if (epoch != _sessionEpoch) return;
       logger.e('Error loading stored token: $e');
-      await logout(); // Clear on error
+      await logout();
     }
   }
 
@@ -356,7 +620,7 @@ class UserProvider extends ChangeNotifier {
       final token = _jwtToken;
       if (token == null) throw Exception('No token—log in first');
 
-      final response = await http
+      final response = await api
           .patch(
             Uri.parse(
               (backendBaseUrl) +
@@ -375,6 +639,8 @@ class UserProvider extends ChangeNotifier {
         _currentUser = User.fromJson(data['user']); // Reload updated user
         notifyListeners();
         logger.i('User updated from backend');
+      } else if (response.statusCode == 401) {
+        return;
       } else {
         throw Exception('Failed to update user: ${response.statusCode}');
       }

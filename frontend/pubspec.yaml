@@ -34,6 +34,7 @@ dependencies:
   shared_preferences: ^2.3.2  # Add this for local settings storage
   http: ^1.2.1      # API calls
   flutter_secure_storage: ^9.2.2  # Store JWT tokens
+  local_auth: ^2.3.0  # Fingerprint and face unlock on mobile
   sqflite: ^2.3.3   # Local DB caching
   socket_io_client: ^3.1.2  # Real-time
   intl: ^0.20.2     # Dates/formatting

@@ -7,6 +7,7 @@ const String backendBaseUrl = String.fromEnvironment(
 // API paths (append to backendBaseUrl)
 const String apiAuthLogin = '/api/auth/login';
 const String apiAuthLogout = "/api/auth/logout";
+const String apiAuthRefresh = '/api/auth/refresh';
 const String apiAuthRegister = '/api/auth/register';
 const String apiAuthVerifyToken =
     '/api/auth/verify-token'; // Added for token validation
