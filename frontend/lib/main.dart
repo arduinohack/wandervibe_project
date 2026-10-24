@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'biometric_unlock.dart';
 import 'providers/user_provider.dart';
 import 'providers/invitation_provider.dart';
 import 'providers/plan_provider.dart';
+import 'screens/cold_start_gate.dart';
 import 'screens/login_screen.dart'; // Login if no token
 import 'screens/signup_screen.dart';
 import 'session_resume.dart';
@@ -15,8 +17,13 @@ void main() {
     MultiProvider(
       providers: [
         ChangeNotifierProvider(
-          create: (context) => UserProvider()..loadStoredToken(),
-        ), // Load token on start
+          create: (context) {
+            final user = UserProvider();
+            // Mobile waits until the activity can show the system prompt.
+            if (!mobileBiometricPlatform) user.loadStoredToken();
+            return user;
+          },
+        ),
         ChangeNotifierProvider(create: (_) => InvitationProvider()),
         ChangeNotifierProvider(create: (_) => PlanProvider()),
       ],
@@ -50,7 +57,9 @@ class MyApp extends StatelessWidget {
           foregroundColor: colorScheme.onPrimary,
         ),
       ),
-      home: const LoginScreen(), // Always start with LoginScreen (no auto-stub)
+      home: mobileBiometricPlatform
+          ? const ColdStartGate()
+          : const LoginScreen(),
       routes: {
         '/signup': (context) {
           final email = Uri.base.queryParameters['email'];

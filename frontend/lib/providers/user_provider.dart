@@ -22,6 +22,7 @@ class UserProvider extends ChangeNotifier {
   int _sessionEpoch = 0;
   bool _biometricEntry = false;
   bool _biometricDeclined = false;
+  bool _coldStartSettled = false;
 
   UserProvider() {
     onSessionRefreshed = (access) {
@@ -29,6 +30,7 @@ class UserProvider extends ChangeNotifier {
       notifyListeners();
     };
     onSessionEnded = _handleSessionEnded;
+    if (!mobileBiometricPlatform) _coldStartSettled = true;
   }
 
   void _handleSessionEnded() {
@@ -52,6 +54,10 @@ class UserProvider extends ChangeNotifier {
   }
 
   bool get biometricDeclined => _biometricDeclined;
+
+  /// False until the mobile cold-start prompt has finished. Web and desktop
+  /// start settled so session resume is unchanged.
+  bool get coldStartSettled => _coldStartSettled;
 
   void noteAppResumed() {
     _biometricDeclined = false;
@@ -361,22 +367,15 @@ class UserProvider extends ChangeNotifier {
     logger.i('Expired session cleared');
   }
 
-  /// Drops the in-memory session and the access token. Keeps the refresh
-  /// token and the biometric preference so the next unlock can try again.
-  Future<void> _dropUnlockedAccess() async {
-    final epoch = ++_sessionEpoch;
+  /// Drops the in-memory session. Keeps both stored tokens and the biometric
+  /// preference so a cancelled prompt can try again.
+  void _forgetUnlockedMemory() {
     _jwtToken = null;
     currentUserId = null;
     _currentUserRole = null;
     _currentUser = null;
     _biometricEntry = false;
     notifyListeners();
-    if (epoch != _sessionEpoch) return;
-    try {
-      await deleteToken();
-    } catch (e) {
-      logger.e('Unlock cancel token delete error: $e');
-    }
   }
 
   /// Drops both tokens. Keeps the biometric preference.
@@ -453,9 +452,14 @@ class UserProvider extends ChangeNotifier {
       }
       return true;
     }
-    if (!await hasRefreshTokenFlag()) return false;
-    final refreshed = await refreshSession();
-    if (!refreshed) return false;
+    if (!await refreshTokenPresent()) return false;
+    final outcome = await refreshSessionOutcome();
+    logger.i('Session refresh result=$outcome');
+    if (outcome == RefreshOutcome.unauthorized) {
+      await _clearStoredSession();
+      return false;
+    }
+    if (outcome != RefreshOutcome.refreshed) return false;
     final next = _jwtToken;
     if (next == null || next.isEmpty) return false;
     if (_currentUser == null) return _verifyStored(next);
@@ -463,7 +467,7 @@ class UserProvider extends ChangeNotifier {
   }
 
   /// When the access token is past its expiry, refresh it. A biometric
-  /// gate runs before the refresh token is read. Cancel keeps that token.
+  /// gate runs first. Cancel keeps both stored tokens and the preference.
   Future<SessionKeep> keepSessionAlive({required bool promptBiometric}) async {
     final memory = _jwtToken;
     if (memory != null &&
@@ -476,13 +480,14 @@ class UserProvider extends ChangeNotifier {
     final gate = promptBiometric && await shouldGateOnBiometric();
     if (gate) {
       final unlocked = await unlockWithBiometric();
+      logger.i('Resume authenticate result=$unlocked');
       if (!unlocked) {
         _biometricDeclined = true;
-        await _dropUnlockedAccess();
+        _forgetUnlockedMemory();
         return SessionKeep.login;
       }
     } else {
-      final hasRefresh = await hasRefreshTokenFlag();
+      final hasRefresh = await refreshTokenPresent();
       if (!hasSession && !hasRefresh && (memory == null || memory.isEmpty)) {
         return SessionKeep.idle;
       }
@@ -490,7 +495,6 @@ class UserProvider extends ChangeNotifier {
 
     final restored = await _restoreAccess();
     if (!restored) {
-      await _clearStoredSession();
       return SessionKeep.login;
     }
     if (gate) {
@@ -501,20 +505,10 @@ class UserProvider extends ChangeNotifier {
   }
 
   // Load stored token and verify user (real API POST /api/auth/verify-token).
-  // Biometric unlock, when enabled, runs before the refresh token is read.
+  // Does not prompt. Mobile cold start prompts in [unlockOnColdStart] first.
   Future<void> loadStoredToken() async {
     final epoch = _sessionEpoch;
     try {
-      final gate = await shouldGateOnBiometric();
-      if (epoch != _sessionEpoch) return;
-      if (gate) {
-        final unlocked = await unlockWithBiometric();
-        if (epoch != _sessionEpoch) return;
-        if (!unlocked) {
-          _biometricDeclined = true;
-          return;
-        }
-      }
       String? stored;
       try {
         stored = await readToken();
@@ -526,22 +520,27 @@ class UserProvider extends ChangeNotifier {
       final expired =
           stored == null || stored.isEmpty || jwtIsExpired(stored, DateTime.now());
       if (expired) {
-        final hasRefresh = await hasRefreshTokenFlag();
+        final hasRefresh = await refreshTokenPresent();
         if (!hasRefresh) {
           if (stored != null && stored.isNotEmpty) {
             await clearExpiredSession();
           } else {
             logger.i('No stored token—user not logged in');
           }
+          logger.i('Stored session refresh result=skipped');
           return;
         }
-        final refreshed = await refreshSession();
+        final outcome = await refreshSessionOutcome();
+        logger.i('Stored session refresh result=$outcome');
         if (epoch != _sessionEpoch) return;
-        if (!refreshed) {
+        if (outcome == RefreshOutcome.unauthorized) {
           await _clearStoredSession();
           return;
         }
+        if (outcome != RefreshOutcome.refreshed) return;
         stored = _jwtToken;
+      } else {
+        logger.i('Stored session refresh result=skipped');
       }
       if (stored == null || stored.isEmpty) return;
       if (epoch != _sessionEpoch) return;
@@ -552,14 +551,66 @@ class UserProvider extends ChangeNotifier {
         await logout();
         return;
       }
-      if (gate) {
-        _biometricEntry = true;
-        notifyListeners();
-      }
     } catch (e) {
       if (epoch != _sessionEpoch) return;
       logger.e('Error loading stored token: $e');
       await logout();
+    }
+  }
+
+  /// Mobile cold start. Reads the biometric flag and the refresh token,
+  /// prompts before navigation when both say to, then refreshes. Returns
+  /// true when the plan list should open. Cancel keeps the tokens and the flag.
+  Future<bool> unlockOnColdStart() async {
+    final epoch = _sessionEpoch;
+    try {
+      final enabled = await biometricEnabled();
+      final refreshPresent = await refreshTokenPresent();
+      logger.i(
+        'Cold start biometric flag=$enabled refreshPresent=$refreshPresent',
+      );
+      if (epoch != _sessionEpoch) return false;
+      final prompt = coldStartNeedsBiometric(
+        mobile: mobileBiometricPlatform,
+        enabled: enabled,
+        refreshPresent: refreshPresent,
+      );
+      if (!prompt) {
+        logger.i('Cold start authenticate result=skipped');
+        await loadStoredToken();
+        return false;
+      }
+      final unlocked = await unlockWithBiometric();
+      logger.i('Cold start authenticate result=$unlocked');
+      if (epoch != _sessionEpoch) return false;
+      if (!unlocked) {
+        _biometricDeclined = true;
+        logger.i('Cold start refresh result=skipped');
+        return false;
+      }
+      final outcome = await refreshSessionOutcome();
+      logger.i('Cold start refresh result=$outcome');
+      if (epoch != _sessionEpoch) return false;
+      if (outcome == RefreshOutcome.unauthorized) {
+        await _clearStoredSession();
+        return false;
+      }
+      if (outcome != RefreshOutcome.refreshed) return false;
+      final stored = _jwtToken;
+      if (stored == null || stored.isEmpty) return false;
+      final verified = await _verifyStored(stored);
+      if (epoch != _sessionEpoch) return false;
+      if (!verified) {
+        logger.i('Cold start verify result=false');
+        return false;
+      }
+      return true;
+    } catch (e) {
+      if (epoch != _sessionEpoch) return false;
+      logger.e('Cold start error: $e');
+      return false;
+    } finally {
+      _coldStartSettled = true;
     }
   }
 

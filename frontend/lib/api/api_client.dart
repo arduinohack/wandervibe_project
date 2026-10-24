@@ -44,9 +44,12 @@ Future<http.Response> _withRefresh(
   if (response.statusCode != 401 || _exempt(url) || !_hasBearer(headers)) {
     return response;
   }
-  final ok = await refreshSession();
-  if (!ok) {
+  final outcome = await refreshSessionOutcome();
+  if (outcome == RefreshOutcome.unauthorized) {
     await _abandonSession();
+    return response;
+  }
+  if (outcome != RefreshOutcome.refreshed) {
     return response;
   }
   final token = await readToken();

@@ -41,8 +41,8 @@ Future<void> deleteToken() async {
   await _secureStorage.delete(key: _tokenKey);
 }
 
-// The has-refresh flag is not the secret. Cold start can decide to prompt
-// biometrics before secure storage is read.
+// The has-refresh flag is not the secret. Cold start reads the refresh
+// token itself before it decides to prompt.
 Future<void> writeRefreshToken(String value) async {
   if (kIsWeb) {
     final prefs = await SharedPreferences.getInstance();

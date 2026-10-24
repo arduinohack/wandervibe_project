@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:local_auth/local_auth.dart';
 
 import 'storage/token_store.dart';
@@ -18,10 +19,31 @@ bool get mobileBiometricPlatform {
   }
 }
 
+/// True when a cold start must show the system prompt before login.
+/// Web and desktop are never gated. A missing refresh token is not gated.
+bool coldStartNeedsBiometric({
+  required bool mobile,
+  required bool enabled,
+  required bool refreshPresent,
+}) {
+  return mobile && enabled && refreshPresent;
+}
+
+Future<bool> refreshTokenPresent() async {
+  try {
+    final value = await readRefreshToken();
+    return value != null && value.isNotEmpty;
+  } catch (e) {
+    logger.e('Refresh token read error: $e');
+    return false;
+  }
+}
+
 Future<bool> shouldGateOnBiometric() async {
   if (!mobileBiometricPlatform) return false;
-  if (!await biometricEnabled()) return false;
-  return hasRefreshTokenFlag();
+  final enabled = await biometricEnabled();
+  if (!enabled) return false;
+  return refreshTokenPresent();
 }
 
 Future<bool> deviceCanUnlockWithBiometrics() async {
@@ -53,15 +75,22 @@ Future<bool> unlockWithBiometric() {
 Future<bool> _unlockOnce() async {
   try {
     final auth = LocalAuthentication();
-    return await auth.authenticate(
+    final unlocked = await auth.authenticate(
       localizedReason: 'Unlock PlanItVibe',
       options: const AuthenticationOptions(
         biometricOnly: true,
         stickyAuth: true,
       ),
     );
+    logger.i('Biometric authenticate result=$unlocked');
+    return unlocked;
+  } on PlatformException catch (e) {
+    logger.e('Biometric error code=${e.code} message=${e.message}');
+    logger.i('Biometric authenticate result=false');
+    return false;
   } catch (e) {
     logger.e('Biometric error: $e');
+    logger.i('Biometric authenticate result=false');
     return false;
   }
 }
@@ -73,6 +102,7 @@ Future<void> offerBiometricUnlock(BuildContext context) async {
   if (await biometricPrompted()) return;
   final can = await deviceCanUnlockWithBiometrics();
   await markBiometricPrompted();
+  logger.i('Biometric offer deviceCan=$can');
   if (!can || !context.mounted) return;
   final enable = await showDialog<bool>(
     context: context,
@@ -93,6 +123,12 @@ Future<void> offerBiometricUnlock(BuildContext context) async {
     },
   );
   if (enable == true) {
+    final stillCan = await deviceCanUnlockWithBiometrics();
+    logger.i('Biometric enable deviceCan=$stillCan');
+    if (!stillCan) return;
     await setBiometricEnabled(true);
+    logger.i('Biometric enable flag=true');
+  } else {
+    logger.i('Biometric enable flag=false');
   }
 }

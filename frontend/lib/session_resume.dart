@@ -28,6 +28,8 @@ class _SessionResumeState extends State<SessionResume>
     with WidgetsBindingObserver {
   bool _checking = false;
   bool _openingLogin = false;
+  bool _leftApp = false;
+  bool _pausedDuringColdStart = false;
   SessionEndedCallback? _previousEnded;
 
   @override
@@ -64,7 +66,27 @@ class _SessionResumeState extends State<SessionResume>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
+    if (!mounted) return;
+    final user = Provider.of<UserProvider>(context, listen: false);
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached) {
+      if (user.coldStartSettled) {
+        _leftApp = true;
+      } else {
+        _pausedDuringColdStart = true;
+      }
+      return;
+    }
+    if (state != AppLifecycleState.resumed) return;
+    // The fingerprint sheet can pause and resume the activity. That resume
+    // is not a return from the background, so it does not prompt again.
+    if (_pausedDuringColdStart) {
+      _pausedDuringColdStart = false;
+      return;
+    }
+    if (_leftApp) {
+      _leftApp = false;
       _checkSession(fromResume: true);
     }
   }
@@ -72,6 +94,7 @@ class _SessionResumeState extends State<SessionResume>
   Future<void> _checkSession({required bool fromResume}) async {
     if (_checking || !mounted) return;
     final user = Provider.of<UserProvider>(context, listen: false);
+    if (!user.coldStartSettled) return;
     if (fromResume) {
       user.noteAppResumed();
     } else if (user.biometricDeclined) {
