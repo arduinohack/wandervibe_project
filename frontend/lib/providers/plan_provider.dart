@@ -382,11 +382,19 @@ class PlaceSuggestion {
   final String placeId;
   final String name;
   final String address;
+  final double? rating;
+  final String priceLevel;
+  final List<String> types;
+  final String summary;
 
   const PlaceSuggestion({
     required this.placeId,
     required this.name,
     this.address = '',
+    this.rating,
+    this.priceLevel = '',
+    this.types = const [],
+    this.summary = '',
   });
 }
 
@@ -1631,6 +1639,77 @@ class PlanProvider extends ChangeNotifier {
     } catch (e) {
       logger.e('Error searching places: $e');
       return const PlaceSearchResult(error: 'Could not search places');
+    }
+  }
+
+  /// POST /api/plans/:planId/suggest. 200 is a short list of place options.
+  Future<PlaceSearchResult> suggestActivityPlaces({
+    required String planId,
+    required String query,
+    String? activityType,
+    String? location,
+    required String? token,
+  }) async {
+    try {
+      if (token == null || token.isEmpty) {
+        return const PlaceSearchResult(status: 401);
+      }
+      final body = <String, String>{'query': query.trim()};
+      final type = activityType?.trim() ?? '';
+      final place = location?.trim() ?? '';
+      if (type.isNotEmpty) body['activityType'] = type;
+      if (place.isNotEmpty) body['location'] = place;
+      final response = await http.post(
+        Uri.parse(
+          backendBaseUrl + apiPlanSuggest.replaceAll('{planId}', planId),
+        ),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode(body),
+      );
+      if (response.statusCode != 200) {
+        return PlaceSearchResult(
+          status: response.statusCode,
+          error: _apiErrorMessage(response.body),
+        );
+      }
+      final data = json.decode(response.body);
+      if (data is! List) {
+        return const PlaceSearchResult(status: 200);
+      }
+      final places = <PlaceSuggestion>[];
+      for (final item in data) {
+        if (item is! Map) continue;
+        final placeId = (item['placeId'] ?? '').toString().trim();
+        final name = (item['name'] ?? '').toString().trim();
+        if (placeId.isEmpty || name.isEmpty) continue;
+        final rawRating = item['rating'];
+        final rawTypes = item['types'];
+        final types = <String>[];
+        if (rawTypes is List) {
+          for (final typeName in rawTypes) {
+            final text = typeName.toString().trim();
+            if (text.isNotEmpty) types.add(text);
+          }
+        }
+        places.add(
+          PlaceSuggestion(
+            placeId: placeId,
+            name: name,
+            address: (item['address'] ?? '').toString().trim(),
+            rating: rawRating is num ? rawRating.toDouble() : null,
+            priceLevel: (item['priceLevel'] ?? '').toString().trim(),
+            types: types,
+            summary: (item['summary'] ?? '').toString().trim(),
+          ),
+        );
+      }
+      return PlaceSearchResult(status: 200, places: places);
+    } catch (e) {
+      logger.e('Error suggesting places: $e');
+      return const PlaceSearchResult(error: 'Could not suggest places');
     }
   }
 

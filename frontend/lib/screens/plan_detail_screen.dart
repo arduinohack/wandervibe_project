@@ -17,6 +17,7 @@ import '../providers/user_provider.dart';
 import '../utils/activity_chain.dart';
 import '../utils/activity_time.dart';
 import '../utils/logger.dart';
+import '../utils/place_suggestion_fill.dart';
 import '../utils/plan_pdf.dart';
 import 'activity_history_screen.dart';
 import 'login_screen.dart';
@@ -1443,6 +1444,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
       builder: (context) => _ActivityFormDialog(
         title: 'Add activity',
         actionLabel: 'Add',
+        planId: widget.plan.id,
         planTimeZone: _shownPlan(planProvider).timeZone,
         initialStart: openingStart,
         initialEnd: openingEnd,
@@ -2618,6 +2620,190 @@ List<String> activityTypeChoices(String selected) {
   return [selected, ...sorted];
 }
 
+const _suggestPlaceTypes = <String, String>{
+  'dining': 'Dining',
+  'hotel': 'Hotel',
+  'attraction': 'Attraction',
+  'tour': 'Tour',
+};
+
+String _suggestionPriceLabel(String priceLevel) {
+  switch (priceLevel) {
+    case 'PRICE_LEVEL_FREE':
+      return 'Free';
+    case 'PRICE_LEVEL_INEXPENSIVE':
+      return r'$';
+    case 'PRICE_LEVEL_MODERATE':
+      return r'$$';
+    case 'PRICE_LEVEL_EXPENSIVE':
+      return r'$$$';
+    case 'PRICE_LEVEL_VERY_EXPENSIVE':
+      return r'$$$$';
+    default:
+      return '';
+  }
+}
+
+class _SuggestPlacesSheet extends StatefulWidget {
+  final String planId;
+  final String location;
+  final String initialType;
+
+  const _SuggestPlacesSheet({
+    required this.planId,
+    required this.location,
+    required this.initialType,
+  });
+
+  @override
+  State<_SuggestPlacesSheet> createState() => _SuggestPlacesSheetState();
+}
+
+class _SuggestPlacesSheetState extends State<_SuggestPlacesSheet> {
+  final _queryController = TextEditingController();
+  String? _type;
+  var _loading = false;
+  String? _error;
+  List<PlaceSuggestion> _places = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    final initial = widget.initialType.trim().toLowerCase();
+    if (_suggestPlaceTypes.containsKey(initial)) _type = initial;
+  }
+
+  @override
+  void dispose() {
+    _queryController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _search() async {
+    final query = _queryController.text.trim();
+    if (query.isEmpty || _loading) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+      _places = const [];
+    });
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final result = await planProvider.suggestActivityPlaces(
+      planId: widget.planId,
+      query: query,
+      activityType: _type,
+      location: widget.location,
+      token: userProvider.token,
+    );
+    if (!mounted) return;
+    if (result.status == 401) {
+      Navigator.pop(context, 'unauthorized');
+      return;
+    }
+    if (result.status != 200) {
+      setState(() {
+        _loading = false;
+        _error = result.error ?? 'Could not suggest places';
+      });
+      return;
+    }
+    setState(() {
+      _loading = false;
+      _places = result.places;
+      _error = result.places.isEmpty ? 'No places found' : null;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.viewInsetsOf(context).bottom;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + bottom),
+      child: SizedBox(
+        height: MediaQuery.sizeOf(context).height * 0.7,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'Suggest a place',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _queryController,
+              decoration: const InputDecoration(
+                labelText: 'What are you looking for?',
+              ),
+              textInputAction: TextInputAction.search,
+              onSubmitted: (_) => _search(),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final entry in _suggestPlaceTypes.entries)
+                  FilterChip(
+                    label: Text(entry.value),
+                    selected: _type == entry.key,
+                    onSelected: (selected) {
+                      setState(() => _type = selected ? entry.key : null);
+                    },
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                onPressed: _loading ? null : _search,
+                child: const Text('Find places'),
+              ),
+            ),
+            if (_loading) const LinearProgressIndicator(),
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  _error!,
+                  style: const TextStyle(color: Colors.red),
+                ),
+              ),
+            Expanded(
+              child: ListView(
+                children: [
+                  for (final place in _places)
+                    ListTile(
+                      title: Text(place.name),
+                      subtitle: Text(_suggestionLines(place)),
+                      onTap: () => Navigator.pop(context, place),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _suggestionLines(PlaceSuggestion place) {
+    final lines = <String>[];
+    final rating = place.rating;
+    final price = _suggestionPriceLabel(place.priceLevel);
+    if (rating != null || price.isNotEmpty) {
+      final bits = <String>[
+        if (rating != null) rating.toStringAsFixed(1),
+        if (price.isNotEmpty) price,
+      ];
+      lines.add(bits.join(' · '));
+    }
+    if (place.address.isNotEmpty) lines.add(place.address);
+    if (place.summary.isNotEmpty) lines.add(place.summary);
+    return lines.join('\n');
+  }
+}
+
 class _ActivityFormDialog extends StatefulWidget {
   final String title;
   final String actionLabel;
@@ -3760,6 +3946,43 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     });
   }
 
+  Future<void> _openSuggest() async {
+    final planId = widget.planId?.trim() ?? '';
+    if (planId.isEmpty) return;
+    final picked = await showModalBottomSheet<Object>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => _SuggestPlacesSheet(
+        planId: planId,
+        location: _locationController.text.trim(),
+        initialType: _type,
+      ),
+    );
+    if (!mounted || picked == null) return;
+    if (picked == 'unauthorized') {
+      await _endSession();
+      return;
+    }
+    if (picked is! PlaceSuggestion) return;
+    final filled = fillActivityFromSuggestion(
+      currentName: _nameController.text,
+      currentLocation: _locationController.text,
+      currentDetails: _detailsController.text,
+      placeName: picked.name,
+      address: picked.address,
+      placeId: picked.placeId,
+      summary: picked.summary,
+    );
+    setState(() {
+      _nameController.text = filled.name;
+      if (filled.setLocation) _locationController.text = filled.location;
+      if (filled.googlePlaceId.isNotEmpty) {
+        _googlePlaceIdController.text = filled.googlePlaceId;
+      }
+      _detailsController.text = filled.details;
+    });
+  }
+
   void _selectPlace(PlaceSuggestion place) {
     final selection = applyPlaceSelection(
       location: _locationController.text,
@@ -4209,6 +4432,14 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              if ((widget.planId ?? '').trim().isNotEmpty)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton(
+                    onPressed: _openSuggest,
+                    child: const Text('Suggest'),
+                  ),
+                ),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [

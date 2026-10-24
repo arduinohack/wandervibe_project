@@ -28,6 +28,7 @@ const {
 } = require('../utils/csvPlanImport');
 const { readExportQuery, buildPlanExport } = require('../utils/planExport');
 const { fetchPlaceMapPng } = require('../utils/placeMap');
+const { suggestPlaces } = require('../utils/placeSuggest');
 const { findActivityWithPlace } = require('../utils/activityPlace');
 const { spansByPlanId } = require('../utils/activityDateSpan');
 const router = express.Router();
@@ -1127,6 +1128,44 @@ function budgetField(body) {
   }
   return { present: true, value };
 }
+
+// POST /api/plans/:planId/suggest
+// Owner or Collaborator. Reads Places and does not write the plan or its activities.
+// The request log records this call.
+router.post('/:planId/suggest', authMiddleware, async (req, res) => {
+  const planId = String(req.params.planId || '');
+  try {
+    const plan = await Plan.findById(planId);
+    if (!plan) {
+      return res.status(404).json({ message: 'Plan not found' });
+    }
+
+    const callerId = req.user.userId || req.user.id;
+    const role = await callerPlanRole(plan, callerId);
+    if (role !== 'Owner' && role !== 'Collaborator') {
+      return res.status(403).json({
+        message: 'Only Owner or Collaborator can suggest places',
+      });
+    }
+
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+      ? req.body
+      : {};
+    const result = await suggestPlaces({
+      query: body.query,
+      activityType: body.activityType,
+      location: body.location,
+      destination: plan.destination,
+    });
+    if (result.status !== 200) {
+      return res.status(result.status).json({ message: result.msg });
+    }
+    return res.json(result.places);
+  } catch (err) {
+    console.error('Place suggest error:', err);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
 
 // PUT /api/plans/:planId
 // Owner or Collaborator may edit name, destination, budget, dates, and time zone.
