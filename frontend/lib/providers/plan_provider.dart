@@ -383,6 +383,7 @@ class PlaceSuggestion {
   final String name;
   final String address;
   final double? rating;
+  final int? reviewCount;
   final String priceLevel;
   final List<String> types;
   final String summary;
@@ -392,6 +393,7 @@ class PlaceSuggestion {
     required this.name,
     this.address = '',
     this.rating,
+    this.reviewCount,
     this.priceLevel = '',
     this.types = const [],
     this.summary = '',
@@ -1686,6 +1688,7 @@ class PlanProvider extends ChangeNotifier {
         final name = (item['name'] ?? '').toString().trim();
         if (placeId.isEmpty || name.isEmpty) continue;
         final rawRating = item['rating'];
+        final rawCount = item['reviewCount'];
         final rawTypes = item['types'];
         final types = <String>[];
         if (rawTypes is List) {
@@ -1700,6 +1703,9 @@ class PlanProvider extends ChangeNotifier {
             name: name,
             address: (item['address'] ?? '').toString().trim(),
             rating: rawRating is num ? rawRating.toDouble() : null,
+            reviewCount: rawCount is num && rawCount.isFinite && rawCount >= 0
+                ? rawCount.round()
+                : null,
             priceLevel: (item['priceLevel'] ?? '').toString().trim(),
             types: types,
             summary: (item['summary'] ?? '').toString().trim(),

@@ -157,6 +157,7 @@ describe('POST /api/plans/:planId/suggest', () => {
         name: 'Cafe Paris',
         address: 'Paris, France',
         rating: 4.6,
+        reviewCount: 120,
         priceLevel: 'PRICE_LEVEL_MODERATE',
         types: ['restaurant', 'food'],
       },

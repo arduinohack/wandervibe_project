@@ -112,8 +112,13 @@ function placeIdOf(place) {
 
 function priceLevelOf(value) {
   const text = String(value || '').trim();
-  if (!text || text === 'PRICE_LEVEL_UNSPECIFIED') return '';
+  if (!text || text === 'PRICE_LEVEL_UNSPECIFIED') return null;
   return text;
+}
+
+function reviewCountOf(value) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return null;
+  return Math.round(value);
 }
 
 function typesOf(value) {
@@ -141,6 +146,7 @@ function rowFromPlace(place) {
     name,
     address: String(place.formattedAddress || '').trim(),
     rating,
+    reviewCount: reviewCountOf(place.userRatingCount),
     priceLevel: priceLevelOf(place.priceLevel),
     types: typesOf(place.types),
   };

@@ -18,6 +18,7 @@ import '../utils/activity_chain.dart';
 import '../utils/activity_time.dart';
 import '../utils/logger.dart';
 import '../utils/place_suggestion_fill.dart';
+import '../utils/place_suggestion_lines.dart';
 import '../utils/plan_pdf.dart';
 import 'activity_history_screen.dart';
 import 'login_screen.dart';
@@ -2627,23 +2628,6 @@ const _suggestPlaceTypes = <String, String>{
   'tour': 'Tour',
 };
 
-String _suggestionPriceLabel(String priceLevel) {
-  switch (priceLevel) {
-    case 'PRICE_LEVEL_FREE':
-      return 'Free';
-    case 'PRICE_LEVEL_INEXPENSIVE':
-      return r'$';
-    case 'PRICE_LEVEL_MODERATE':
-      return r'$$';
-    case 'PRICE_LEVEL_EXPENSIVE':
-      return r'$$$';
-    case 'PRICE_LEVEL_VERY_EXPENSIVE':
-      return r'$$$$';
-    default:
-      return '';
-  }
-}
-
 class _SuggestPlacesSheet extends StatefulWidget {
   final String planId;
   final String location;
@@ -2788,19 +2772,13 @@ class _SuggestPlacesSheetState extends State<_SuggestPlacesSheet> {
   }
 
   String _suggestionLines(PlaceSuggestion place) {
-    final lines = <String>[];
-    final rating = place.rating;
-    final price = _suggestionPriceLabel(place.priceLevel);
-    if (rating != null || price.isNotEmpty) {
-      final bits = <String>[
-        if (rating != null) rating.toStringAsFixed(1),
-        if (price.isNotEmpty) price,
-      ];
-      lines.add(bits.join(' · '));
-    }
-    if (place.address.isNotEmpty) lines.add(place.address);
-    if (place.summary.isNotEmpty) lines.add(place.summary);
-    return lines.join('\n');
+    return suggestionListSubtitle(
+      rating: place.rating,
+      reviewCount: place.reviewCount,
+      priceLevel: place.priceLevel,
+      address: place.address,
+      summary: place.summary,
+    );
   }
 }
 
