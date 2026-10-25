@@ -42,3 +42,28 @@ String suggestionReviewLabel(int count) {
   if (count == 1) return '1 review';
   return '$count reviews';
 }
+
+const suggestTypeQueryWords = <String, String>{
+  'dining': 'restaurant',
+  'hotel': 'hotel',
+  'attraction': 'attraction',
+  'tour': 'tour',
+};
+
+/// The text sent to place suggest. Null means the sheet has nothing to search.
+String? suggestSearchQuery({
+  required String typed,
+  String? activityType,
+  String location = '',
+  String destination = '',
+}) {
+  final text = typed.trim();
+  if (text.isNotEmpty) return text;
+  final word = suggestTypeQueryWords[activityType?.trim().toLowerCase() ?? ''];
+  if (word == null || word.isEmpty) return null;
+  final supplied = location.trim();
+  final place = supplied.isNotEmpty ? supplied : destination.trim();
+  if (place.isEmpty) return word;
+  if (word.toLowerCase().contains(place.toLowerCase())) return word;
+  return '$word in $place';
+}

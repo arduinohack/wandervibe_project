@@ -31,4 +31,58 @@ void main() {
       '1 review · Free',
     );
   });
+
+  test('an empty dining search uses restaurant and the form location', () {
+    expect(
+      suggestSearchQuery(
+        typed: '  ',
+        activityType: 'dining',
+        location: 'Rome',
+        destination: 'Paris',
+      ),
+      'restaurant in Rome',
+    );
+  });
+
+  test('an empty hotel search uses the plan destination', () {
+    expect(
+      suggestSearchQuery(
+        typed: '',
+        activityType: 'hotel',
+        destination: 'Paris',
+      ),
+      'hotel in Paris',
+    );
+  });
+
+  test('an empty attraction or tour search uses that word', () {
+    expect(
+      suggestSearchQuery(typed: '', activityType: 'attraction'),
+      'attraction',
+    );
+    expect(
+      suggestSearchQuery(
+        typed: '',
+        activityType: 'tour',
+        location: 'Lisbon',
+      ),
+      'tour in Lisbon',
+    );
+  });
+
+  test('typed text is sent as written', () {
+    expect(
+      suggestSearchQuery(
+        typed: 'quiet cafe',
+        activityType: 'dining',
+        location: 'Rome',
+      ),
+      'quiet cafe',
+    );
+  });
+
+  test('an empty query with no chip does not search', () {
+    expect(suggestSearchQuery(typed: '', activityType: 'flight'), isNull);
+    expect(suggestSearchQuery(typed: '   '), isNull);
+  });
 }

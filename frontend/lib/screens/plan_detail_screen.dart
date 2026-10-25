@@ -1447,6 +1447,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
         actionLabel: 'Add',
         planId: widget.plan.id,
         planTimeZone: _shownPlan(planProvider).timeZone,
+        planDestination: _shownPlan(planProvider).destination,
         initialStart: openingStart,
         initialEnd: openingEnd,
         aboveInstant: openingAbove,
@@ -1535,6 +1536,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
           activity: activity,
           planId: widget.plan.id,
           planTimeZone: _shownPlan(planProvider).timeZone,
+          planDestination: _shownPlan(planProvider).destination,
           chainStart: chainStart,
           aboveInstant: aboveInstant,
           fallbackStart: defaultChainStart(
@@ -2631,11 +2633,13 @@ const _suggestPlaceTypes = <String, String>{
 class _SuggestPlacesSheet extends StatefulWidget {
   final String planId;
   final String location;
+  final String destination;
   final String initialType;
 
   const _SuggestPlacesSheet({
     required this.planId,
     required this.location,
+    required this.destination,
     required this.initialType,
   });
 
@@ -2664,8 +2668,23 @@ class _SuggestPlacesSheetState extends State<_SuggestPlacesSheet> {
   }
 
   Future<void> _search() async {
-    final query = _queryController.text.trim();
-    if (query.isEmpty || _loading) return;
+    if (_loading) return;
+    final typed = _queryController.text.trim();
+    final query = suggestSearchQuery(
+      typed: typed,
+      activityType: _type,
+      location: widget.location,
+      destination: widget.destination,
+    );
+    if (query == null) {
+      setState(() {
+        _places = const [];
+        _error = 'Enter what you are looking for or pick a type';
+      });
+      return;
+    }
+    final supplied = widget.location.trim();
+    final place = supplied.isNotEmpty ? supplied : widget.destination.trim();
     setState(() {
       _loading = true;
       _error = null;
@@ -2677,7 +2696,7 @@ class _SuggestPlacesSheetState extends State<_SuggestPlacesSheet> {
       planId: widget.planId,
       query: query,
       activityType: _type,
-      location: widget.location,
+      location: typed.isEmpty ? place : widget.location,
       token: userProvider.token,
     );
     if (!mounted) return;
@@ -2714,10 +2733,15 @@ class _SuggestPlacesSheetState extends State<_SuggestPlacesSheet> {
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
+            const Text(
+              'What are you looking for?',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const SizedBox(height: 4),
             TextField(
               controller: _queryController,
               decoration: const InputDecoration(
-                labelText: 'What are you looking for?',
+                hintText: 'Type a place or a kind of place',
               ),
               textInputAction: TextInputAction.search,
               onSubmitted: (_) => _search(),
@@ -2788,6 +2812,7 @@ class _ActivityFormDialog extends StatefulWidget {
   final Activity? activity;
   final String? planId;
   final String planTimeZone;
+  final String planDestination;
   final DateTime? initialStart;
   final DateTime? initialEnd;
   final DateTime? chainStart;
@@ -2801,6 +2826,7 @@ class _ActivityFormDialog extends StatefulWidget {
     this.activity,
     this.planId,
     this.planTimeZone = '',
+    this.planDestination = '',
     this.initialStart,
     this.initialEnd,
     this.chainStart,
@@ -3933,6 +3959,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       builder: (context) => _SuggestPlacesSheet(
         planId: planId,
         location: _locationController.text.trim(),
+        destination: widget.planDestination.trim(),
         initialType: _type,
       ),
     );
