@@ -719,7 +719,7 @@ int _compareUtcStart(DateTime? left, DateTime? right) {
 const placeSearchDebounce = Duration(milliseconds: 300);
 
 /// What a chosen place writes on the activity form.
-/// [location] is null when the location field already has text.
+/// [location] is the place name, or null when that name is blank.
 class PlaceSelection {
   final String googlePlaceId;
   final String? location;
@@ -742,18 +742,17 @@ String? placeSearchTextFromLocation({
   return next;
 }
 
-/// Sets the Place ID from the chosen place. The location name is filled only
-/// when that field is empty.
+/// Sets the Place ID and copies the place name into the location field.
+/// A blank name leaves the current location alone.
 PlaceSelection applyPlaceSelection({
   required String location,
   required String placeId,
   required String name,
 }) {
-  final current = location.trim();
   final displayName = name.trim();
   return PlaceSelection(
     googlePlaceId: placeId.trim(),
-    location: current.isEmpty && displayName.isNotEmpty ? displayName : null,
+    location: displayName.isEmpty ? null : displayName,
   );
 }
 
@@ -2654,6 +2653,9 @@ class _SuggestPlacesSheetState extends State<_SuggestPlacesSheet> {
   String? _error;
   List<PlaceSuggestion> _places = const [];
 
+  bool get _typeIsFixed =>
+      _suggestPlaceTypes.containsKey(widget.initialType.trim().toLowerCase());
+
   @override
   void initState() {
     super.initState();
@@ -2670,12 +2672,19 @@ class _SuggestPlacesSheetState extends State<_SuggestPlacesSheet> {
   Future<void> _search() async {
     if (_loading) return;
     final typed = _queryController.text.trim();
-    final query = suggestSearchQuery(
-      typed: typed,
-      activityType: _type,
-      location: widget.location,
-      destination: widget.destination,
-    );
+    final query = _typeIsFixed
+        ? suggestLockedTypeQuery(
+            typed: typed,
+            activityType: _type,
+            location: widget.location,
+            destination: widget.destination,
+          )
+        : suggestSearchQuery(
+            typed: typed,
+            activityType: _type,
+            location: widget.location,
+            destination: widget.destination,
+          );
     if (query == null) {
       setState(() {
         _places = const [];
@@ -2696,7 +2705,7 @@ class _SuggestPlacesSheetState extends State<_SuggestPlacesSheet> {
       planId: widget.planId,
       query: query,
       activityType: _type,
-      location: typed.isEmpty ? place : widget.location,
+      location: _typeIsFixed || typed.isEmpty ? place : widget.location,
       token: userProvider.token,
     );
     if (!mounted) return;
@@ -2747,20 +2756,22 @@ class _SuggestPlacesSheetState extends State<_SuggestPlacesSheet> {
               onSubmitted: (_) => _search(),
             ),
             const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: [
-                for (final entry in _suggestPlaceTypes.entries)
-                  FilterChip(
-                    label: Text(entry.value),
-                    selected: _type == entry.key,
-                    onSelected: (selected) {
-                      setState(() => _type = selected ? entry.key : null);
-                    },
-                  ),
-              ],
-            ),
-            const SizedBox(height: 8),
+            if (!_typeIsFixed) ...[
+              Wrap(
+                spacing: 8,
+                children: [
+                  for (final entry in _suggestPlaceTypes.entries)
+                    FilterChip(
+                      label: Text(entry.value),
+                      selected: _type == entry.key,
+                      onSelected: (selected) {
+                        setState(() => _type = selected ? entry.key : null);
+                      },
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+            ],
             Align(
               alignment: Alignment.centerLeft,
               child: TextButton(
@@ -4461,7 +4472,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
                     ),
                   ),
                   const _FieldHint(
-                    'Starts with the location. Choosing a match fills the Place ID.',
+                    'Starts with the location. Choosing a match fills the location and the Place ID.',
                   ),
                 ],
               ),
