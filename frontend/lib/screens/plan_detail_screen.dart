@@ -16,6 +16,7 @@ import '../providers/plan_provider.dart';
 import '../providers/user_provider.dart';
 import '../utils/activity_chain.dart';
 import '../utils/activity_time.dart';
+import '../utils/itinerary_warning.dart';
 import '../utils/logger.dart';
 import '../utils/place_suggestion_fill.dart';
 import '../utils/place_suggestion_lines.dart';
@@ -2022,6 +2023,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                     );
                   },
                 ),
+                _itineraryWarnings(activity),
                 if (cardLines.above.isNotEmpty)
                   Wrap(
                     spacing: 8,
@@ -2043,6 +2045,66 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _itineraryWarnings(Activity activity) {
+    final rows = <Widget>[];
+    if (activity.overlap) {
+      rows.add(
+        _itineraryWarningButton(
+          icon: Icons.warning_amber_outlined,
+          label: overlapWarningText(),
+          detail: overlapWarningDetail(activity.name),
+        ),
+      );
+    }
+    if (activity.tightTravel) {
+      rows.add(
+        _itineraryWarningButton(
+          icon: Icons.schedule,
+          label: tightTravelWarningText(activity.travelMinutes),
+          detail: tightTravelWarningDetail(activity.travelMinutes),
+        ),
+      );
+    }
+    if (rows.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: rows,
+      ),
+    );
+  }
+
+  Widget _itineraryWarningButton({
+    required IconData icon,
+    required String label,
+    required String detail,
+  }) {
+    final color = Colors.deepOrange.shade800;
+    return InkWell(
+      onTap: () {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(detail)),
+        );
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: color),
+            const SizedBox(width: 4),
+            Flexible(
+              child: Text(
+                label,
+                style: TextStyle(color: color, fontSize: 13),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
