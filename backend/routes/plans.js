@@ -29,6 +29,7 @@ const {
 const { readExportQuery, buildPlanExport } = require('../utils/planExport');
 const { fetchPlaceMapPng } = require('../utils/placeMap');
 const { suggestPlaces } = require('../utils/placeSuggest');
+const { attachItineraryWarnings } = require('../utils/itineraryWarnings');
 const { findActivityWithPlace } = require('../utils/activityPlace');
 const { spansByPlanId } = require('../utils/activityDateSpan');
 const router = express.Router();
@@ -822,6 +823,10 @@ router.get('/:planId/itinerary', authMiddleware, async (req, res) => {
       event.dayNumber = dayNumber;
       previousEnd = event.endTime;
     });
+
+    // Response-only flags. Overlaps use UTC times. Travel checks are consecutive
+    // in that time order and never fail this request.
+    await attachItineraryWarnings(events);
 
     // Group by dayNumber
     const grouped = events.reduce((acc, event) => {
