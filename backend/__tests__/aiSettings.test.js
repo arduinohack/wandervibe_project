@@ -72,9 +72,11 @@ async function registerAndLogin({ firstName, lastName, email }) {
     .post('/api/auth/login')
     .send({ email, password: 'password1' });
   expect(loginRes.status).toBe(200);
+  const userId = loginRes.body.user._id;
+  await User.updateOne({ _id: userId }, { $set: { aiCredits: 20 } });
   return {
     token: loginRes.body.token,
-    userId: loginRes.body.user._id,
+    userId,
     email,
   };
 }

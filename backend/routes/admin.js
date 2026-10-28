@@ -9,6 +9,7 @@ const SupportLog = require('../models/SupportLog');
 const { logSupport } = require('../utils/logSupport');
 const { recordActivityRevision } = require('../utils/recordActivityRevision');
 const { syncPlanDates } = require('../utils/syncPlanDates');
+const { add: addAiCredits } = require('../utils/aiCredits');
 
 const router = express.Router();
 
@@ -332,6 +333,25 @@ router.get('/logs', async (req, res) => {
     res.json({ logs });
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// POST /api/admin/users/:userId/ai-credits. Adds a positive amount.
+router.post('/users/:userId/ai-credits', async (req, res) => {
+  try {
+    const userId = String(req.params.userId || '');
+    const amount = req.body && req.body.amount;
+    if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
+      return res.status(400).json({ message: 'Amount must be a positive number' });
+    }
+    const user = await User.findById(userId).select('_id').lean();
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    const aiCredits = await addAiCredits(userId, amount);
+    if (aiCredits == null) return res.status(404).json({ message: 'User not found' });
+    return res.json({ aiCredits });
+  } catch (err) {
+    console.error('AI credit grant failed');
+    return res.status(500).json({ message: 'Server error' });
   }
 });
 

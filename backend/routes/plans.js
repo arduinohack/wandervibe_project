@@ -1177,6 +1177,12 @@ router.post('/:planId/suggest', authMiddleware, async (req, res) => {
         aiClient,
       },
     });
+    if (result.status === 402) {
+      return res.status(402).json({
+        message: result.msg,
+        places: Array.isArray(result.places) ? result.places : [],
+      });
+    }
     if (result.status !== 200) {
       return res.status(result.status).json({ message: result.msg });
     }

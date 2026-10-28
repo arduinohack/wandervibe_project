@@ -273,6 +273,12 @@ router.post('/parse-confirmation', authMiddleware, async (req, res) => {
         userId: String(callerId || ''),
         feature: 'paste',
       });
+      if (modeled && modeled.insufficientCredits) {
+        return res.status(402).json({
+          ...parsed,
+          message: 'Insufficient AI credits',
+        });
+      }
       if (modeled) return res.json(modeled);
     }
     return res.json(parsed);

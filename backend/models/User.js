@@ -37,6 +37,7 @@ const userSchema = new mongoose.Schema({
     default: 'none',
   },
   aiApiKeyEncrypted: { type: String, select: false },
+  aiCredits: { type: Number, default: 0, min: 0 },
   createdAt: { type: Date, default: Date.now }
 });
 

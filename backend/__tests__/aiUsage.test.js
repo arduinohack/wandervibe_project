@@ -91,7 +91,9 @@ async function registerAndLogin(email) {
     .post('/api/auth/login')
     .send({ email, password: 'password1' });
   expect(loginRes.status).toBe(200);
-  return { token: loginRes.body.token, userId: loginRes.body.user._id };
+  const userId = loginRes.body.user._id;
+  await User.updateOne({ _id: userId }, { $set: { aiCredits: 20 } });
+  return { token: loginRes.body.token, userId };
 }
 
 async function createPlan(token) {
