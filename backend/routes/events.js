@@ -19,7 +19,8 @@ const {
 } = require('../utils/activityChain');
 const { applyFlightLegs, activityZoneError, zoneNameError } = require('../utils/flightLegs');
 const { parseConfirmation } = require('../utils/parseConfirmation');
-const { xaiApiKey, confirmationFieldsFromModel } = require('../utils/xaiConfirmation');
+const { confirmationFieldsFromModel } = require('../utils/xaiConfirmation');
+const { getAiClient } = require('../utils/aiProvider');
 
 function applySchedule(target, schedule) {
   if (schedule.startTime) target.startTime = schedule.startTime;
@@ -260,8 +261,15 @@ router.post('/parse-confirmation', authMiddleware, async (req, res) => {
       return res.status(400).json({ message: 'Text is required' });
     }
     const parsed = parseConfirmation(req.body.text, type);
-    if (xaiApiKey()) {
-      const modeled = await confirmationFieldsFromModel(req.body.text, type);
+    let client = null;
+    try {
+      client = await getAiClient(req.user);
+    } catch (err) {
+      const message = err && err.message ? err.message : 'request failed';
+      console.error('Confirmation AI client failed:', message);
+    }
+    if (client) {
+      const modeled = await confirmationFieldsFromModel(req.body.text, type, client);
       if (modeled) return res.json(modeled);
     }
     return res.json(parsed);

@@ -29,6 +29,7 @@ const {
 const { readExportQuery, buildPlanExport } = require('../utils/planExport');
 const { fetchPlaceMapPng } = require('../utils/placeMap');
 const { suggestPlaces } = require('../utils/placeSuggest');
+const { getAiClient } = require('../utils/aiProvider');
 const { attachItineraryWarnings } = require('../utils/itineraryWarnings');
 const { findActivityWithPlace } = require('../utils/activityPlace');
 const { spansByPlanId } = require('../utils/activityDateSpan');
@@ -1156,11 +1157,19 @@ router.post('/:planId/suggest', authMiddleware, async (req, res) => {
     const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body)
       ? req.body
       : {};
+    let aiClient = null;
+    try {
+      aiClient = await getAiClient(req.user);
+    } catch (err) {
+      const message = err && err.message ? err.message : 'request failed';
+      console.error('Place suggest AI client failed:', message);
+    }
     const result = await suggestPlaces({
       query: body.query,
       activityType: body.activityType,
       location: body.location,
       destination: plan.destination,
+      aiClient,
     });
     if (result.status !== 200) {
       return res.status(result.status).json({ message: result.msg });

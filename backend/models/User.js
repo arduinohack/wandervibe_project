@@ -30,8 +30,23 @@ const userSchema = new mongoose.Schema({
   password: { type: String, required: true },  // For login (hashed)
   resetToken: String,  // Temporary token for reset
   resetTokenExpiry: Date,  // Expires in 1h
+  // Per-user AI settings. The key is ciphertext only and is excluded from queries.
+  aiProvider: {
+    type: String,
+    enum: ['xai', 'openai', 'anthropic', 'gemini', 'none'],
+    default: 'none',
+  },
+  aiApiKeyEncrypted: { type: String, select: false },
   createdAt: { type: Date, default: Date.now }
 });
+
+function hideStoredAiKey(_doc, ret) {
+  if (ret) delete ret.aiApiKeyEncrypted;
+  return ret;
+}
+
+userSchema.set('toJSON', { transform: hideStoredAiKey });
+userSchema.set('toObject', { transform: hideStoredAiKey });
 
 // Pre-save hook for password hashing
 userSchema.pre('save', async function (next) {
