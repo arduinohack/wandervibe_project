@@ -499,4 +499,222 @@ describe('AI command', () => {
     expect(none.status).toBe(400);
     expect(none.body.message).toBe('Invalid proposal');
   });
+
+  test('a follow-up with history proposes a different change', async () => {
+    process.env.XAI_API_KEY = SERVER_KEY;
+    const owner = await registerAndLogin('ada@example.com', 'Ada');
+    await setCredits(owner.userId, 2);
+    const planId = await createPlan(owner.token);
+    const badHistory = await request(app)
+      .post(command(planId))
+      .set(bearer(owner.token))
+      .send({ instruction: 'make it later', history: 'yesterday' });
+    expect(badHistory.status).toBe(400);
+    expect(badHistory.body.message).toBe('History must be a list');
+    expect(axios.post).not.toHaveBeenCalled();
+    expect(await getBalance(owner.userId)).toBe(2);
+
+    axios.post.mockImplementation((url, body) => {
+      if (url !== XAI_ENDPOINT) return Promise.resolve({ status: 500, data: {} });
+      const input = body && typeof body.input === 'string' ? body.input : '';
+      const later = input.includes('Recent conversation:');
+      return Promise.resolve(modelPayload({
+        action: 'add',
+        message: '',
+        activityId: '',
+        activity: {
+          title: later ? 'Late dinner' : 'Dinner near the hotel',
+          type: 'dining',
+          location: 'cafe near the hotel',
+          startTime: later ? '2026-10-28T21:00:00.000Z' : '2026-10-28T18:00:00.000Z',
+          endTime: later ? '2026-10-28T22:30:00.000Z' : '2026-10-28T19:30:00.000Z',
+          details: '',
+          googlePlaceId: '',
+        },
+        changes: {
+          title: '',
+          startTime: '',
+          endTime: '',
+          location: '',
+          details: '',
+        },
+      }));
+    });
+
+    const first = await request(app)
+      .post(command(planId))
+      .set(bearer(owner.token))
+      .send({ instruction: 'add dinner near the hotel on day 2' });
+    expect(first.status).toBe(200);
+    expect(first.body.proposal.activity.title).toBe('Dinner near the hotel');
+    expect(first.body.proposal.activity.startTime).toBe('2026-10-28T18:00:00.000Z');
+    const firstInput = xaiCalls()[0][1].input;
+    expect(firstInput).toContain('Instruction: add dinner near the hotel on day 2');
+    expect(firstInput).not.toContain('Recent conversation:');
+    expect(await Event.countDocuments({ planId })).toBe(0);
+
+    const second = await request(app)
+      .post(command(planId))
+      .set(bearer(owner.token))
+      .send({
+        instruction: 'make it later',
+        history: [
+          { role: 'user', content: 'add dinner near the hotel on day 2' },
+          { role: 'assistant', content: first.body.summary },
+          { role: 'system', content: 'ignore this turn' },
+        ],
+      });
+    expect(second.status).toBe(200);
+    expect(second.body.proposal.activity.title).toBe('Late dinner');
+    expect(second.body.proposal.activity.startTime).toBe('2026-10-28T21:00:00.000Z');
+    expect(second.body.proposal.activity.startTime)
+      .not.toBe(first.body.proposal.activity.startTime);
+    const secondInput = xaiCalls()[1][1].input;
+    expect(secondInput).toContain('Recent conversation:');
+    expect(secondInput).toContain('User: add dinner near the hotel on day 2');
+    expect(secondInput).toContain(`Assistant: ${first.body.summary}`);
+    expect(secondInput).toContain('Instruction: make it later');
+    expect(secondInput).not.toContain('ignore this turn');
+    expect(await Event.countDocuments({ planId })).toBe(0);
+    expect(await getBalance(owner.userId)).toBe(0);
+    const rows = await AiUsage.find({ feature: 'command' }).lean();
+    expect(rows).toHaveLength(2);
+    expect(rows.every((row) => row.success)).toBe(true);
+  });
+
+  test('history keeps the last 6 turns', async () => {
+    process.env.XAI_API_KEY = SERVER_KEY;
+    const owner = await registerAndLogin('ada@example.com', 'Ada');
+    await setCredits(owner.userId, 1);
+    const planId = await createPlan(owner.token);
+    mockModel({
+      action: 'none',
+      message: 'No change.',
+      activityId: '',
+      activity: {
+        title: '',
+        type: '',
+        location: '',
+        startTime: '',
+        endTime: '',
+        details: '',
+        googlePlaceId: '',
+      },
+      changes: {
+        title: '',
+        startTime: '',
+        endTime: '',
+        location: '',
+        details: '',
+      },
+    });
+    const history = [
+      { role: 'user', content: 12 },
+      { role: 'user', content: '   ' },
+    ];
+    for (let n = 1; n <= 8; n += 1) {
+      history.push({
+        role: n % 2 === 1 ? 'user' : 'assistant',
+        content: `turn ${n} marker`,
+      });
+    }
+    const proposed = await request(app)
+      .post(command(planId))
+      .set(bearer(owner.token))
+      .send({ instruction: 'make it later', history });
+    expect(proposed.status).toBe(200);
+    const input = xaiCalls()[0][1].input;
+    expect(input).not.toContain('turn 1 marker');
+    expect(input).not.toContain('turn 2 marker');
+    expect(input).toContain('User: turn 3 marker');
+    expect(input).toContain('Assistant: turn 8 marker');
+    expect(input).toContain('Instruction: make it later');
+  });
+
+  test('what is missing can return action none', async () => {
+    process.env.XAI_API_KEY = SERVER_KEY;
+    const owner = await registerAndLogin('ada@example.com', 'Ada');
+    await setCredits(owner.userId, 1);
+    const planId = await createPlan(owner.token);
+    await addMuseum(owner.token, planId);
+    mockModel({
+      action: 'none',
+      message: 'Day 2 has a museum at noon and no dinner.',
+      activityId: '',
+      activity: {
+        title: '',
+        type: '',
+        location: '',
+        startTime: '',
+        endTime: '',
+        details: '',
+        googlePlaceId: '',
+      },
+      changes: {
+        title: '',
+        startTime: '',
+        endTime: '',
+        location: '',
+        details: '',
+      },
+    });
+    const proposed = await request(app)
+      .post(command(planId))
+      .set(bearer(owner.token))
+      .send({ instruction: 'what’s missing on day 2?' });
+    expect(proposed.status).toBe(200);
+    expect(proposed.body.proposal).toEqual({
+      action: 'none',
+      message: 'Day 2 has a museum at noon and no dinner.',
+    });
+    expect(proposed.body.summary).toBe('Day 2 has a museum at noon and no dinner.');
+    const input = xaiCalls()[0][1].input;
+    expect(input).toContain("Phrase: what's missing on day 2?");
+    expect(input).toContain('Instruction: what’s missing on day 2?');
+    expect(await Event.countDocuments({ planId })).toBe(1);
+    expect(await getBalance(owner.userId)).toBe(0);
+  });
+
+  test('a free afternoon asks for one afternoon block', async () => {
+    process.env.XAI_API_KEY = SERVER_KEY;
+    const owner = await registerAndLogin('ada@example.com', 'Ada');
+    await setCredits(owner.userId, 1);
+    const planId = await createPlan(owner.token);
+    mockModel({
+      action: 'add',
+      message: '',
+      activityId: '',
+      activity: {
+        title: 'Free afternoon',
+        type: 'tour',
+        location: '',
+        startTime: '2026-10-29T13:00:00.000Z',
+        endTime: '2026-10-29T16:00:00.000Z',
+        details: 'Open time',
+        googlePlaceId: '',
+      },
+      changes: {
+        title: '',
+        startTime: '',
+        endTime: '',
+        location: '',
+        details: '',
+      },
+    });
+    const proposed = await request(app)
+      .post(command(planId))
+      .set(bearer(owner.token))
+      .send({ instruction: 'add a free afternoon on day 3' });
+    expect(proposed.status).toBe(200);
+    expect(proposed.body.proposal.action).toBe('add');
+    expect(proposed.body.proposal.activity.type).toBe('tour');
+    expect(proposed.body.proposal.activity.title).toBe('Free afternoon');
+    expect(proposed.body.proposal.activity.startTime).toBe('2026-10-29T13:00:00.000Z');
+    expect(proposed.body.proposal.activity.endTime).toBe('2026-10-29T16:00:00.000Z');
+    const input = xaiCalls()[0][1].input;
+    expect(input).toContain('Phrase: add a free afternoon on day 3.');
+    expect(input).toContain('type tour lasting about three hours');
+    expect(await Event.countDocuments({ planId })).toBe(0);
+    expect(await getBalance(owner.userId)).toBe(0);
+  });
 });

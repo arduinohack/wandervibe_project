@@ -29,7 +29,7 @@ const {
 const { readExportQuery, buildPlanExport } = require('../utils/planExport');
 const { fetchPlaceMapPng } = require('../utils/placeMap');
 const { suggestPlaces } = require('../utils/placeSuggest');
-const { proposePlanCommand, applyPlanCommand } = require('../utils/aiCommand');
+const { proposePlanCommand, applyPlanCommand, commandHistory } = require('../utils/aiCommand');
 const { getAiClient } = require('../utils/aiProvider');
 const { attachItineraryWarnings } = require('../utils/itineraryWarnings');
 const { findActivityWithPlace } = require('../utils/activityPlace');
@@ -1223,6 +1223,10 @@ router.post('/:planId/ai-command', authMiddleware, async (req, res) => {
     if (instruction.trim().length > 2000) {
       return res.status(400).json({ message: 'Instruction is too long' });
     }
+    const history = commandHistory(body.history);
+    if (history == null) {
+      return res.status(400).json({ message: 'History must be a list' });
+    }
 
     let aiClient = null;
     try {
@@ -1234,6 +1238,7 @@ router.post('/:planId/ai-command', authMiddleware, async (req, res) => {
     const result = await proposePlanCommand({
       plan,
       instruction: instruction.trim(),
+      history,
       aiClient,
       userId: String(callerId || ''),
     });

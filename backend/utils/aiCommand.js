@@ -23,12 +23,14 @@ const UNREADABLE = 'Could not read the AI edit';
 const NOT_CONFIGURED = 'AI is not configured';
 const INVALID_PROPOSAL = 'Invalid proposal';
 const EVENT_MISSING = 'Event not found';
+const HISTORY_LIMIT = 6;
+const HISTORY_CONTENT_MAX = 2000;
 
 // Propose does not write activities. The balance is checked before a server-key
 // model call, and 1 credit is deducted after a usable proposal. A user key
 // costs nothing. Place search runs only for an add, without a second model
 // call or a second credit charge. Apply writes through activity create, update,
-// and delete.
+// and delete. Optional history is the last 6 user and assistant turns.
 
 const TYPE_ALIASES = {
   dinner: 'dining',
@@ -187,8 +189,46 @@ function planContext(plan, activities) {
   return lines.join('\n');
 }
 
-function commandPrompt(plan, activities, instruction) {
-  return [
+function commandHistory(raw) {
+  if (raw == null) return [];
+  if (!Array.isArray(raw)) return null;
+  const turns = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+    const role = item.role === 'user' || item.role === 'assistant' ? item.role : '';
+    if (!role || typeof item.content !== 'string') continue;
+    const content = clip(item.content, HISTORY_CONTENT_MAX);
+    if (!content) continue;
+    turns.push({ role, content });
+  }
+  if (turns.length <= HISTORY_LIMIT) return turns;
+  return turns.slice(turns.length - HISTORY_LIMIT);
+}
+
+function phraseNotes(instruction) {
+  const lower = String(instruction || '')
+    .toLowerCase()
+    .replace(/[\u2018\u2019\u201B`]/g, "'");
+  const dayMatch = lower.match(/\bday\s+(\d+)\b/);
+  if (!dayMatch) return [];
+  const day = `day ${dayMatch[1]}`;
+  const notes = [];
+  if (lower.includes('free afternoon')) {
+    notes.push(
+      `Phrase: add a free afternoon on ${day}. Return one add with type tour lasting about three hours in the afternoon, or action none if that afternoon is already full.`,
+    );
+  }
+  if (/what(?:'s| is) missing/.test(lower)) {
+    notes.push(
+      `Phrase: what's missing on ${day}? Return action none with a short summary of gaps, or one concrete add.`,
+    );
+  }
+  return notes;
+}
+
+function commandPrompt(plan, activities, instruction, history) {
+  const turns = commandHistory(history) || [];
+  const lines = [
     'You propose one change to a plan. Return JSON only.',
     'action is add, update, delete, or none.',
     'For add, fill activity title, type, location, startTime, and endTime.',
@@ -199,11 +239,23 @@ function commandPrompt(plan, activities, instruction) {
     'Leave every unused string empty.',
     'Use none with a short message when the instruction does not name one change.',
     'Leave googlePlaceId empty.',
+    'A follow-up such as "make it later" or "something cheaper" revises the previous proposal. Use the recent conversation.',
+    'For "add a free afternoon on day N", add one open block with type tour lasting about three hours in the afternoon, or use none and say the afternoon is already full.',
+    'For "what\'s missing on day N?", use none and describe the gaps in message, or add one concrete suggestion.',
     '',
     planContext(plan, activities),
-    '',
-    `Instruction: ${instruction}`,
-  ].join('\n');
+  ];
+  if (turns.length) {
+    lines.push('', 'Recent conversation:');
+    for (const turn of turns) {
+      const label = turn.role === 'assistant' ? 'Assistant' : 'User';
+      lines.push(`${label}: ${turn.content}`);
+    }
+  }
+  const notes = phraseNotes(instruction);
+  if (notes.length) lines.push('', ...notes);
+  lines.push('', `Instruction: ${instruction}`);
+  return lines.join('\n');
 }
 
 function findListed(activities, activityId) {
@@ -407,7 +459,7 @@ async function noteAttempt(usage, outcome) {
   });
 }
 
-async function proposePlanCommand({ plan, instruction, aiClient, userId }) {
+async function proposePlanCommand({ plan, instruction, history, aiClient, userId }) {
   const planId = String(plan && plan._id || '');
   const usage = {
     userId: String(userId || ''),
@@ -437,7 +489,7 @@ async function proposePlanCommand({ plan, instruction, aiClient, userId }) {
   });
 
   const asked = await askCommandModel(
-    commandPrompt(plan, activities, instruction),
+    commandPrompt(plan, activities, instruction, history),
     modelKey,
   );
   const built = asked.ok ? proposalFromModel(asked.parsed, activities, plan.timeZone) : null;
@@ -578,6 +630,7 @@ async function applyPlanCommand({ planId, callerId, proposal }) {
 module.exports = {
   proposePlanCommand,
   applyPlanCommand,
+  commandHistory,
   XAI_ENDPOINT,
   XAI_MODEL,
 };
