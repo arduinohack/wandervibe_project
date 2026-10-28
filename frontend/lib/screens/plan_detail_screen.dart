@@ -21,6 +21,7 @@ import '../utils/logger.dart';
 import '../utils/place_suggestion_fill.dart';
 import '../utils/place_suggestion_lines.dart';
 import '../utils/plan_pdf.dart';
+import '../widgets/activity_attachments.dart';
 import 'activity_history_screen.dart';
 import 'login_screen.dart';
 import 'plan_people_screen.dart';
@@ -865,7 +866,9 @@ class _ZoneDateTimeDialogState extends State<_ZoneDateTimeDialog> {
                       widget.minute,
                     ),
                     onDateTimeChanged: (picked) {
-                      if (picked.hour == _hour && picked.minute == _minute) return;
+                      if (picked.hour == _hour && picked.minute == _minute) {
+                        return;
+                      }
                       setState(() {
                         _hour = picked.hour;
                         _minute = picked.minute;
@@ -1511,6 +1514,37 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     return _plan;
   }
 
+  Future<void> _openAttachments(Activity activity) async {
+    final activityId = activity.id;
+    if (activityId == null || activityId.isEmpty) return;
+    final name = activity.name.trim();
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        final available = MediaQuery.sizeOf(context).width - 80;
+        final width = available < 440
+            ? (available < 0 ? 0.0 : available)
+            : 440.0;
+        return AlertDialog(
+          title: Text(name.isEmpty ? 'Attachments' : name),
+          content: SizedBox(
+            width: width,
+            child: ActivityAttachmentsSection(
+              activityId: activityId,
+              planId: widget.plan.id,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Future<void> _openActivityEdit(Activity activity) async {
     final activityId = activity.id;
     if (activityId == null || activityId.isEmpty) return;
@@ -1915,13 +1949,20 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                           icon: const Icon(Icons.map),
                           onPressed: () => _openDirections(activity),
                         ),
-                      if (activityId != null && activityId.isNotEmpty)
+                      if (activityId != null && activityId.isNotEmpty) ...[
+                        IconButton(
+                          tooltip: 'Attachments',
+                          visualDensity: VisualDensity.compact,
+                          icon: const Icon(Icons.attach_file),
+                          onPressed: () => _openAttachments(activity),
+                        ),
                         IconButton(
                           tooltip: 'History',
                           visualDensity: VisualDensity.compact,
                           icon: const Icon(Icons.history),
                           onPressed: () => _openActivityHistory(activity),
                         ),
+                      ],
                       if (canChange &&
                           !activity.linked &&
                           dragIndex != null &&
@@ -4988,8 +5029,32 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
           const SizedBox(height: 12),
           Text(_error!, style: const TextStyle(color: Colors.red)),
         ],
+        if (_attachmentActivityId != null) ...[
+          const SizedBox(height: 20),
+          ActivityAttachmentsSection(
+            activityId: _attachmentActivityId!,
+            planId: _attachmentPlanId,
+          ),
+        ] else if (widget.activity == null) ...[
+          const Padding(
+            padding: EdgeInsets.only(top: 16),
+            child: Text('Save the activity to attach a file.'),
+          ),
+        ],
       ],
     );
+  }
+
+  String? get _attachmentActivityId {
+    final id = widget.activity?.id;
+    if (id == null || id.trim().isEmpty) return null;
+    return id;
+  }
+
+  String get _attachmentPlanId {
+    final fromWidget = widget.planId?.trim() ?? '';
+    if (fromWidget.isNotEmpty) return fromWidget;
+    return widget.activity?.planId ?? '';
   }
 
   @override

@@ -29,6 +29,7 @@ const String apiPlaceAutocomplete = '/api/places/autocomplete';
 const String apiPlanInvite = '/api/plans/{planId}/invite';
 const String apiPlanInviteResend = '/api/plans/{planId}/invite/resend';
 const String apiActivities = '/api/activities';
+const String apiAttachments = '/api/attachments';
 const String apiActivitiesAlias = '/api/events';
 const String apiInvites = '/api/invites';
 const String apiInvitesRespond =

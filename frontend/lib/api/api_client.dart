@@ -21,7 +21,8 @@ bool _hasBearer(Map<String, String>? headers) {
   final value = headers['Authorization'] ?? headers['authorization'];
   if (value == null) return false;
   const prefix = 'Bearer ';
-  return value.startsWith(prefix) && value.substring(prefix.length).trim().isNotEmpty;
+  return value.startsWith(prefix) &&
+      value.substring(prefix.length).trim().isNotEmpty;
 }
 
 Future<void> _abandonSession() async {
@@ -116,4 +117,25 @@ Future<http.Response> delete(
     headers,
     (next) => http.delete(url, headers: next, body: body, encoding: encoding),
   );
+}
+
+/// Multipart POST. The file part is rebuilt on a token refresh.
+/// Pass Authorization only. A Content-Type header would drop the boundary.
+Future<http.Response> postFile(
+  Uri url, {
+  Map<String, String>? headers,
+  required String filename,
+  required List<int> bytes,
+}) {
+  Future<http.Response> send(Map<String, String>? next) async {
+    final request = http.MultipartRequest('POST', url);
+    if (next != null) request.headers.addAll(next);
+    request.files.add(
+      http.MultipartFile.fromBytes('file', bytes, filename: filename),
+    );
+    final streamed = await request.send();
+    return http.Response.fromStream(streamed);
+  }
+
+  return _withRefresh(url, headers, send);
 }

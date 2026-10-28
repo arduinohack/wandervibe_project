@@ -10,8 +10,10 @@ import 'package:flutter/material.dart'; // Added: Required for Icon
 import '../models/plan.dart'; // Your Plan model
 import '../models/plan_member.dart';
 import '../models/activity.dart';
+import '../models/activity_attachment.dart';
 import '../models/activity_type.dart';
 import '../models/user.dart'; // Your User model
+import '../utils/activity_attachment.dart';
 import '../utils/logger.dart';
 
 Map<String, dynamic> _itineraryActivityJson(Map source) {
@@ -1141,7 +1143,9 @@ class PlanProvider extends ChangeNotifier {
       }
       final data = json.decode(response.body);
       final events = data is Map ? data['events'] : null;
-      if (events is! List) return PlanItineraryRead(status: response.statusCode);
+      if (events is! List) {
+        return PlanItineraryRead(status: response.statusCode);
+      }
       final activities = <Activity>[];
       for (final item in events) {
         if (item is! Map) continue;
@@ -2185,6 +2189,137 @@ class PlanProvider extends ChangeNotifier {
     } catch (e) {
       logger.e('Error restoring activity: $e');
       return const ActivityRestoreResult();
+    }
+  }
+
+  /// GET /api/activities/:id/attachments. Any plan member.
+  Future<ActivityAttachmentListResult> fetchActivityAttachments({
+    required String activityId,
+    required String? token,
+  }) async {
+    try {
+      if (token == null || token.isEmpty) {
+        return const ActivityAttachmentListResult(status: 401);
+      }
+      final response = await http.get(
+        Uri.parse('$backendBaseUrl$apiActivities/$activityId/attachments'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (response.statusCode != 200) {
+        return ActivityAttachmentListResult(
+          status: response.statusCode,
+          error: _apiErrorMessage(response.body),
+        );
+      }
+      final data = json.decode(response.body);
+      if (data is! List) {
+        return const ActivityAttachmentListResult(status: 200);
+      }
+      final attachments = <ActivityAttachment>[];
+      for (final item in data) {
+        final parsed = ActivityAttachment.tryParse(item);
+        if (parsed != null) attachments.add(parsed);
+      }
+      return ActivityAttachmentListResult(
+        status: 200,
+        attachments: attachments,
+      );
+    } catch (e) {
+      logger.e('Error loading attachments: $e');
+      return const ActivityAttachmentListResult();
+    }
+  }
+
+  /// POST /api/activities/:id/attachments with multipart field file.
+  Future<ActivityAttachmentWriteResult> uploadActivityAttachment({
+    required String activityId,
+    required String filename,
+    required Uint8List bytes,
+    required String? token,
+  }) async {
+    try {
+      if (token == null || token.isEmpty) {
+        return const ActivityAttachmentWriteResult(status: 401);
+      }
+      final response = await http.postFile(
+        Uri.parse('$backendBaseUrl$apiActivities/$activityId/attachments'),
+        headers: {'Authorization': 'Bearer $token'},
+        filename: attachmentUploadName(filename),
+        bytes: bytes,
+      );
+      if (response.statusCode == 201) {
+        return const ActivityAttachmentWriteResult(status: 201);
+      }
+      return ActivityAttachmentWriteResult(
+        status: response.statusCode,
+        error: _apiErrorMessage(response.body),
+      );
+    } catch (e) {
+      logger.e('Error uploading attachment: $e');
+      return const ActivityAttachmentWriteResult();
+    }
+  }
+
+  /// GET /api/attachments/:id/file. Bytes stay in memory.
+  Future<ActivityAttachmentFileResult> fetchActivityAttachmentFile({
+    required String attachmentId,
+    required String? token,
+  }) async {
+    try {
+      if (token == null || token.isEmpty) {
+        return const ActivityAttachmentFileResult(status: 401);
+      }
+      final response = await http.get(
+        Uri.parse('$backendBaseUrl$apiAttachments/$attachmentId/file'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (response.statusCode != 200) {
+        return ActivityAttachmentFileResult(
+          status: response.statusCode,
+          error: _apiErrorMessage(response.body),
+        );
+      }
+      if (response.bodyBytes.isEmpty) {
+        return const ActivityAttachmentFileResult(
+          status: 404,
+          error: 'File not found',
+        );
+      }
+      final header = response.headers['content-type'] ?? '';
+      return ActivityAttachmentFileResult(
+        status: 200,
+        bytes: response.bodyBytes,
+        mimeType: header.split(';').first.trim(),
+      );
+    } catch (e) {
+      logger.e('Error opening attachment: $e');
+      return const ActivityAttachmentFileResult();
+    }
+  }
+
+  /// DELETE /api/attachments/:id. Uploader or Owner.
+  Future<ActivityAttachmentWriteResult> deleteActivityAttachment({
+    required String attachmentId,
+    required String? token,
+  }) async {
+    try {
+      if (token == null || token.isEmpty) {
+        return const ActivityAttachmentWriteResult(status: 401);
+      }
+      final response = await http.delete(
+        Uri.parse('$backendBaseUrl$apiAttachments/$attachmentId'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (response.statusCode == 200) {
+        return const ActivityAttachmentWriteResult(status: 200);
+      }
+      return ActivityAttachmentWriteResult(
+        status: response.statusCode,
+        error: _apiErrorMessage(response.body),
+      );
+    } catch (e) {
+      logger.e('Error deleting attachment: $e');
+      return const ActivityAttachmentWriteResult();
     }
   }
 

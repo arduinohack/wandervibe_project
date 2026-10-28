@@ -13,7 +13,7 @@ void main() {
     expect(selection.location, 'Cafe Paris');
   });
 
-  test('a filled location keeps its name when a place is chosen', () {
+  test('a filled location is replaced by the chosen place name', () {
     final selection = applyPlaceSelection(
       location: 'Harbor lunch',
       placeId: 'ChIJISz8NjyuEmsRFTQ9Iw7Ear8',
@@ -21,7 +21,7 @@ void main() {
     );
 
     expect(selection.googlePlaceId, 'ChIJISz8NjyuEmsRFTQ9Iw7Ear8');
-    expect(selection.location, isNull);
+    expect(selection.location, 'Cafe Paris');
   });
 
   test('search starts from the location until the user changes it', () {

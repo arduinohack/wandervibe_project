@@ -85,4 +85,54 @@ void main() {
     expect(suggestSearchQuery(typed: '', activityType: 'flight'), isNull);
     expect(suggestSearchQuery(typed: '   '), isNull);
   });
+
+  test('a dining activity searches restaurants plus the typed text and location', () {
+    expect(
+      suggestLockedTypeQuery(
+        typed: 'quiet cafe',
+        activityType: 'dining',
+        location: 'Rome',
+        destination: 'Paris',
+      ),
+      'restaurant quiet cafe in Rome',
+    );
+    expect(
+      suggestLockedTypeQuery(
+        typed: '',
+        activityType: 'dining',
+        location: 'Rome',
+      ),
+      'restaurant in Rome',
+    );
+  });
+
+  test('a locked hotel search uses typed text and the plan destination', () {
+    expect(
+      suggestLockedTypeQuery(
+        typed: 'with a pool',
+        activityType: 'hotel',
+        destination: 'Paris',
+      ),
+      'hotel with a pool in Paris',
+    );
+  });
+
+  test('a locked type does not repeat the type word or the location', () {
+    expect(
+      suggestLockedTypeQuery(
+        typed: 'restaurant',
+        activityType: 'dining',
+        location: 'Rome',
+      ),
+      'restaurant in Rome',
+    );
+    expect(
+      suggestLockedTypeQuery(
+        typed: 'cafe in Rome',
+        activityType: 'dining',
+        location: 'Rome',
+      ),
+      'restaurant cafe in Rome',
+    );
+  });
 }
