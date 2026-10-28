@@ -15,6 +15,7 @@ const String apiAuthForgotPassword = '/api/auth/forgot-password';
 const String apiUsersUpdate = '/api/auth/users/{id}';
 const String apiUserAiSettings = '/api/users/me/ai-settings';
 const String apiUserAiCredits = '/api/users/me/ai-credits';
+const String apiUserAiCreditsCheckout = '/api/users/me/ai-credits/checkout';
 const String apiPlans = '/api/plans';
 const String apiPlanLink = '/api/plans/{planId}/link';
 const String apiPlansItinerary = '/api/plans/{planId}/itinerary';
