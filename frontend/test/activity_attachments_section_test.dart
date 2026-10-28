@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wandervibe_frontend/models/activity_attachment.dart';
 import 'package:wandervibe_frontend/utils/activity_attachment.dart';
+import 'package:wandervibe_frontend/utils/attachment_cache.dart';
 import 'package:wandervibe_frontend/utils/attachment_picker.dart';
 import 'package:wandervibe_frontend/widgets/activity_attachments.dart';
 
@@ -43,6 +44,7 @@ Future<void> _pump(
   Future<ActivityAttachmentWriteResult> Function(String attachmentId)? remove,
   Future<AttachmentPickResult> Function()? pick,
   ActivityAttachmentListResult? loadResult,
+  AttachmentFileCache? cache,
 }) async {
   var current = List<ActivityAttachment>.of(items);
   await tester.pumpWidget(
@@ -86,6 +88,7 @@ Future<void> _pump(
                   bytes: Uint8List.fromList(const [37, 80, 68, 70]),
                 ),
               ),
+          fileCache: cache,
         ),
       ),
     ),
@@ -240,4 +243,110 @@ void main() {
 
     expect(find.text(attachmentNetworkMessage), findsWidgets);
   });
+
+  testWidgets('a saved file opens without a download', (tester) async {
+    var fetches = 0;
+    final bytes = Uint8List.fromList(base64Decode(_png));
+    final cache = _MemoryAttachmentCache()..files['1'] = bytes;
+    await _pump(
+      tester,
+      role: 'Guest',
+      userId: 'gus',
+      items: [_file(id: '1', filename: 'photo.jpg', uploadedBy: 'ada')],
+      fetch: (id) async {
+        fetches += 1;
+        return ActivityAttachmentFileResult(
+          status: 200,
+          bytes: bytes,
+          mimeType: 'image/png',
+        );
+      },
+      cache: cache,
+    );
+
+    expect(find.text('Saved on device'), findsOneWidget);
+    await tester.tap(find.text('View'));
+    await tester.pump();
+    await tester.pump();
+
+    expect(fetches, 0);
+    expect(find.byType(Image), findsOneWidget);
+  });
+
+  testWidgets('the first view stores the file on the device', (tester) async {
+    final bytes = Uint8List.fromList(base64Decode(_png));
+    final cache = _MemoryAttachmentCache();
+    await _pump(
+      tester,
+      role: 'Owner',
+      userId: 'ada',
+      items: [_file(id: '1', filename: 'photo.jpg', uploadedBy: 'ada')],
+      fetch: (id) async => ActivityAttachmentFileResult(
+        status: 200,
+        bytes: bytes,
+        mimeType: 'image/jpeg',
+      ),
+      cache: cache,
+    );
+
+    expect(find.text('Saved on device'), findsNothing);
+    await tester.tap(find.text('View'));
+    await tester.pump();
+    await tester.pump();
+
+    expect(cache.files['1'], bytes);
+    await tester.tap(find.byTooltip('Close'));
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('Saved on device'), findsOneWidget);
+  });
+
+  testWidgets('delete removes the saved copy', (tester) async {
+    final cache = _MemoryAttachmentCache()
+      ..files['mine'] = Uint8List.fromList(const [1, 2, 3]);
+    await _pump(
+      tester,
+      role: 'Owner',
+      userId: 'ada',
+      items: [_file(id: 'mine', filename: 'mine.png', uploadedBy: 'ada')],
+      cache: cache,
+    );
+
+    expect(find.text('Saved on device'), findsOneWidget);
+    await tester.tap(find.byTooltip('Delete attachment'));
+    await tester.pump();
+    await tester.pump();
+    await tester.tap(find.widgetWithText(TextButton, 'Delete'));
+    await tester.pump();
+    await tester.pump();
+
+    expect(cache.files.containsKey('mine'), isFalse);
+    expect(find.text('Saved on device'), findsNothing);
+  });
+}
+
+class _MemoryAttachmentCache implements AttachmentFileCache {
+  final Map<String, Uint8List> files = {};
+
+  @override
+  Future<Set<String>> savedIds() async => files.keys.toSet();
+
+  @override
+  Future<Uint8List?> read(String attachmentId) async => files[attachmentId];
+
+  @override
+  Future<bool> save({
+    required String attachmentId,
+    required String filename,
+    required String mimeType,
+    required Uint8List bytes,
+  }) async {
+    files[attachmentId] = bytes;
+    return true;
+  }
+
+  @override
+  Future<void> remove(String attachmentId) async {
+    files.remove(attachmentId);
+  }
 }

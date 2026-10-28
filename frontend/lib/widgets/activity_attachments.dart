@@ -8,6 +8,8 @@ import '../models/activity_attachment.dart';
 import '../providers/plan_provider.dart';
 import '../providers/user_provider.dart';
 import '../utils/activity_attachment.dart';
+import '../utils/attachment_cache.dart';
+import '../utils/attachment_cache_binding.dart';
 import '../utils/attachment_picker.dart';
 
 /// Loads attachments for one activity and shows add, view, and delete.
@@ -46,6 +48,7 @@ class ActivityAttachmentsSection extends StatelessWidget {
         attachmentId: attachmentId,
         token: context.read<UserProvider>().token,
       ),
+      fileCache: createAttachmentFileCache(),
     );
   }
 }
@@ -64,6 +67,7 @@ class ActivityAttachmentsPanel extends StatefulWidget {
   final Future<ActivityAttachmentWriteResult> Function(String attachmentId)
   deleteAttachment;
   final Future<AttachmentPickResult> Function()? pickFile;
+  final AttachmentFileCache? fileCache;
 
   const ActivityAttachmentsPanel({
     super.key,
@@ -74,6 +78,7 @@ class ActivityAttachmentsPanel extends StatefulWidget {
     required this.fetchFile,
     required this.deleteAttachment,
     this.pickFile,
+    this.fileCache,
   });
 
   @override
@@ -83,6 +88,7 @@ class ActivityAttachmentsPanel extends StatefulWidget {
 
 class _ActivityAttachmentsPanelState extends State<ActivityAttachmentsPanel> {
   List<ActivityAttachment> _items = const [];
+  Set<String> _saved = const {};
   bool _loading = true;
   bool _busy = false;
   String? _loadError;
@@ -91,6 +97,15 @@ class _ActivityAttachmentsPanelState extends State<ActivityAttachmentsPanel> {
   void initState() {
     super.initState();
     _load();
+    _refreshSaved();
+  }
+
+  Future<void> _refreshSaved() async {
+    final cache = widget.fileCache;
+    if (cache == null) return;
+    final ids = await cache.savedIds();
+    if (!mounted) return;
+    setState(() => _saved = ids);
   }
 
   Future<void> _load() async {
@@ -151,24 +166,55 @@ class _ActivityAttachmentsPanelState extends State<ActivityAttachmentsPanel> {
   Future<void> _view(ActivityAttachment item) async {
     if (_busy) return;
     setState(() => _busy = true);
+    final cached = await widget.fileCache?.read(item.id);
+    if (!mounted) return;
+    if (cached != null && cached.isNotEmpty) {
+      setState(() => _busy = false);
+      await _open(item, cached, item.mimeType);
+      return;
+    }
     final result = await widget.fetchFile(item.id);
     if (!mounted) return;
-    setState(() => _busy = false);
     final bytes = result.bytes;
     if (result.status != 200 || bytes == null || bytes.isEmpty) {
+      setState(() => _busy = false);
       _snack(attachmentErrorMessage(result.status, result.error));
       return;
     }
     final mime = result.mimeType.isNotEmpty ? result.mimeType : item.mimeType;
+    final saved = await _store(item, bytes, mime);
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      if (saved) _saved = {..._saved, item.id};
+    });
+    await _open(item, bytes, mime);
+  }
+
+  Future<bool> _store(
+    ActivityAttachment item,
+    Uint8List bytes,
+    String mime,
+  ) async {
+    final cache = widget.fileCache;
+    if (cache == null) return false;
+    return cache.save(
+      attachmentId: item.id,
+      filename: item.filename,
+      mimeType: mime,
+      bytes: bytes,
+    );
+  }
+
+  Future<void> _open(ActivityAttachment item, Uint8List bytes, String mime) {
     if (attachmentIsPdf(mime, item.filename)) {
-      await _showPdf(item.filename, bytes);
-      return;
+      return _showPdf(item.filename, bytes);
     }
     if (attachmentIsImage(mime, item.filename)) {
-      await _showImage(item.filename, bytes);
-      return;
+      return _showImage(item.filename, bytes);
     }
     _snack('Could not open this file.');
+    return Future<void>.value();
   }
 
   Future<void> _showImage(String filename, Uint8List bytes) {
@@ -264,6 +310,9 @@ class _ActivityAttachmentsPanelState extends State<ActivityAttachmentsPanel> {
       _snack(attachmentErrorMessage(result.status, result.error));
       return;
     }
+    await widget.fileCache?.remove(item.id);
+    if (!mounted) return;
+    setState(() => _saved = {..._saved}..remove(item.id));
     await _load();
   }
 
@@ -345,6 +394,11 @@ class _ActivityAttachmentsPanelState extends State<ActivityAttachmentsPanel> {
                   formatAttachmentSize(item.size),
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
+                if (_saved.contains(item.id))
+                  Text(
+                    'Saved on device',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
               ],
             ),
           ),
