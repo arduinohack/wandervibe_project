@@ -5,6 +5,7 @@ import 'login_screen.dart'; // Navigate on logout
 import '../models/plan.dart';
 import '../models/plan_role_label.dart';
 import '../utils/plus_upgrade.dart';
+import '../utils/verify_email.dart';
 import '../providers/plan_provider.dart';
 import '../providers/user_provider.dart'; // For role and logout
 import 'ai_settings_screen.dart';
@@ -24,6 +25,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   bool _loaded = false;
+  bool _resending = false;
 
   @override
   void initState() {
@@ -67,6 +69,17 @@ class _HomeScreenState extends State<HomeScreen> {
       MaterialPageRoute(builder: (context) => const LoginScreen()),
       (route) => false,
     );
+  }
+
+  Future<void> _resendVerification() async {
+    if (_resending) return;
+    setState(() => _resending = true);
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final messenger = ScaffoldMessenger.of(context);
+    final note = await userProvider.resendVerification();
+    if (!mounted) return;
+    setState(() => _resending = false);
+    messenger.showSnackBar(SnackBar(content: Text(note)));
   }
 
   Future<void> _logOut() async {
@@ -162,6 +175,35 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       body: Column(
         children: [
+          Consumer<UserProvider>(
+            builder: (context, userProvider, _) {
+              if (!userProvider.needsEmailVerification) {
+                return const SizedBox.shrink();
+              }
+              return Material(
+                color: Theme.of(context).colorScheme.tertiaryContainer,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Check your email to verify your account',
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: _resending ? null : _resendVerification,
+                        child: const Text('Resend'),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
           Consumer<UserProvider>(
             builder: (context, userProvider, _) {
               final label = userProvider.planAccess?.trialEndsLabel;
@@ -335,6 +377,17 @@ class _HomeScreenState extends State<HomeScreen> {
               if (status == 401) {
                 navigator.pop();
                 await _endSession(userProvider, planProvider, navigator);
+                return;
+              }
+              if (status == 403) {
+                navigator.pop();
+                if (!context.mounted) return;
+                await showVerifyEmailDialog(
+                  context,
+                  message:
+                      planProvider.writeMessage ??
+                      verifyEmailBeforePlanMessage,
+                );
                 return;
               }
               if (status == 402) {

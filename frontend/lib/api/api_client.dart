@@ -12,6 +12,7 @@ bool _exempt(Uri url) {
   return path.endsWith('/api/auth/login') ||
       path.endsWith('/api/auth/register') ||
       path.endsWith('/api/auth/forgot-password') ||
+      path.endsWith('/api/auth/verify-email') ||
       path.endsWith('/api/auth/refresh') ||
       path.endsWith('/api/auth/request-invite');
 }

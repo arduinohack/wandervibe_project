@@ -86,6 +86,9 @@ class UserProvider extends ChangeNotifier {
   /// start settled so session resume is unchanged.
   bool get coldStartSettled => _coldStartSettled;
 
+  /// False only when the server says this account has not verified email.
+  bool get needsEmailVerification => _currentUser?.emailVerified == false;
+
   void noteAppResumed() {
     _biometricDeclined = false;
   }
@@ -232,6 +235,12 @@ class UserProvider extends ChangeNotifier {
             logger.e('Token storage error: $e');
           }
           await _storeRefresh(data['refreshToken']);
+          final userValue = data['user'];
+          if (userValue is Map) {
+            final user = User.fromJson(Map<String, dynamic>.from(userValue));
+            _currentUser = user;
+            if (user.id.isNotEmpty) currentUserId = user.id;
+          }
           notifyListeners();
         }
         logger.i('Signup successful: ${data['msg'] ?? data['message']}');
@@ -736,6 +745,65 @@ class UserProvider extends ChangeNotifier {
         );
         notifyListeners();
       }
+    }
+  }
+
+  void _markEmailVerified() {
+    final current = _currentUser;
+    if (current == null || current.emailVerified) return;
+    _currentUser = current.copyWith(emailVerified: true);
+    notifyListeners();
+  }
+
+  /// POST /api/auth/verify-email. Null means the link was accepted.
+  Future<String?> verifyEmail(String token) async {
+    final trimmed = token.trim();
+    if (trimmed.isEmpty) return 'Invalid or expired verification link.';
+    try {
+      final timeoutDuration = Duration(seconds: await AppConfig.timeoutSeconds);
+      final response = await http
+          .post(
+            Uri.parse(backendBaseUrl + apiAuthVerifyEmail),
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode({'token': trimmed}),
+          )
+          .timeout(timeoutDuration);
+      if (response.statusCode == 200) {
+        _markEmailVerified();
+        return null;
+      }
+      return _jsonMessage(response) ?? 'Invalid or expired verification link.';
+    } catch (e) {
+      logger.e('Verify email error: $e');
+      return 'Could not verify your email.';
+    }
+  }
+
+  /// POST /api/auth/resend-verification. Returns the message to show.
+  Future<String> resendVerification() async {
+    final token = _jwtToken;
+    if (token == null || token.isEmpty) {
+      return 'Log in to resend the verification email.';
+    }
+    try {
+      final timeoutDuration = Duration(seconds: await AppConfig.timeoutSeconds);
+      final response = await http
+          .post(
+            Uri.parse(backendBaseUrl + apiAuthResendVerification),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+            body: '{}',
+          )
+          .timeout(timeoutDuration);
+      return _jsonMessage(response) ??
+          (response.statusCode == 200
+              ? 'Verification email sent.'
+              : 'Could not send the verification email.');
+    } catch (e) {
+      logger.e('Resend verification error: $e');
+      return 'Could not send the verification email.';
     }
   }
 

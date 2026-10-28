@@ -91,6 +91,9 @@ class User {
   final NotificationPreferences notificationPreferences;
   final DateTime createdAt;
 
+  /// Missing means the account predates verification and is already verified.
+  final bool emailVerified;
+
   User({
     required this.id,
     required this.firstName,
@@ -100,6 +103,7 @@ class User {
     required this.address,
     required this.notificationPreferences,
     required this.createdAt,
+    this.emailVerified = true,
   });
 
   // From JSON (for API responses)
@@ -116,6 +120,7 @@ class User {
       ),
       createdAt:
           DateTime.tryParse(_text(json['createdAt'])) ?? DateTime.now(),
+      emailVerified: _boolOr(json['emailVerified'], true),
     );
   }
 
@@ -141,6 +146,7 @@ class User {
     Address? address,
     NotificationPreferences? notificationPreferences,
     DateTime? createdAt,
+    bool? emailVerified,
   }) {
     return User(
       id: id ?? this.id,
@@ -152,6 +158,7 @@ class User {
       notificationPreferences:
           notificationPreferences ?? this.notificationPreferences,
       createdAt: createdAt ?? this.createdAt,
+      emailVerified: emailVerified ?? this.emailVerified,
     );
   }
 }

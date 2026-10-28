@@ -5,6 +5,7 @@ import '../providers/invitation_provider.dart';
 import '../providers/user_provider.dart'; // For token
 import '../models/plan.dart';
 import '../utils/plus_upgrade.dart';
+import '../utils/verify_email.dart';
 import '../models/invitation.dart';
 import '../models/plan_role_label.dart';
 import '../models/user.dart'; // For UserRole
@@ -367,6 +368,15 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
                 );
                 if (!dialogContext.mounted) return;
                 Navigator.pop(dialogContext);
+                if (status == 403 && context.mounted) {
+                  await showVerifyEmailDialog(
+                    context,
+                    message:
+                        planProvider.writeMessage ??
+                        verifyEmailBeforePlanMessage,
+                  );
+                  return;
+                }
                 if (status == 402 && context.mounted) {
                   await showPlusUpgradeDialog(
                     context,

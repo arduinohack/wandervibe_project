@@ -12,6 +12,8 @@ const String apiAuthRegister = '/api/auth/register';
 const String apiAuthVerifyToken =
     '/api/auth/verify-token'; // Added for token validation
 const String apiAuthForgotPassword = '/api/auth/forgot-password';
+const String apiAuthVerifyEmail = '/api/auth/verify-email';
+const String apiAuthResendVerification = '/api/auth/resend-verification';
 const String apiUsersUpdate = '/api/auth/users/{id}';
 const String apiUserAiSettings = '/api/users/me/ai-settings';
 const String apiUserAiCredits = '/api/users/me/ai-credits';

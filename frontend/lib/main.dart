@@ -7,6 +7,7 @@ import 'providers/plan_provider.dart';
 import 'screens/cold_start_gate.dart';
 import 'screens/login_screen.dart'; // Login if no token
 import 'screens/signup_screen.dart';
+import 'screens/verify_email_screen.dart';
 import 'session_resume.dart';
 //import 'screens/home_screen.dart'; // Home if logged in
 
@@ -57,13 +58,18 @@ class MyApp extends StatelessWidget {
           foregroundColor: colorScheme.onPrimary,
         ),
       ),
-      home: mobileBiometricPlatform
-          ? const ColdStartGate()
-          : const LoginScreen(),
+      home: isVerifyEmailLocation(Uri.base)
+          ? VerifyEmailScreen(token: Uri.base.queryParameters['token'])
+          : (mobileBiometricPlatform
+                ? const ColdStartGate()
+                : const LoginScreen()),
       routes: {
         '/signup': (context) {
           final email = Uri.base.queryParameters['email'];
           return SignupScreen(email: email);
+        },
+        '/verify-email': (context) {
+          return VerifyEmailScreen(token: Uri.base.queryParameters['token']);
         },
       },
     );
