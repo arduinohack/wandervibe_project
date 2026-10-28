@@ -38,6 +38,11 @@ const userSchema = new mongoose.Schema({
   },
   aiApiKeyEncrypted: { type: String, select: false },
   aiCredits: { type: Number, default: 0, min: 0 },
+  plusActive: { type: Boolean, default: false },
+  plusPriceId: { type: String },
+  plusCurrentPeriodEnd: { type: Date },
+  stripeCustomerId: { type: String },
+  stripeSubscriptionId: { type: String },
   createdAt: { type: Date, default: Date.now }
 });
 

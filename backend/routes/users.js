@@ -105,10 +105,10 @@ settingsRouter.get('/me/ai-credits', async (req, res) => {
   try {
     const userId = callerId(req);
     if (!userId) return res.status(401).json({ message: 'No token, authorization denied' });
-    const user = await User.findById(userId).select('_id').lean();
+    const user = await User.findById(userId).select('plusActive').lean();
     if (!user) return res.status(404).json({ message: 'User not found' });
     const aiCredits = await getBalance(userId);
-    return res.json({ aiCredits });
+    return res.json({ aiCredits, plusActive: user.plusActive === true });
   } catch (err) {
     console.error('AI credits read failed');
     return res.status(500).json({ message: 'Server error' });

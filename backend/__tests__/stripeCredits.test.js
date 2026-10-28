@@ -27,6 +27,9 @@ const WEBHOOK = '/api/stripe/webhook';
 const CHECKOUT_URL = 'https://checkout.stripe.com/c/pay/cs_test_123';
 const PRICE_100 = 'price_credits_100';
 const PRICE_500 = 'price_credits_500';
+const PRICE_PLUS_MONTHLY = 'price_plus_monthly';
+const PRICE_PLUS_YEARLY = 'price_plus_yearly';
+const CREDITS = '/api/users/me/ai-credits';
 
 let mongo;
 const previous = {
@@ -34,6 +37,8 @@ const previous = {
   webhook: process.env.STRIPE_WEBHOOK_SECRET,
   price100: process.env.STRIPE_PRICE_CREDITS_100,
   price500: process.env.STRIPE_PRICE_CREDITS_500,
+  plusMonthly: process.env.STRIPE_PRICE_PLUS_MONTHLY,
+  plusYearly: process.env.STRIPE_PRICE_PLUS_YEARLY,
 };
 
 function bearer(token) {
@@ -43,6 +48,15 @@ function bearer(token) {
 function restore(name, value) {
   if (value == null) delete process.env[name];
   else process.env[name] = value;
+}
+
+function restoreStripeEnv() {
+  restore('STRIPE_SECRET_KEY', previous.secret);
+  restore('STRIPE_WEBHOOK_SECRET', previous.webhook);
+  restore('STRIPE_PRICE_CREDITS_100', previous.price100);
+  restore('STRIPE_PRICE_CREDITS_500', previous.price500);
+  restore('STRIPE_PRICE_PLUS_MONTHLY', previous.plusMonthly);
+  restore('STRIPE_PRICE_PLUS_YEARLY', previous.plusYearly);
 }
 
 function sessionsCreate() {
@@ -98,10 +112,7 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
-  restore('STRIPE_SECRET_KEY', previous.secret);
-  restore('STRIPE_WEBHOOK_SECRET', previous.webhook);
-  restore('STRIPE_PRICE_CREDITS_100', previous.price100);
-  restore('STRIPE_PRICE_CREDITS_500', previous.price500);
+  restoreStripeEnv();
   await Promise.all([
     User.deleteMany({}),
     StripeEvent.deleteMany({}),
@@ -109,10 +120,7 @@ afterEach(async () => {
 });
 
 afterAll(async () => {
-  restore('STRIPE_SECRET_KEY', previous.secret);
-  restore('STRIPE_WEBHOOK_SECRET', previous.webhook);
-  restore('STRIPE_PRICE_CREDITS_100', previous.price100);
-  restore('STRIPE_PRICE_CREDITS_500', previous.price500);
+  restoreStripeEnv();
   await mongoose.disconnect();
   if (mongo) await mongo.stop();
 });
@@ -236,5 +244,288 @@ describe('Stripe credit packs', () => {
     expect(bad.status).toBe(400);
     expect(bad.body).toEqual({ message: 'Invalid signature' });
     expect(await getBalance(ada.userId)).toBe(0);
+  });
+});
+
+function plusMetadata(userId, priceId) {
+  return { userId, type: 'plus', priceId };
+}
+
+async function postWebhook(event) {
+  constructEvent().mockReturnValue(event);
+  return request(app)
+    .post(WEBHOOK)
+    .set('stripe-signature', 't=1,v1=test')
+    .set('Content-Type', 'application/json')
+    .send(event);
+}
+
+describe('Plus subscription', () => {
+  test('plus checkout returns a Stripe subscription URL', async () => {
+    const ada = await registerAndLogin('plus-checkout@example.com');
+    sessionsCreate().mockResolvedValue({ url: CHECKOUT_URL });
+    delete process.env.STRIPE_PRICE_PLUS_MONTHLY;
+    delete process.env.STRIPE_PRICE_PLUS_YEARLY;
+
+    const missing = await request(app)
+      .post(CHECKOUT)
+      .set(bearer(ada.token))
+      .send({ pack: 'plus_monthly' });
+    expect(missing.status).toBe(503);
+    expect(missing.body.message).toBe('Credit packs are not configured');
+    expect(sessionsCreate()).not.toHaveBeenCalled();
+
+    process.env.STRIPE_PRICE_PLUS_MONTHLY = PRICE_PLUS_MONTHLY;
+    const monthly = await request(app)
+      .post(CHECKOUT)
+      .set(bearer(ada.token))
+      .send({ pack: 'plus_monthly' });
+    expect(monthly.status).toBe(200);
+    expect(monthly.body).toEqual({ url: CHECKOUT_URL });
+    const monthlyMetadata = plusMetadata(ada.userId, PRICE_PLUS_MONTHLY);
+    expect(sessionsCreate()).toHaveBeenCalledWith({
+      mode: 'subscription',
+      line_items: [{ price: PRICE_PLUS_MONTHLY, quantity: 1 }],
+      client_reference_id: ada.userId,
+      metadata: monthlyMetadata,
+      subscription_data: { metadata: monthlyMetadata },
+      success_url: 'https://planitvibe.com/?checkout=success',
+      cancel_url: 'https://planitvibe.com/?checkout=cancel',
+    });
+
+    const yearlyMissing = await request(app)
+      .post(CHECKOUT)
+      .set(bearer(ada.token))
+      .send({ pack: 'plus_yearly' });
+    expect(yearlyMissing.status).toBe(503);
+    expect(yearlyMissing.body.message).toBe('Credit packs are not configured');
+
+    process.env.STRIPE_PRICE_PLUS_YEARLY = PRICE_PLUS_YEARLY;
+    const yearly = await request(app)
+      .post(CHECKOUT)
+      .set(bearer(ada.token))
+      .send({ pack: 'plus_yearly' });
+    expect(yearly.status).toBe(200);
+    expect(yearly.body).toEqual({ url: CHECKOUT_URL });
+    expect(sessionsCreate()).toHaveBeenLastCalledWith(expect.objectContaining({
+      mode: 'subscription',
+      line_items: [{ price: PRICE_PLUS_YEARLY, quantity: 1 }],
+      metadata: plusMetadata(ada.userId, PRICE_PLUS_YEARLY),
+    }));
+
+    const balance = await request(app).get(CREDITS).set(bearer(ada.token));
+    expect(balance.status).toBe(200);
+    expect(balance.body).toEqual({ aiCredits: 0, plusActive: false });
+  });
+
+  test('a paid Plus subscription grants 100 once per invoice and cancel clears Plus', async () => {
+    process.env.STRIPE_PRICE_PLUS_MONTHLY = PRICE_PLUS_MONTHLY;
+    const ada = await registerAndLogin('plus-webhook@example.com');
+    const period1 = 1767225600;
+    const period2 = 1769904000;
+    const period3 = 1772323200;
+
+    const unrelated = await postWebhook({
+      id: 'evt_not_plus',
+      type: 'invoice.paid',
+      data: {
+        object: {
+          id: 'in_other',
+          customer: 'cus_other',
+          lines: { data: [{ price: { id: 'price_other' } }] },
+        },
+      },
+    });
+    expect(unrelated.status).toBe(200);
+    expect(await getBalance(ada.userId)).toBe(0);
+
+    const unpaid = await postWebhook({
+      id: 'evt_plus_unpaid',
+      type: 'checkout.session.completed',
+      data: {
+        object: {
+          id: 'cs_plus_unpaid',
+          mode: 'subscription',
+          payment_status: 'unpaid',
+          metadata: plusMetadata(ada.userId, PRICE_PLUS_MONTHLY),
+        },
+      },
+    });
+    expect(unpaid.status).toBe(200);
+    expect(await getBalance(ada.userId)).toBe(0);
+
+    const checkout = {
+      id: 'evt_plus_checkout',
+      type: 'checkout.session.completed',
+      data: {
+        object: {
+          id: 'cs_plus',
+          mode: 'subscription',
+          payment_status: 'paid',
+          client_reference_id: ada.userId,
+          customer: 'cus_plus',
+          subscription: 'sub_plus',
+          invoice: 'in_plus_1',
+          metadata: plusMetadata(ada.userId, PRICE_PLUS_MONTHLY),
+        },
+      },
+    };
+    const started = await postWebhook(checkout);
+    expect(started.status).toBe(200);
+    expect(started.body).toEqual({ received: true });
+    expect(await getBalance(ada.userId)).toBe(100);
+
+    const retry = await postWebhook(checkout);
+    expect(retry.status).toBe(200);
+    expect(await getBalance(ada.userId)).toBe(100);
+
+    const firstInvoice = await postWebhook({
+      id: 'evt_plus_invoice_1',
+      type: 'invoice.paid',
+      data: {
+        object: {
+          id: 'in_plus_1',
+          customer: 'cus_plus',
+          subscription: 'sub_plus',
+          period_end: period1,
+          metadata: { userId: ada.userId, type: 'plus' },
+          lines: {
+            data: [{
+              price: { id: PRICE_PLUS_MONTHLY },
+              period: { end: period1 },
+            }],
+          },
+        },
+      },
+    });
+    expect(firstInvoice.status).toBe(200);
+    expect(await getBalance(ada.userId)).toBe(100);
+    let stored = await User.findById(ada.userId).lean();
+    expect(stored.plusActive).toBe(true);
+    expect(stored.plusPriceId).toBe(PRICE_PLUS_MONTHLY);
+    expect(stored.stripeCustomerId).toBe('cus_plus');
+    expect(stored.stripeSubscriptionId).toBe('sub_plus');
+    expect(stored.plusCurrentPeriodEnd.getTime()).toBe(period1 * 1000);
+
+    const renewal = await postWebhook({
+      id: 'evt_plus_invoice_2',
+      type: 'invoice.paid',
+      data: {
+        object: {
+          id: 'in_plus_2',
+          customer: 'cus_plus',
+          subscription: 'sub_plus',
+          period_end: period2,
+          metadata: { userId: ada.userId, type: 'plus' },
+          lines: { data: [{ period: { end: period2 }, price: { id: PRICE_PLUS_MONTHLY } }] },
+        },
+      },
+    });
+    expect(renewal.status).toBe(200);
+    expect(await getBalance(ada.userId)).toBe(200);
+    const renewalRetry = await postWebhook({
+      id: 'evt_plus_invoice_2',
+      type: 'invoice.paid',
+      data: {
+        object: {
+          id: 'in_plus_2',
+          customer: 'cus_plus',
+          subscription: 'sub_plus',
+          period_end: period2,
+          metadata: { userId: ada.userId, type: 'plus' },
+        },
+      },
+    });
+    expect(renewalRetry.status).toBe(200);
+    expect(await getBalance(ada.userId)).toBe(200);
+    stored = await User.findById(ada.userId).lean();
+    expect(stored.plusCurrentPeriodEnd.getTime()).toBe(period2 * 1000);
+
+    const periodCheckout = await postWebhook({
+      id: 'evt_plus_period',
+      type: 'checkout.session.completed',
+      data: {
+        object: {
+          id: 'cs_plus_period',
+          mode: 'subscription',
+          payment_status: 'paid',
+          customer: 'cus_plus',
+          subscription: { id: 'sub_plus', current_period_end: period3 },
+          metadata: plusMetadata(ada.userId, PRICE_PLUS_MONTHLY),
+        },
+      },
+    });
+    expect(periodCheckout.status).toBe(200);
+    expect(await getBalance(ada.userId)).toBe(300);
+    const samePeriod = await postWebhook({
+      id: 'evt_plus_invoice_3',
+      type: 'invoice.paid',
+      data: {
+        object: {
+          id: 'in_plus_3',
+          customer: 'cus_plus',
+          subscription: 'sub_plus',
+          period_end: period3,
+          metadata: { userId: ada.userId, type: 'plus' },
+          lines: { data: [{ period: { end: period3 } }] },
+        },
+      },
+    });
+    expect(samePeriod.status).toBe(200);
+    expect(await getBalance(ada.userId)).toBe(300);
+
+    const canceled = await postWebhook({
+      id: 'evt_plus_canceled',
+      type: 'customer.subscription.updated',
+      data: {
+        object: {
+          id: 'sub_plus',
+          status: 'canceled',
+          customer: 'cus_plus',
+          metadata: { userId: ada.userId, type: 'plus' },
+        },
+      },
+    });
+    expect(canceled.status).toBe(200);
+    stored = await User.findById(ada.userId).lean();
+    expect(stored.plusActive).toBe(false);
+    expect(await getBalance(ada.userId)).toBe(300);
+
+    await User.updateOne({ _id: ada.userId }, { $set: { plusActive: true } });
+    const deleted = await postWebhook({
+      id: 'evt_plus_deleted',
+      type: 'customer.subscription.deleted',
+      data: {
+        object: {
+          id: 'sub_plus',
+          status: 'canceled',
+          customer: 'cus_plus',
+        },
+      },
+    });
+    expect(deleted.status).toBe(200);
+    stored = await User.findById(ada.userId).lean();
+    expect(stored.plusActive).toBe(false);
+    expect(await getBalance(ada.userId)).toBe(300);
+
+    await User.updateOne({ _id: ada.userId }, { $set: { plusActive: true } });
+    const unpaidSub = await postWebhook({
+      id: 'evt_plus_unpaid_sub',
+      type: 'customer.subscription.updated',
+      data: {
+        object: {
+          id: 'sub_plus',
+          status: 'unpaid',
+          customer: 'cus_plus',
+          metadata: { userId: ada.userId, type: 'plus' },
+        },
+      },
+    });
+    expect(unpaidSub.status).toBe(200);
+    stored = await User.findById(ada.userId).lean();
+    expect(stored.plusActive).toBe(false);
+
+    const shown = await request(app).get(CREDITS).set(bearer(ada.token));
+    expect(shown.body).toEqual({ aiCredits: 300, plusActive: false });
   });
 });
