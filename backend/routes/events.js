@@ -125,40 +125,45 @@ router.get('/plan/:planId', authMiddleware, async (req, res) => {
   }
 });
 
-// POST new event (handles recursive subEvents)
-router.post('/', authMiddleware, async (req, res) => {
+// Shared with POST /api/activities and AI command apply.
+async function createActivity(callerId, body) {
   try {
-    const callerId = req.user.userId || req.user.id;
-    const planId = req.body && req.body.planId;
+    const planId = body && body.planId;
     if (!planId) {
-      return res.status(400).json({ message: 'planId is required' });
+      return { status: 400, body: { message: 'planId is required' } };
     }
     const allowed = await callerMayEditActivities(planId, callerId);
     if (!allowed) {
-      return res.status(403).json({ message: 'Only Owner or Collaborator can change activities' });
+      return {
+        status: 403,
+        body: { message: 'Only Owner or Collaborator can change activities' },
+      };
     }
 
-    const insertAfterId = textId(req.body, 'insertAfter');
-    const insertBeforeId = textId(req.body, 'insertBefore');
+    const insertAfterId = textId(body, 'insertAfter');
+    const insertBeforeId = textId(body, 'insertBefore');
     if (insertAfterId && insertBeforeId) {
-      return res.status(400).json({ message: 'insertAfter and insertBefore cannot both be set' });
+      return {
+        status: 400,
+        body: { message: 'insertAfter and insertBefore cannot both be set' },
+      };
     }
     const placement = await eventNumForInsert(planId, insertAfterId, insertBeforeId);
     if (placement.error) {
-      return res.status(placement.status || 400).json({ message: placement.error });
+      return { status: placement.status || 400, body: { message: placement.error } };
     }
-    let source = req.body;
-    if (startMissing(req.body)) {
+    let source = body;
+    if (startMissing(body)) {
       const anchor = await placementStart(planId, { insertAfterId, insertBeforeId });
-      if (anchor) source = { ...req.body, startTime: new Date(anchor).toISOString() };
+      if (anchor) source = { ...body, startTime: new Date(anchor).toISOString() };
     }
     const legged = applyFlightLegs(source, source && source.type);
     if (legged.error) {
-      return res.status(400).json({ message: legged.error });
+      return { status: 400, body: { message: legged.error } };
     }
-    const sentZoneError = activityZoneError(req.body);
+    const sentZoneError = activityZoneError(body);
     if (sentZoneError) {
-      return res.status(400).json({ message: sentZoneError });
+      return { status: 400, body: { message: sentZoneError } };
     }
     source = legged.body;
     const zones = await resolveActivityZones({
@@ -170,7 +175,7 @@ router.post('/', authMiddleware, async (req, res) => {
       || zoneNameError(zones.endTimeZone)
       || zoneNameError(zones.timeZone);
     if (resolvedZoneError) {
-      return res.status(400).json({ message: resolvedZoneError });
+      return { status: 400, body: { message: resolvedZoneError } };
     }
     const schedule = await resolveActivitySchedule({
       isCreate: true,
@@ -178,7 +183,7 @@ router.post('/', authMiddleware, async (req, res) => {
       body: source,
     });
     if (schedule.error) {
-      return res.status(400).json({ message: schedule.error });
+      return { status: 400, body: { message: schedule.error } };
     }
     const payload = { ...source, ownerId: callerId };
     delete payload.insertAfter;
@@ -199,10 +204,17 @@ router.post('/', authMiddleware, async (req, res) => {
       }, callerId);
     }
     await syncPlanDates(savedEvent.planId);
-    res.status(201).json(savedEvent);
+    return { status: 201, body: savedEvent };
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    return { status: 400, body: { message: error.message } };
   }
+}
+
+// POST new event (handles recursive subEvents)
+router.post('/', authMiddleware, async (req, res) => {
+  const callerId = req.user.userId || req.user.id;
+  const result = await createActivity(callerId, req.body);
+  return res.status(result.status).json(result.body);
 });
 
 // Declared before /:id so PUT /:id cannot swallow the order update.
@@ -421,28 +433,30 @@ router.put('/:id/move', authMiddleware, async (req, res) => {
   }
 });
 
-// PUT update event (handles recursive subEvents)
-router.put('/:id', authMiddleware, async (req, res) => {
+// Shared with PUT /api/activities/:id and AI command apply.
+async function updateActivity(callerId, activityId, body) {
   try {
-    const event = await Event.findById(req.params.id);
-    if (!event) return res.status(404).json({ message: 'Event not found' });
+    const event = await Event.findById(activityId);
+    if (!event) return { status: 404, body: { message: 'Event not found' } };
     const originalEnd = event.endTime ? new Date(event.endTime) : null;
-    const callerId = req.user.userId || req.user.id;
     const allowed = await callerMayEditActivities(event.planId, callerId);
     if (!allowed) {
-      return res.status(403).json({ message: 'Only Owner or Collaborator can change activities' });
+      return {
+        status: 403,
+        body: { message: 'Only Owner or Collaborator can change activities' },
+      };
     }
 
-    const body = req.body || {};
-    const nextType = Object.prototype.hasOwnProperty.call(body, 'type') ? body.type : event.type;
-    const fields = applyTypeChange(event.toObject(), nextType, body);
-    const legged = applyFlightLegs(body, nextType);
+    const source = body || {};
+    const nextType = Object.prototype.hasOwnProperty.call(source, 'type') ? source.type : event.type;
+    const fields = applyTypeChange(event.toObject(), nextType, source);
+    const legged = applyFlightLegs(source, nextType);
     if (legged.error) {
-      return res.status(400).json({ message: legged.error });
+      return { status: 400, body: { message: legged.error } };
     }
-    const sentZoneError = activityZoneError(body);
+    const sentZoneError = activityZoneError(source);
     if (sentZoneError) {
-      return res.status(400).json({ message: sentZoneError });
+      return { status: 400, body: { message: sentZoneError } };
     }
     if (legged.assignLegs) fields.legs = legged.legs;
     const zones = await resolveActivityZones({
@@ -455,14 +469,14 @@ router.put('/:id', authMiddleware, async (req, res) => {
       || zoneNameError(zones.endTimeZone)
       || zoneNameError(zones.timeZone);
     if (resolvedZoneError) {
-      return res.status(400).json({ message: resolvedZoneError });
+      return { status: 400, body: { message: resolvedZoneError } };
     }
     fields.startTimeZone = zones.startTimeZone;
     fields.endTimeZone = zones.endTimeZone;
     fields.timeZone = zones.timeZone;
     const requirementError = assertTypeRequirements(fields.type, fields);
     if (requirementError) {
-      return res.status(400).json({ message: requirementError.message });
+      return { status: 400, body: { message: requirementError.message } };
     }
 
     const schedule = await resolveActivitySchedule({
@@ -474,7 +488,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
       excludeId: event._id,
     });
     if (schedule.error) {
-      return res.status(400).json({ message: schedule.error });
+      return { status: 400, body: { message: schedule.error } };
     }
     applySchedule(fields, schedule);
 
@@ -496,31 +510,50 @@ router.put('/:id', authMiddleware, async (req, res) => {
       }, callerId);
     }
     await syncPlanDates(updatedEvent.planId);
-    res.json(updatedEvent);
+    return { status: 200, body: updatedEvent };
   } catch (error) {
-    res.status(500).json({ message: 'Server error' });
+    return { status: 500, body: { message: 'Server error' } };
   }
+}
+
+// PUT update event (handles recursive subEvents)
+router.put('/:id', authMiddleware, async (req, res) => {
+  const callerId = req.user.userId || req.user.id;
+  const result = await updateActivity(callerId, req.params.id, req.body || {});
+  return res.status(result.status).json(result.body);
 });
 
-// DELETE event
-router.delete('/:id', authMiddleware, async (req, res) => {
+// Shared with DELETE /api/activities/:id and AI command apply.
+async function deleteActivity(callerId, activityId) {
   try {
-    const event = await Event.findById(req.params.id);
-    if (!event) return res.status(404).json({ message: 'Event not found' });
-    const callerId = req.user.userId || req.user.id;
+    const event = await Event.findById(activityId);
+    if (!event) return { status: 404, body: { message: 'Event not found' } };
     const allowed = await callerMayEditActivities(event.planId, callerId);
     if (!allowed) {
-      return res.status(403).json({ message: 'Only Owner or Collaborator can change activities' });
+      return {
+        status: 403,
+        body: { message: 'Only Owner or Collaborator can change activities' },
+      };
     }
 
     const planId = event.planId;
-    await Event.findByIdAndDelete(req.params.id);
+    await Event.findByIdAndDelete(activityId);
     await recordActivityRevision(event, 'delete', callerId);
     await syncPlanDates(planId);
-    res.json({ message: 'Event deleted successfully' });
+    return { status: 200, body: { message: 'Event deleted successfully' } };
   } catch (error) {
-    res.status(500).json({ message: 'Server error' });
+    return { status: 500, body: { message: 'Server error' } };
   }
+}
+
+// DELETE event
+router.delete('/:id', authMiddleware, async (req, res) => {
+  const callerId = req.user.userId || req.user.id;
+  const result = await deleteActivity(callerId, req.params.id);
+  return res.status(result.status).json(result.body);
 });
 
 module.exports = router;
+module.exports.createActivity = createActivity;
+module.exports.updateActivity = updateActivity;
+module.exports.deleteActivity = deleteActivity;

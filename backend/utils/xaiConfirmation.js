@@ -1,5 +1,12 @@
 const axios = require('axios');
-const { logModelAttempt } = require('./aiUsage');
+const { logModelAttempt, recordAiUsage } = require('./aiUsage');
+const {
+  INSUFFICIENT_MESSAGE,
+  PASTE_CREDIT_COST,
+  usesServerKey,
+  getBalance,
+  deduct,
+} = require('./aiCredits');
 
 const MODEL = 'grok-4.7';
 const ENDPOINT = 'https://api.x.ai/v1/responses';
@@ -198,10 +205,35 @@ function promptFor(text, type) {
   ].join('\n');
 }
 
+function insufficientPaste() {
+  return { insufficientCredits: true };
+}
+
+async function noteInsufficientCredits(usage) {
+  await recordAiUsage({
+    userId: usage && usage.userId,
+    planId: usage && usage.planId,
+    feature: (usage && usage.feature) || 'paste',
+    provider: 'server',
+    usedUserKey: false,
+    success: false,
+    error: INSUFFICIENT_MESSAGE,
+  });
+}
+
 // Null means the model call failed. An object, including {}, means it succeeded.
+// { insufficientCredits: true } means the server key was not called.
 async function confirmationFieldsFromModel(text, type, aiClient, usage) {
   const key = apiKeyFromClient(aiClient);
   if (!key) return null;
+  const charge = usesServerKey(aiClient);
+  if (charge) {
+    const balance = await getBalance(usage && usage.userId);
+    if (balance < PASTE_CREDIT_COST) {
+      await noteInsufficientCredits(usage);
+      return insufficientPaste();
+    }
+  }
   const hotel = type === 'hotel';
   try {
     const response = await axios.post(
@@ -237,6 +269,13 @@ async function confirmationFieldsFromModel(text, type, aiClient, usage) {
         secret: key,
       });
       return null;
+    }
+    if (charge) {
+      const paid = await deduct(usage && usage.userId, PASTE_CREDIT_COST);
+      if (!paid.ok) {
+        await noteInsufficientCredits(usage);
+        return insufficientPaste();
+      }
     }
     await logModelAttempt(usage, {
       aiClient,

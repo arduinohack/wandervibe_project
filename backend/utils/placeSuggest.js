@@ -1,7 +1,15 @@
 const axios = require('axios');
 const { googleMapsKey, redactKey } = require('./placeMap');
 const { apiKeyFromClient } = require('./xaiConfirmation');
-const { logModelAttempt } = require('./aiUsage');
+const { logModelAttempt, recordAiUsage } = require('./aiUsage');
+const {
+  INSUFFICIENT_MESSAGE,
+  SUGGEST_CREDIT_COST,
+  usesServerKey,
+  getBalance,
+  deduct,
+  add,
+} = require('./aiCredits');
 
 const SEARCH_URL = 'https://places.googleapis.com/v1/places:searchText';
 const GEOCODE_URL = 'https://maps.googleapis.com/maps/api/geocode/json';
@@ -342,7 +350,16 @@ async function suggestPlaces({
     typeof location === 'string' ? location : '',
     destination,
   );
-  const modelKey = apiKeyFromClient(aiClient);
+  let modelKey = apiKeyFromClient(aiClient);
+  const serverCharge = Boolean(modelKey && usesServerKey(aiClient));
+  let blocked = false;
+  if (serverCharge) {
+    const balance = await getBalance(usage && usage.userId);
+    if (balance < SUGGEST_CREDIT_COST) {
+      blocked = true;
+      modelKey = '';
+    }
+  }
   let textQuery = localTextQuery(query, typeText, bias);
   if (modelKey) {
     const cleaned = await askModel(
@@ -397,7 +414,36 @@ async function suggestPlaces({
   }
 
   let places = parsed.places;
+  if (blocked) {
+    await recordAiUsage({
+      userId: usage && usage.userId,
+      planId: usage && usage.planId,
+      feature: 'suggest',
+      provider: 'server',
+      usedUserKey: false,
+      success: false,
+      error: INSUFFICIENT_MESSAGE,
+    });
+    return { status: 402, msg: INSUFFICIENT_MESSAGE, places };
+  }
   if (modelKey && places.length) {
+    let charged = false;
+    if (serverCharge) {
+      const paid = await deduct(usage && usage.userId, SUGGEST_CREDIT_COST);
+      if (!paid.ok) {
+        await recordAiUsage({
+          userId: usage && usage.userId,
+          planId: usage && usage.planId,
+          feature: 'suggest',
+          provider: 'server',
+          usedUserKey: false,
+          success: false,
+          error: INSUFFICIENT_MESSAGE,
+        });
+        return { status: 402, msg: INSUFFICIENT_MESSAGE, places };
+      }
+      charged = true;
+    }
     const lines = places.map((place) => (
       `${place.placeId} | ${place.name} | ${place.address}`
     ));
@@ -414,6 +460,13 @@ async function suggestPlaces({
       modelKey,
       usage,
     );
+    if (!model && charged) {
+      try {
+        await add(usage && usage.userId, SUGGEST_CREDIT_COST);
+      } catch (_) {
+        // A failed summary must still return the Places list.
+      }
+    }
     if (model) places = attachSummaries(places, model);
   }
 

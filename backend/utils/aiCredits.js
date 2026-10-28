@@ -3,11 +3,13 @@ const User = require('../models/User');
 const INSUFFICIENT_MESSAGE = 'Insufficient AI credits';
 const PASTE_CREDIT_COST = 1;
 const SUGGEST_CREDIT_COST = 1;
+const COMMAND_CREDIT_COST = 1;
 
 // The balance is checked before a server-key model call, so a zero balance
 // never spends that key. Paste deducts 1 credit after usable model JSON.
 // Suggest reserves 1 credit immediately before the summary and puts it back
-// when that summary does not succeed. A user key costs nothing.
+// when that summary does not succeed. A plan command deducts 1 credit after
+// a usable proposal. A user key costs nothing.
 
 function creditNumber(value) {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return 0;
@@ -62,6 +64,7 @@ module.exports = {
   INSUFFICIENT_MESSAGE,
   PASTE_CREDIT_COST,
   SUGGEST_CREDIT_COST,
+  COMMAND_CREDIT_COST,
   usesServerKey,
   getBalance,
   deduct,

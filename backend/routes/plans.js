@@ -29,6 +29,7 @@ const {
 const { readExportQuery, buildPlanExport } = require('../utils/planExport');
 const { fetchPlaceMapPng } = require('../utils/placeMap');
 const { suggestPlaces } = require('../utils/placeSuggest');
+const { proposePlanCommand, applyPlanCommand } = require('../utils/aiCommand');
 const { getAiClient } = require('../utils/aiProvider');
 const { attachItineraryWarnings } = require('../utils/itineraryWarnings');
 const { findActivityWithPlace } = require('../utils/activityPlace');
@@ -1189,6 +1190,87 @@ router.post('/:planId/suggest', authMiddleware, async (req, res) => {
     return res.json(result.places);
   } catch (err) {
     console.error('Place suggest error:', err);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+const AI_EDIT_ROLE = 'Only Owner or Collaborator can use AI edit';
+
+function requestObject(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return {};
+  return body;
+}
+
+// POST /api/plans/:planId/ai-command
+// Owner or Collaborator. Returns a proposal and does not write an activity.
+router.post('/:planId/ai-command', authMiddleware, async (req, res) => {
+  const planId = String(req.params.planId || '');
+  try {
+    const plan = await Plan.findById(planId);
+    if (!plan) return res.status(404).json({ message: 'Plan not found' });
+
+    const callerId = req.user.userId || req.user.id;
+    const role = await callerPlanRole(plan, callerId);
+    if (role !== 'Owner' && role !== 'Collaborator') {
+      return res.status(403).json({ message: AI_EDIT_ROLE });
+    }
+
+    const body = requestObject(req.body);
+    const instruction = body.instruction;
+    if (typeof instruction !== 'string' || !instruction.trim()) {
+      return res.status(400).json({ message: 'Instruction is required' });
+    }
+    if (instruction.trim().length > 2000) {
+      return res.status(400).json({ message: 'Instruction is too long' });
+    }
+
+    let aiClient = null;
+    try {
+      aiClient = await getAiClient(req.user);
+    } catch (err) {
+      const message = err && err.message ? err.message : 'request failed';
+      console.error('AI command client failed:', message);
+    }
+    const result = await proposePlanCommand({
+      plan,
+      instruction: instruction.trim(),
+      aiClient,
+      userId: String(callerId || ''),
+    });
+    if (result.status !== 200) {
+      return res.status(result.status).json({ message: result.message });
+    }
+    return res.json({ summary: result.summary, proposal: result.proposal });
+  } catch (err) {
+    const message = err && err.message ? err.message : 'request failed';
+    console.error('AI command error:', message);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// POST /api/plans/:planId/ai-command/apply
+// Owner or Collaborator. Writes the confirmed proposal through activity create, update, or delete.
+router.post('/:planId/ai-command/apply', authMiddleware, async (req, res) => {
+  const planId = String(req.params.planId || '');
+  try {
+    const plan = await Plan.findById(planId);
+    if (!plan) return res.status(404).json({ message: 'Plan not found' });
+
+    const callerId = req.user.userId || req.user.id;
+    const role = await callerPlanRole(plan, callerId);
+    if (role !== 'Owner' && role !== 'Collaborator') {
+      return res.status(403).json({ message: AI_EDIT_ROLE });
+    }
+
+    const result = await applyPlanCommand({
+      planId,
+      callerId: String(callerId || ''),
+      proposal: requestObject(req.body),
+    });
+    return res.status(result.status).json(result.body);
+  } catch (err) {
+    const message = err && err.message ? err.message : 'request failed';
+    console.error('AI command apply error:', message);
     return res.status(500).json({ message: 'Server error' });
   }
 });

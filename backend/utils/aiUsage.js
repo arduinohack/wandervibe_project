@@ -1,6 +1,6 @@
 const AiUsage = require('../models/AiUsage');
 
-const FEATURES = new Set(['paste', 'suggest']);
+const FEATURES = new Set(['paste', 'suggest', 'command']);
 const PROVIDERS = new Set(['xai', 'openai', 'anthropic', 'gemini', 'server']);
 const USER_PROVIDERS = new Set(['xai', 'openai', 'anthropic', 'gemini']);
 
@@ -46,7 +46,7 @@ function clipError(value, secret) {
   return text;
 }
 
-// Insert never throws. Paste and suggest ignore a logging failure.
+// Insert never throws. Paste, suggest, and command ignore a logging failure.
 async function recordAiUsage(entry) {
   try {
     if (!entry || typeof entry !== 'object') return;
