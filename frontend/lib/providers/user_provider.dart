@@ -15,6 +15,11 @@ import '../utils/jwt_expiry.dart';
 
 enum SessionKeep { stay, login, idle }
 
+class AuthRateLimitException implements Exception {
+  AuthRateLimitException(this.message);
+  final String message;
+}
+
 class UserProvider extends ChangeNotifier {
   String? currentUserId; // Current user ID
   UserRole? _currentUserRole; // Private stub role
@@ -105,7 +110,7 @@ class UserProvider extends ChangeNotifier {
     return text;
   }
 
-  String _signupFailureMessage(http.Response response) {
+  String? _jsonMessage(http.Response response) {
     try {
       final decoded = json.decode(response.body);
       if (decoded is Map) {
@@ -116,21 +121,15 @@ class UserProvider extends ChangeNotifier {
         }
       }
     } catch (_) {}
-    return 'Signup failed: ${response.statusCode}';
+    return null;
+  }
+
+  String _signupFailureMessage(http.Response response) {
+    return _jsonMessage(response) ?? 'Signup failed: ${response.statusCode}';
   }
 
   String _loginFailureMessage(http.Response response) {
-    try {
-      final decoded = json.decode(response.body);
-      if (decoded is Map) {
-        final message = decoded['message'] ?? decoded['msg'];
-        if (message != null) {
-          final text = message.toString().trim();
-          if (text.isNotEmpty) return text;
-        }
-      }
-    } catch (_) {}
-    return 'Login failed: ${response.statusCode}';
+    return _jsonMessage(response) ?? 'Login failed: ${response.statusCode}';
   }
 
   // Login with real backend (POST /api/auth/login).
@@ -757,8 +756,16 @@ class UserProvider extends ChangeNotifier {
         logger.i('Forgot password request accepted');
         return null;
       }
+      if (response.statusCode == 429) {
+        logger.e('Forgot password status 429');
+        throw AuthRateLimitException(
+          _jsonMessage(response) ?? 'Too many attempts. Try again later.',
+        );
+      }
       logger.e('Forgot password status ${response.statusCode}');
       return 'Could not send the message. Try again.';
+    } on AuthRateLimitException {
+      rethrow;
     } catch (e) {
       logger.e('Forgot password error: $e');
       return 'Could not send the message. Try again.';

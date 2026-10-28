@@ -30,14 +30,22 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       _notice = null;
     });
     final userProvider = Provider.of<UserProvider>(context, listen: false);
-    final failure = await userProvider.forgotPassword(_emailController.text);
-    if (!mounted) return;
-    setState(() {
-      _isSending = false;
-      _noticeIsError = failure != null;
-      _notice = failure ??
-          'If an account exists for that email, a message was sent.';
-    });
+    try {
+      final failure = await userProvider.forgotPassword(_emailController.text);
+      if (!mounted) return;
+      setState(() {
+        _isSending = false;
+        _noticeIsError = failure != null;
+        _notice = failure ??
+            'If an account exists for that email, a message was sent.';
+      });
+    } on AuthRateLimitException catch (error) {
+      if (!mounted) return;
+      setState(() => _isSending = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.message), backgroundColor: Colors.red),
+      );
+    }
   }
 
   @override
