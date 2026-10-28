@@ -4,6 +4,13 @@ const String backendBaseUrl = String.fromEnvironment(
   defaultValue: 'http://localhost:3000',
 );
 
+// Cloudflare Turnstile site key for the signup screen.
+// Override with --dart-define=TURNSTILE_SITE_KEY=...
+const String turnstileSiteKey = String.fromEnvironment(
+  'TURNSTILE_SITE_KEY',
+  defaultValue: '0x4AAAAAAFqDgm_fCigmn45U',
+);
+
 // API paths (append to backendBaseUrl)
 const String apiAuthLogin = '/api/auth/login';
 const String apiAuthLogout = "/api/auth/logout";

@@ -1,5 +1,7 @@
+import 'package:cloudflare_turnstile/cloudflare_turnstile.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../config/constants.dart';
 import '../providers/user_provider.dart'; // For signup
 import 'auth_landing.dart';
 import 'login_screen.dart'; // Navigate to login after success
@@ -28,6 +30,10 @@ class _SignupScreenState extends State<SignupScreen> {
   bool _emailNotifications = true; // Default prefs
   bool _smsNotifications = false;
   bool _isLoading = false; // For spinner
+  String? _turnstileToken;
+
+  bool get _hasTurnstileToken =>
+      _turnstileToken != null && _turnstileToken!.isNotEmpty;
 
   @override
   void initState() {
@@ -61,7 +67,18 @@ class _SignupScreenState extends State<SignupScreen> {
     return text;
   }
 
+  void _setTurnstileToken(String? token) {
+    final next = token != null && token.isNotEmpty ? token : null;
+    if (next == _turnstileToken) return;
+    setState(() => _turnstileToken = next);
+  }
+
   Future<void> _signup() async {
+    final token = _turnstileToken;
+    if (token == null || token.isEmpty) {
+      setState(() => _turnstileToken = null);
+      return;
+    }
     if (_formKey.currentState!.validate()) {
       setState(() => _isLoading = true);
       final userProvider = Provider.of<UserProvider>(context, listen: false);
@@ -83,6 +100,7 @@ class _SignupScreenState extends State<SignupScreen> {
             'postalCode': _postalCodeController.text,
           },
           {'email': _emailNotifications, 'sms': _smsNotifications},
+          turnstileToken: token,
         );
         if (!mounted) return;
         if (userProvider.token == null || userProvider.token!.isEmpty) {
@@ -287,11 +305,41 @@ class _SignupScreenState extends State<SignupScreen> {
               ),
               const SizedBox(height: 24),
 
+              if (turnstileSiteKey.isNotEmpty)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: SizedBox(
+                    width: 300,
+                    height: 70,
+                    child: CloudflareTurnstile(
+                      siteKey: turnstileSiteKey,
+                      baseUrl: 'https://planitvibe.com',
+                      options: TurnstileOptions(
+                        size: TurnstileSize.normal,
+                        theme: TurnstileTheme.auto,
+                        retryAutomatically: false,
+                      ),
+                      onTokenReceived: _setTurnstileToken,
+                      onTokenExpired: () => _setTurnstileToken(null),
+                      onError: (_) => _setTurnstileToken(null),
+                    ),
+                  ),
+                ),
+              if (!_hasTurnstileToken)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8, bottom: 8),
+                  child: Text(
+                    'Please complete the check',
+                    style: TextStyle(color: Theme.of(context).colorScheme.error),
+                  ),
+                ),
+              const SizedBox(height: 8),
+
               // Sign Up Button
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: _isLoading ? null : _signup,
+                  onPressed: _isLoading || !_hasTurnstileToken ? null : _signup,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Theme.of(context).colorScheme.primary,
                     foregroundColor: Theme.of(context).colorScheme.onPrimary,

@@ -201,8 +201,9 @@ class UserProvider extends ChangeNotifier {
     String password,
     String phoneNumber,
     Map<String, String> address,
-    Map<String, bool> notificationPreferences,
-  ) async {
+    Map<String, bool> notificationPreferences, {
+    required String turnstileToken,
+  }) async {
     try {
       final timeoutDuration = Duration(seconds: await AppConfig.timeoutSeconds);
       final response = await http
@@ -217,6 +218,7 @@ class UserProvider extends ChangeNotifier {
               'phoneNumber': phoneNumber,
               'address': address,
               'notificationPreferences': notificationPreferences,
+              'turnstileToken': turnstileToken,
             }),
           )
           .timeout(timeoutDuration);
