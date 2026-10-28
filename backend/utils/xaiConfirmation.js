@@ -1,4 +1,5 @@
 const axios = require('axios');
+const { logModelAttempt } = require('./aiUsage');
 
 const MODEL = 'grok-4.7';
 const ENDPOINT = 'https://api.x.ai/v1/responses';
@@ -69,6 +70,14 @@ const HOTEL_SCHEMA = {
 
 function xaiApiKey() {
   const key = process.env.XAI_API_KEY;
+  return typeof key === 'string' ? key.trim() : '';
+}
+
+// Undefined keeps the server key for direct calls. Null or an unsupported client skips AI.
+function apiKeyFromClient(aiClient) {
+  if (aiClient === undefined) return xaiApiKey();
+  if (!aiClient || aiClient.supported === false) return '';
+  const key = aiClient.apiKey;
   return typeof key === 'string' ? key.trim() : '';
 }
 
@@ -190,8 +199,8 @@ function promptFor(text, type) {
 }
 
 // Null means the model call failed. An object, including {}, means it succeeded.
-async function confirmationFieldsFromModel(text, type) {
-  const key = xaiApiKey();
+async function confirmationFieldsFromModel(text, type, aiClient, usage) {
+  const key = apiKeyFromClient(aiClient);
   if (!key) return null;
   const hotel = type === 'hotel';
   try {
@@ -218,13 +227,38 @@ async function confirmationFieldsFromModel(text, type) {
       },
     );
     const model = parseModelJson(outputText(response && response.data));
-    if (!model) return null;
+    if (!model) {
+      await logModelAttempt(usage, {
+        aiClient,
+        data: response && response.data,
+        fallbackModel: MODEL,
+        success: false,
+        error: 'invalid model response',
+        secret: key,
+      });
+      return null;
+    }
+    await logModelAttempt(usage, {
+      aiClient,
+      data: response && response.data,
+      fallbackModel: MODEL,
+      success: true,
+      secret: key,
+    });
     return onlyFound(model, String(text || ''), type);
   } catch (error) {
     const message = error && error.message ? error.message : 'request failed';
     console.error('Confirmation model failed:', message);
+    await logModelAttempt(usage, {
+      aiClient,
+      data: error && error.response && error.response.data,
+      fallbackModel: MODEL,
+      success: false,
+      error: message,
+      secret: key,
+    });
     return null;
   }
 }
 
-module.exports = { xaiApiKey, confirmationFieldsFromModel };
+module.exports = { xaiApiKey, apiKeyFromClient, confirmationFieldsFromModel };

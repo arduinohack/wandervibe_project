@@ -1,6 +1,7 @@
 const axios = require('axios');
 const { googleMapsKey, redactKey } = require('./placeMap');
-const { xaiApiKey } = require('./xaiConfirmation');
+const { apiKeyFromClient } = require('./xaiConfirmation');
+const { logModelAttempt } = require('./aiUsage');
 
 const SEARCH_URL = 'https://places.googleapis.com/v1/places:searchText';
 const GEOCODE_URL = 'https://maps.googleapis.com/maps/api/geocode/json';
@@ -228,8 +229,8 @@ async function defaultPost(url, body, headers) {
   return { status: res.status, body: res.data };
 }
 
-async function askModel(prompt, schemaName, schema) {
-  const key = xaiApiKey();
+async function askModel(prompt, schemaName, schema, apiKey, usage) {
+  const key = typeof apiKey === 'string' ? apiKey.trim() : '';
   if (!key) return null;
   try {
     const response = await axios.post(
@@ -255,11 +256,29 @@ async function askModel(prompt, schemaName, schema) {
         validateStatus: () => true,
       },
     );
-    if (!response || response.status < 200 || response.status >= 300) return null;
-    return parseModelObject(modelOutputText(response.data));
+    const status = response && response.status;
+    const ok = Boolean(response && status >= 200 && status < 300);
+    const parsed = ok ? parseModelObject(modelOutputText(response.data)) : null;
+    await logModelAttempt(usage, {
+      aiClient: usage && usage.aiClient,
+      data: response && response.data,
+      fallbackModel: XAI_MODEL,
+      success: Boolean(ok && parsed),
+      error: ok ? 'invalid model response' : `status ${status || 0}`,
+      secret: key,
+    });
+    return parsed;
   } catch (error) {
     const message = error && error.message ? error.message : 'request failed';
     console.error('Place suggest model failed:', message);
+    await logModelAttempt(usage, {
+      aiClient: usage && usage.aiClient,
+      data: error && error.response && error.response.data,
+      fallbackModel: XAI_MODEL,
+      success: false,
+      error: message,
+      secret: key,
+    });
     return null;
   }
 }
@@ -307,6 +326,8 @@ async function suggestPlaces({
   activityType,
   location,
   destination,
+  aiClient,
+  usage,
 } = {}) {
   const key = googleMapsKey();
   if (!key) {
@@ -321,8 +342,9 @@ async function suggestPlaces({
     typeof location === 'string' ? location : '',
     destination,
   );
+  const modelKey = apiKeyFromClient(aiClient);
   let textQuery = localTextQuery(query, typeText, bias);
-  if (xaiApiKey()) {
+  if (modelKey) {
     const cleaned = await askModel(
       [
         'Turn this activity search into one Google Places text search.',
@@ -335,6 +357,7 @@ async function suggestPlaces({
       ].filter(Boolean).join('\n'),
       'place_text_query',
       QUERY_SCHEMA,
+      modelKey,
     );
     const next = cleanTextQuery(cleaned && cleaned.textQuery);
     if (next) textQuery = next;
@@ -374,7 +397,7 @@ async function suggestPlaces({
   }
 
   let places = parsed.places;
-  if (xaiApiKey() && places.length) {
+  if (modelKey && places.length) {
     const lines = places.map((place) => (
       `${place.placeId} | ${place.name} | ${place.address}`
     ));
@@ -388,6 +411,8 @@ async function suggestPlaces({
       ].join('\n'),
       'place_summaries',
       SUMMARY_SCHEMA,
+      modelKey,
+      usage,
     );
     if (model) places = attachSummaries(places, model);
   }
