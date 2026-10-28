@@ -236,6 +236,9 @@ class Activity {
   final Map<String, dynamic> extras;
   final DateTime? createdAt;
   final bool linked;
+  final bool overlap;
+  final bool tightTravel;
+  final int? travelMinutes;
 
   Activity({
     this.id,
@@ -275,6 +278,9 @@ class Activity {
     this.extras = const {},
     this.createdAt,
     this.linked = false,
+    this.overlap = false,
+    this.tightTravel = false,
+    this.travelMinutes,
   });
 
   // NEW: Getters for effective times (Cases 1-3)
@@ -385,6 +391,11 @@ class Activity {
           ? DateTime.parse(json['createdAt'])
           : null,
       linked: json['linked'] == true,
+      overlap: json['overlap'] == true,
+      tightTravel: json['tightTravel'] == true,
+      travelMinutes: json['travelMinutes'] is num
+          ? (json['travelMinutes'] as num).round()
+          : null,
     );
   }
 

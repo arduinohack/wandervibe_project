@@ -6,6 +6,7 @@ import '../models/plan.dart';
 import '../models/plan_role_label.dart';
 import '../providers/plan_provider.dart';
 import '../providers/user_provider.dart'; // For role and logout
+import 'ai_settings_screen.dart';
 import 'coordinator_dashboard_screen.dart'; // For coordinators
 import 'invitations_screen.dart';
 import 'plan_detail_screen.dart';
@@ -131,11 +132,24 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           PopupMenuButton<String>(
             tooltip: 'App menu',
-            onSelected: (choice) async {
+            onSelected: (choice) {
+              if (choice == 'ai-settings') {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const AiSettingsScreen(),
+                  ),
+                );
+                return;
+              }
               if (choice != 'logout') return;
-              await _logOut();
+              _logOut();
             },
             itemBuilder: (context) => const [
+              PopupMenuItem<String>(
+                value: 'ai-settings',
+                child: Text('AI settings'),
+              ),
               PopupMenuItem<String>(
                 value: 'logout',
                 child: Text('Log out'),
