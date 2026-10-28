@@ -2159,6 +2159,23 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     if (removed == true && mounted) Navigator.of(context).pop();
   }
 
+  Future<void> _openAiEdit() async {
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final navigator = Navigator.of(context);
+    final result = await showModalBottomSheet<Object>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => _AiEditSheet(planId: widget.plan.id),
+    );
+    if (!mounted || result == null) return;
+    if (result == 'unauthorized') {
+      await _endSession(userProvider, planProvider, navigator);
+      return;
+    }
+    if (result == true) await _load();
+  }
+
   bool _showLinkMyPlan(Plan plan) {
     if (plan.sourcePlanId.trim().isNotEmpty) return false;
     if (plan.id == widget.plan.id &&
@@ -2424,17 +2441,32 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
               ),
               const SizedBox(height: 16),
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Expanded(
-                    child: Text(
-                      'Itinerary',
-                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                    child: Padding(
+                      padding: EdgeInsets.only(top: 8),
+                      child: Text(
+                        'Itinerary',
+                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                      ),
                     ),
                   ),
                   if (canChange)
-                    TextButton(
-                      onPressed: () => _addActivity(),
-                      child: const Text('Add activity'),
+                    Flexible(
+                      child: Wrap(
+                        alignment: WrapAlignment.end,
+                        children: [
+                          TextButton(
+                            onPressed: _openAiEdit,
+                            child: const Text('AI edit'),
+                          ),
+                          TextButton(
+                            onPressed: () => _addActivity(),
+                            child: const Text('Add activity'),
+                          ),
+                        ],
+                      ),
                     ),
                 ],
               ),
@@ -2690,6 +2722,230 @@ const _suggestPlaceTypes = <String, String>{
   'attraction': 'Attraction',
   'tour': 'Tour',
 };
+
+class _AiEditSheet extends StatefulWidget {
+  final String planId;
+
+  const _AiEditSheet({required this.planId});
+
+  @override
+  State<_AiEditSheet> createState() => _AiEditSheetState();
+}
+
+class _AiEditSheetState extends State<_AiEditSheet> {
+  final _instructionController = TextEditingController();
+  var _loading = false;
+  String? _error;
+  String? _summary;
+  Map<String, dynamic>? _proposal;
+
+  @override
+  void dispose() {
+    _instructionController.dispose();
+    super.dispose();
+  }
+
+  bool get _canApply {
+    final action = _proposal?['action'];
+    return action == 'add' || action == 'update' || action == 'delete';
+  }
+
+  Future<void> _propose() async {
+    if (_loading) return;
+    final instruction = _instructionController.text.trim();
+    if (instruction.isEmpty) {
+      setState(() => _error = 'Enter an instruction');
+      return;
+    }
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    final result = await planProvider.proposeAiCommand(
+      planId: widget.planId,
+      instruction: instruction,
+      token: userProvider.token,
+    );
+    if (!mounted) return;
+    if (result.status == 401) {
+      Navigator.pop(context, 'unauthorized');
+      return;
+    }
+    if (result.status == 402) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Not enough AI credits.')),
+      );
+      setState(() => _loading = false);
+      return;
+    }
+    if (result.status != 200 || result.proposal.isEmpty) {
+      setState(() {
+        _loading = false;
+        _error = result.error ?? 'Could not propose an edit';
+      });
+      return;
+    }
+    setState(() {
+      _loading = false;
+      _summary = result.summary;
+      _proposal = result.proposal;
+      _error = null;
+    });
+  }
+
+  Future<void> _apply() async {
+    final proposal = _proposal;
+    if (_loading || proposal == null) return;
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    final result = await planProvider.applyAiCommand(
+      planId: widget.planId,
+      proposal: proposal,
+      token: userProvider.token,
+    );
+    if (!mounted) return;
+    if (result.status == 401) {
+      Navigator.pop(context, 'unauthorized');
+      return;
+    }
+    if (result.status == 402) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Not enough AI credits.')),
+      );
+      setState(() => _loading = false);
+      return;
+    }
+    if (result.status != 200 && result.status != 201) {
+      setState(() {
+        _loading = false;
+        _error = result.error ?? 'Could not apply the edit';
+      });
+      return;
+    }
+    Navigator.pop(context, true);
+  }
+
+  String _proposalText(Map<String, dynamic> proposal) {
+    final lines = <String>[];
+    final action = (proposal['action'] ?? '').toString();
+    if (action.isNotEmpty) lines.add('Action: $action');
+    final activity = proposal['activity'];
+    if (activity is Map) {
+      _addLine(lines, 'Title', activity['title']);
+      _addLine(lines, 'Type', activity['type']);
+      _addLine(lines, 'Location', activity['location']);
+      _addLine(lines, 'Start', activity['startTime']);
+      _addLine(lines, 'End', activity['endTime']);
+      _addLine(lines, 'Details', activity['details']);
+      _addLine(lines, 'Place', activity['googlePlaceId']);
+    }
+    final changes = proposal['changes'];
+    if (changes is Map) {
+      _addLine(lines, 'Title', changes['title']);
+      _addLine(lines, 'Start', changes['startTime']);
+      _addLine(lines, 'End', changes['endTime']);
+      _addLine(lines, 'Location', changes['location']);
+      _addLine(lines, 'Details', changes['details']);
+    }
+    _addLine(lines, 'Activity', proposal['activityId']);
+    final message = proposal['message'];
+    if (message is String && message.trim().isNotEmpty) {
+      lines.add(message.trim());
+    }
+    return lines.join('\n');
+  }
+
+  void _addLine(List<String> lines, String label, Object? value) {
+    final text = value?.toString().trim() ?? '';
+    if (text.isEmpty) return;
+    lines.add('$label: $text');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.viewInsetsOf(context).bottom;
+    final proposal = _proposal;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + bottom),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'AI edit',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+            if (proposal == null) ...[
+              const Text(
+                'What should change?',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+              const SizedBox(height: 4),
+              TextField(
+                controller: _instructionController,
+                decoration: const InputDecoration(
+                  hintText: 'Add a dinner near the hotel on day 2',
+                ),
+                minLines: 2,
+                maxLines: 4,
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) => _propose(),
+              ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton(
+                  onPressed: _loading ? null : _propose,
+                  child: const Text('Propose'),
+                ),
+              ),
+            ] else ...[
+              if ((_summary ?? '').isNotEmpty)
+                Text(
+                  _summary!,
+                  style: const TextStyle(fontSize: 16),
+                ),
+              const SizedBox(height: 8),
+              Text(_proposalText(proposal)),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  if (_canApply)
+                    TextButton(
+                      onPressed: _loading ? null : _apply,
+                      child: const Text('Apply'),
+                    ),
+                  TextButton(
+                    onPressed: _loading ? null : () => Navigator.pop(context),
+                    child: const Text('Cancel'),
+                  ),
+                ],
+              ),
+            ],
+            if (_loading) const LinearProgressIndicator(),
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  _error!,
+                  style: const TextStyle(color: Colors.red),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class _SuggestPlacesSheet extends StatefulWidget {
   final String planId;

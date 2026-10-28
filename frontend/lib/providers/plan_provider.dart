@@ -457,6 +457,27 @@ class ConfirmationParse {
   });
 }
 
+class AiCommandResult {
+  final int? status;
+  final String? error;
+  final String summary;
+  final Map<String, dynamic> proposal;
+
+  const AiCommandResult({
+    this.status,
+    this.error,
+    this.summary = '',
+    this.proposal = const {},
+  });
+}
+
+class AiCommandApplyResult {
+  final int? status;
+  final String? error;
+
+  const AiCommandApplyResult({this.status, this.error});
+}
+
 String _trimmed(dynamic value) {
   if (value == null) return '';
   return value.toString().trim();
@@ -1731,6 +1752,97 @@ class PlanProvider extends ChangeNotifier {
     } catch (e) {
       logger.e('Error suggesting places: $e');
       return const PlaceSearchResult(error: 'Could not suggest places');
+    }
+  }
+
+  /// POST /api/plans/:planId/ai-command. Returns a proposal and does not save.
+  Future<AiCommandResult> proposeAiCommand({
+    required String planId,
+    required String instruction,
+    required String? token,
+  }) async {
+    try {
+      if (token == null || token.isEmpty) {
+        return const AiCommandResult(status: 401);
+      }
+      final response = await http.post(
+        Uri.parse(
+          backendBaseUrl + apiPlanAiCommand.replaceAll('{planId}', planId),
+        ),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode({'instruction': instruction.trim()}),
+      );
+      if (response.statusCode == 402) {
+        return AiCommandResult(
+          status: 402,
+          error: _apiErrorMessage(response.body),
+        );
+      }
+      if (response.statusCode != 200) {
+        return AiCommandResult(
+          status: response.statusCode,
+          error: _apiErrorMessage(response.body) ?? 'Could not propose an edit',
+        );
+      }
+      final data = json.decode(response.body);
+      if (data is! Map) {
+        return const AiCommandResult(
+          status: 200,
+          error: 'Could not propose an edit',
+        );
+      }
+      final proposal = data['proposal'];
+      if (proposal is! Map) {
+        return const AiCommandResult(
+          status: 200,
+          error: 'Could not propose an edit',
+        );
+      }
+      return AiCommandResult(
+        status: 200,
+        summary: (data['summary'] ?? '').toString().trim(),
+        proposal: Map<String, dynamic>.from(proposal),
+      );
+    } catch (e) {
+      logger.e('Error proposing an AI edit: $e');
+      return const AiCommandResult(error: 'Could not propose an edit');
+    }
+  }
+
+  /// POST /api/plans/:planId/ai-command/apply. Writes the confirmed proposal.
+  Future<AiCommandApplyResult> applyAiCommand({
+    required String planId,
+    required Map<String, dynamic> proposal,
+    required String? token,
+  }) async {
+    try {
+      if (token == null || token.isEmpty) {
+        return const AiCommandApplyResult(status: 401);
+      }
+      final response = await http.post(
+        Uri.parse(
+          backendBaseUrl +
+              apiPlanAiCommandApply.replaceAll('{planId}', planId),
+        ),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode(proposal),
+      );
+      if (response.statusCode != 200 && response.statusCode != 201) {
+        return AiCommandApplyResult(
+          status: response.statusCode,
+          error: _apiErrorMessage(response.body) ?? 'Could not apply the edit',
+        );
+      }
+      return AiCommandApplyResult(status: response.statusCode);
+    } catch (e) {
+      logger.e('Error applying an AI edit: $e');
+      return const AiCommandApplyResult(error: 'Could not apply the edit');
     }
   }
 
