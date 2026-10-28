@@ -1671,18 +1671,27 @@ class PlanProvider extends ChangeNotifier {
         },
         body: json.encode(body),
       );
-      if (response.statusCode != 200) {
+      if (response.statusCode != 200 && response.statusCode != 402) {
         return PlaceSearchResult(
           status: response.statusCode,
           error: _apiErrorMessage(response.body),
         );
       }
       final data = json.decode(response.body);
-      if (data is! List) {
+      final list = response.statusCode == 402
+          ? (data is Map ? data['places'] : null)
+          : data;
+      if (list is! List) {
+        if (response.statusCode == 402) {
+          return PlaceSearchResult(
+            status: 402,
+            error: _apiErrorMessage(response.body),
+          );
+        }
         return const PlaceSearchResult(status: 200);
       }
       final places = <PlaceSuggestion>[];
-      for (final item in data) {
+      for (final item in list) {
         if (item is! Map) continue;
         final placeId = (item['placeId'] ?? '').toString().trim();
         final name = (item['name'] ?? '').toString().trim();
@@ -1712,7 +1721,13 @@ class PlanProvider extends ChangeNotifier {
           ),
         );
       }
-      return PlaceSearchResult(status: 200, places: places);
+      return PlaceSearchResult(
+        status: response.statusCode,
+        error: response.statusCode == 402
+            ? _apiErrorMessage(response.body)
+            : null,
+        places: places,
+      );
     } catch (e) {
       logger.e('Error suggesting places: $e');
       return const PlaceSearchResult(error: 'Could not suggest places');

@@ -60,6 +60,7 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
   String _provider = 'none';
   String _savedProvider = 'none';
   bool _hasKey = false;
+  num? _credits;
   bool _loading = true;
   bool _busy = false;
   String? _error;
@@ -83,17 +84,23 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
     return Provider.of<UserProvider>(context, listen: false).token;
   }
 
-  void _applyStatus(String provider, bool hasKey) {
+  void _applyStatus(String provider, bool hasKey, num credits) {
     _keyController.clear();
     setState(() {
       _savedProvider = provider;
       _hasKey = hasKey;
+      _credits = credits;
       _provider = provider;
       _formGeneration += 1;
       _error = null;
       _loading = false;
       _busy = false;
     });
+  }
+
+  String _creditText(num value) {
+    if (value == value.roundToDouble()) return value.toInt().toString();
+    return value.toString();
   }
 
   Future<void> _load() async {
@@ -108,21 +115,27 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
       return;
     }
     try {
-      final response = await api.get(
-        Uri.parse('$backendBaseUrl$apiUserAiSettings'),
-        headers: {'Authorization': 'Bearer $token'},
-      );
+      final headers = {'Authorization': 'Bearer $token'};
+      final responses = await Future.wait([
+        api.get(Uri.parse('$backendBaseUrl$apiUserAiSettings'), headers: headers),
+        api.get(Uri.parse('$backendBaseUrl$apiUserAiCredits'), headers: headers),
+      ]);
       if (!mounted) return;
-      if (response.statusCode != 200) {
+      final settings = responses[0];
+      final credits = responses[1];
+      if (settings.statusCode != 200 || credits.statusCode != 200) {
+        final failed = settings.statusCode != 200 ? settings : credits;
         setState(() {
           _loading = false;
           _busy = false;
-          _error = _apiMessage(response.body, 'Could not load AI settings');
+          _error = _apiMessage(failed.body, 'Could not load AI settings');
         });
         return;
       }
-      final data = json.decode(response.body);
-      if (data is! Map || data['hasKey'] is! bool) {
+      final data = json.decode(settings.body);
+      final creditBody = json.decode(credits.body);
+      final balance = creditBody is Map ? creditBody['aiCredits'] : null;
+      if (data is! Map || data['hasKey'] is! bool || balance is! num) {
         setState(() {
           _loading = false;
           _busy = false;
@@ -130,7 +143,11 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
         });
         return;
       }
-      _applyStatus(_knownProvider(data['aiProvider']), data['hasKey'] as bool);
+      _applyStatus(
+        _knownProvider(data['aiProvider']),
+        data['hasKey'] as bool,
+        balance,
+      );
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -200,6 +217,12 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
                 Text('Provider: ${_providerLabel(_savedProvider)}'),
                 const SizedBox(height: 8),
                 Text(_hasKey ? 'A key is saved' : 'No key is saved'),
+                const SizedBox(height: 8),
+                Text(
+                  _credits == null
+                      ? 'AI credits'
+                      : 'AI credits: ${_creditText(_credits!)}',
+                ),
                 const SizedBox(height: 8),
                 const Text(
                   'Confirmation paste and place summaries use a saved key. With no saved key, the server key is used.',

@@ -2763,6 +2763,7 @@ class _SuggestPlacesSheetState extends State<_SuggestPlacesSheet> {
     });
     final userProvider = Provider.of<UserProvider>(context, listen: false);
     final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final messenger = ScaffoldMessenger.of(context);
     final result = await planProvider.suggestActivityPlaces(
       planId: widget.planId,
       query: query,
@@ -2773,6 +2774,17 @@ class _SuggestPlacesSheetState extends State<_SuggestPlacesSheet> {
     if (!mounted) return;
     if (result.status == 401) {
       Navigator.pop(context, 'unauthorized');
+      return;
+    }
+    if (result.status == 402) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Not enough AI credits.')),
+      );
+      setState(() {
+        _loading = false;
+        _places = result.places;
+        _error = null;
+      });
       return;
     }
     if (result.status != 200) {
@@ -3830,6 +3842,13 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     if (result.status == 403) {
       setState(() => _parsingConfirmation = false);
       messenger.showSnackBar(const SnackBar(content: Text('Not allowed')));
+      return;
+    }
+    if (result.status == 402) {
+      setState(() => _parsingConfirmation = false);
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Not enough AI credits.')),
+      );
       return;
     }
     if (result.status != 200) {
