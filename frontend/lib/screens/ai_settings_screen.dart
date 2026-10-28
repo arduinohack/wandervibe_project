@@ -62,6 +62,7 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
   String _savedProvider = 'none';
   bool _hasKey = false;
   num? _credits;
+  bool _plusActive = false;
   bool _loading = true;
   bool _busy = false;
   String? _error;
@@ -85,12 +86,18 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
     return Provider.of<UserProvider>(context, listen: false).token;
   }
 
-  void _applyStatus(String provider, bool hasKey, num credits) {
+  void _applyStatus(
+    String provider,
+    bool hasKey,
+    num credits, {
+    bool plusActive = false,
+  }) {
     _keyController.clear();
     setState(() {
       _savedProvider = provider;
       _hasKey = hasKey;
       _credits = credits;
+      _plusActive = plusActive;
       _provider = provider;
       _formGeneration += 1;
       _error = null;
@@ -154,6 +161,7 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
         _knownProvider(data['aiProvider']),
         data['hasKey'] as bool,
         balance,
+        plusActive: creditBody is Map && creditBody['plusActive'] == true,
       );
     } catch (_) {
       if (!mounted) return;
@@ -309,6 +317,13 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
                         onPressed: _busy ? null : () => _buy('500'),
                         child: const Text('Buy 500 credits'),
                       ),
+                      if (_plusActive)
+                        const Text('Plus active')
+                      else
+                        OutlinedButton(
+                          onPressed: _busy ? null : () => _buy('plus_monthly'),
+                          child: const Text('Upgrade to Plus'),
+                        ),
                       TextButton(
                         onPressed: _busy ? null : _load,
                         child: const Text('Refresh'),

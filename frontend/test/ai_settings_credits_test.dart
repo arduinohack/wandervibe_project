@@ -18,6 +18,8 @@ void main() {
 
     expect(find.text('Buy 100 credits'), findsOneWidget);
     expect(find.text('Buy 500 credits'), findsOneWidget);
+    expect(find.text('Upgrade to Plus'), findsOneWidget);
+    expect(find.text('Plus active'), findsNothing);
     expect(find.text('Refresh'), findsOneWidget);
     expect(find.text('AI credits'), findsOneWidget);
   });
