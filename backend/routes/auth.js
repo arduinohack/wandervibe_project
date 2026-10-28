@@ -20,7 +20,17 @@ const {
   registerLimiter,
   loginLimiter,
   forgotPasswordLimiter,
+  resendVerificationLimiter,
 } = require('../middleware/authRateLimit');
+const {
+  INVALID_LINK,
+  ALREADY_VERIFIED,
+  VERIFICATION_SENT,
+  hashVerifyToken,
+  buildVerification,
+  mustVerifyEmail,
+  sendVerificationEmail,
+} = require('../utils/emailVerification');
 
 const INVITE_REQUEST_EMAIL = 'ken@eratespecialists.com';
 const INVITE_REQUEST_SMS = '+14044081476';
@@ -182,6 +192,8 @@ router.post('/register', registerLimiter, async (req, res) => {
 
     // Create user (UUID for _id). User pre-save hashes the password once.
     const newUserId = uuidv4();
+    const verifyNow = mustVerifyEmail();
+    const issued = verifyNow ? buildVerification() : null;
     const newUser = new User({
       _id: newUserId,
       firstName,
@@ -192,6 +204,9 @@ router.post('/register', registerLimiter, async (req, res) => {
       address: address || undefined, // Use if provided
       notificationPreferences: { email: true, sms: false },  // Default
       role: 'member',
+      emailVerified: verifyNow ? false : true,
+      emailVerifyToken: issued ? issued.hash : undefined,
+      emailVerifyExpires: issued ? issued.expires : undefined,
     });
     logger.info('Saving new user', {
       userId: newUserId,
@@ -199,6 +214,20 @@ router.post('/register', registerLimiter, async (req, res) => {
       context: { email: email }
     });
     await newUser.save();
+
+    if (issued) {
+      try {
+        await sendVerificationEmail(newUser.email, issued.raw);
+      } catch (err) {
+        const status = (err.response && err.response.statusCode) || err.statusCode;
+        const provider = err.provider || selectedProviderName();
+        logger.error(`Verification email failed: provider ${provider}: ${err.message}${status ? ` status ${status}` : ''}`, {
+          userId: newUserId,
+          event: 'AuthRegister',
+          context: { email, provider, status: status || undefined },
+        });
+      }
+    }
 
     await Invitation.updateMany(
       {
@@ -400,6 +429,91 @@ router.post('/forgot-password', forgotPasswordLimiter, async (req, res) => {
         context: { error: err }  // Sanitize sensitive data!
       });
     res.status(500).json({ msg: 'Server error' });
+  }
+});
+
+// POST /api/auth/verify-email { token }
+router.post('/verify-email', async (req, res) => {
+  const raw = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
+  if (!raw) {
+    return res.status(400).json({ message: INVALID_LINK });
+  }
+
+  try {
+    const user = await User.findOne({
+      emailVerifyToken: hashVerifyToken(raw),
+      emailVerifyExpires: { $gt: new Date() },
+    }).select('_id');
+    if (!user) {
+      return res.status(400).json({ message: INVALID_LINK });
+    }
+
+    await User.updateOne(
+      { _id: user._id },
+      {
+        $set: { emailVerified: true },
+        $unset: { emailVerifyToken: 1, emailVerifyExpires: 1 },
+      },
+    );
+    return res.status(200).json({ message: 'Email verified.' });
+  } catch (err) {
+    logger.error('Server error', {
+      userId: 'User ID not in request',
+      event: 'AuthVerifyEmail',
+      context: { error: err.message },
+    });
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// POST /api/auth/resend-verification (JWT). 5 requests / hour / IP.
+router.post('/resend-verification', resendVerificationLimiter, authMiddleware, async (req, res) => {
+  const callerId = req.user.userId || req.user.id;
+  try {
+    const user = await User.findById(callerId).select('email emailVerified');
+    if (!user) {
+      return res.status(401).json({ message: 'Token is not valid' });
+    }
+    if (user.emailVerified !== false) {
+      return res.status(200).json({ message: ALREADY_VERIFIED });
+    }
+    if (!user.email) {
+      return res.status(400).json({ message: 'Missing email' });
+    }
+
+    const issued = buildVerification();
+    await User.updateOne(
+      { _id: user._id },
+      {
+        $set: {
+          emailVerified: false,
+          emailVerifyToken: issued.hash,
+          emailVerifyExpires: issued.expires,
+        },
+      },
+    );
+
+    try {
+      await sendVerificationEmail(user.email, issued.raw);
+    } catch (err) {
+      const status = (err.response && err.response.statusCode) || err.statusCode;
+      const provider = err.provider || selectedProviderName();
+      logger.error(`Verification email failed: provider ${provider}: ${err.message}${status ? ` status ${status}` : ''}`, {
+        userId: callerId,
+        event: 'AuthResendVerification',
+        context: { email: user.email, provider, status: status || undefined },
+      });
+      return res.status(500).json({ message: 'Server error' });
+    }
+
+    return res.status(200).json({ message: VERIFICATION_SENT });
+  } catch (err) {
+    logger.error('Server error', {
+      userId: callerId,
+      event: 'AuthResendVerification',
+      context: { error: err.message },
+    });
+    return res.status(500).json({ message: 'Server error' });
   }
 });
 

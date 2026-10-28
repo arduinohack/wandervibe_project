@@ -30,6 +30,12 @@ const userSchema = new mongoose.Schema({
   password: { type: String, required: true },  // For login (hashed)
   resetToken: String,  // Temporary token for reset
   resetTokenExpiry: Date,  // Expires in 1h
+  // No schema default. A default of false is applied when an old document is
+  // loaded, and a later save would lock that account. Missing means verified.
+  // Register sets false for a new account.
+  emailVerified: { type: Boolean },
+  emailVerifyToken: { type: String, select: false },
+  emailVerifyExpires: { type: Date, select: false },
   // Per-user AI settings. The key is ciphertext only and is excluded from queries.
   aiProvider: {
     type: String,
@@ -49,7 +55,11 @@ const userSchema = new mongoose.Schema({
 });
 
 function hideStoredAiKey(_doc, ret) {
-  if (ret) delete ret.aiApiKeyEncrypted;
+  if (ret) {
+    delete ret.aiApiKeyEncrypted;
+    delete ret.emailVerifyToken;
+    delete ret.emailVerifyExpires;
+  }
   return ret;
 }
 
