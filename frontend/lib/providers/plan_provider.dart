@@ -1764,6 +1764,7 @@ class PlanProvider extends ChangeNotifier {
     required String planId,
     required String instruction,
     required String? token,
+    List<Map<String, String>> history = const [],
   }) async {
     try {
       if (token == null || token.isEmpty) {
@@ -1777,7 +1778,10 @@ class PlanProvider extends ChangeNotifier {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
         },
-        body: json.encode({'instruction': instruction.trim()}),
+        body: json.encode({
+          'instruction': instruction.trim(),
+          'history': history,
+        }),
       );
       if (response.statusCode == 402) {
         return AiCommandResult(

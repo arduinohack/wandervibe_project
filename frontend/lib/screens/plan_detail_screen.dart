@@ -14,6 +14,7 @@ import '../models/plan_member.dart';
 import '../models/plan_role_label.dart';
 import '../providers/plan_provider.dart';
 import '../providers/user_provider.dart';
+import '../utils/ai_command_history.dart';
 import '../utils/activity_chain.dart';
 import '../utils/activity_time.dart';
 import '../utils/itinerary_warning.dart';
@@ -2775,6 +2776,7 @@ class _AiEditSheet extends StatefulWidget {
 
 class _AiEditSheetState extends State<_AiEditSheet> {
   final _instructionController = TextEditingController();
+  final List<AiCommandTurn> _history = [];
   var _loading = false;
   String? _error;
   String? _summary;
@@ -2809,6 +2811,7 @@ class _AiEditSheetState extends State<_AiEditSheet> {
       planId: widget.planId,
       instruction: instruction,
       token: userProvider.token,
+      history: [for (final turn in _history) turn.toJson()],
     );
     if (!mounted) return;
     if (result.status == 401) {
@@ -2829,12 +2832,21 @@ class _AiEditSheetState extends State<_AiEditSheet> {
       });
       return;
     }
+    final nextHistory = appendAiCommandHistory(
+      _history,
+      instruction,
+      result.summary,
+    );
     setState(() {
       _loading = false;
       _summary = result.summary;
       _proposal = result.proposal;
       _error = null;
+      _history
+        ..clear()
+        ..addAll(nextHistory);
     });
+    _instructionController.clear();
   }
 
   Future<void> _apply() async {
@@ -2925,31 +2937,27 @@ class _AiEditSheetState extends State<_AiEditSheet> {
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
-            if (proposal == null) ...[
-              const Text(
-                'What should change?',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-              const SizedBox(height: 4),
-              TextField(
-                controller: _instructionController,
-                decoration: const InputDecoration(
-                  hintText: 'Add a dinner near the hotel on day 2',
-                ),
-                minLines: 2,
-                maxLines: 4,
-                textInputAction: TextInputAction.done,
-                onSubmitted: (_) => _propose(),
-              ),
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton(
-                  onPressed: _loading ? null : _propose,
-                  child: const Text('Propose'),
+            if (_history.isNotEmpty) ...[
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 140),
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (final turn in _history)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Text(
+                            '${turn.role == 'assistant' ? 'AI' : 'You'}: ${turn.content}',
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
-            ] else ...[
+              const SizedBox(height: 12),
+            ],
+            if (proposal != null) ...[
               if ((_summary ?? '').isNotEmpty)
                 Text(
                   _summary!,
@@ -2971,7 +2979,32 @@ class _AiEditSheetState extends State<_AiEditSheet> {
                   ),
                 ],
               ),
+              const SizedBox(height: 12),
+            ] else ...[
+              const Text(
+                'What should change?',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+              const SizedBox(height: 4),
             ],
+            TextField(
+              controller: _instructionController,
+              decoration: const InputDecoration(
+                hintText: 'Add a dinner near the hotel on day 2',
+              ),
+              minLines: 2,
+              maxLines: 4,
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => _propose(),
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                onPressed: _loading ? null : _propose,
+                child: const Text('Propose'),
+              ),
+            ),
             if (_loading) const LinearProgressIndicator(),
             if (_error != null)
               Padding(
