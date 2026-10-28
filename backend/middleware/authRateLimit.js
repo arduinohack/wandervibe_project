@@ -30,6 +30,7 @@ function authLimiter({ windowMs, limit, store }) {
 const registerStore = new MemoryStore();
 const loginStore = new MemoryStore();
 const forgotPasswordStore = new MemoryStore();
+const resendVerificationStore = new MemoryStore();
 
 const registerLimiter = authLimiter({
   windowMs: 60 * 60 * 1000,
@@ -49,11 +50,19 @@ const forgotPasswordLimiter = authLimiter({
   store: forgotPasswordStore,
 });
 
+// Same window as forgot-password. Separate store so the two routes do not share a bucket.
+const resendVerificationLimiter = authLimiter({
+  windowMs: 60 * 60 * 1000,
+  limit: 5,
+  store: resendVerificationStore,
+});
+
 async function resetAuthRateLimits() {
   await Promise.all([
     registerStore.resetAll(),
     loginStore.resetAll(),
     forgotPasswordStore.resetAll(),
+    resendVerificationStore.resetAll(),
   ]);
 }
 
@@ -61,12 +70,14 @@ function shutdownAuthRateLimits() {
   registerStore.shutdown();
   loginStore.shutdown();
   forgotPasswordStore.shutdown();
+  resendVerificationStore.shutdown();
 }
 
 module.exports = {
   registerLimiter,
   loginLimiter,
   forgotPasswordLimiter,
+  resendVerificationLimiter,
   resetAuthRateLimits,
   shutdownAuthRateLimits,
   TOO_MANY_ATTEMPTS,
