@@ -49,6 +49,12 @@ app.use(cors({
   exposedHeaders: ['Content-Disposition'],
   optionsSuccessStatus: 204,
 }));
+// Stripe signs the raw body. This route stays before express.json().
+app.use(
+  '/api/stripe/webhook',
+  express.raw({ type: 'application/json' }),
+  require('./routes/stripe'),
+);
 app.use(express.json());  // Parses JSON bodies from requests (e.g., { name: 'Paris Trip' })
 app.use(morgan('dev'));  // Logs requests to console
 app.use('/api', require('./middleware/requestLog'));
