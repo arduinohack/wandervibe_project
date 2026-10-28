@@ -6,6 +6,9 @@ const cors = require('cors');
 
 const app = express();
 
+// One proxy hop (Nginx). req.ip is then the client address.
+app.set('trust proxy', 1);
+
 // These origins stay allowed in every environment.
 // Development (and an unset NODE_ENV) also allows http://localhost and
 // http://127.0.0.1 on any port. Requests with no Origin stay allowed. Never emit *.

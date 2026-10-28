@@ -16,6 +16,11 @@ const {
   deleteRefresh,
   revokeSessionRefresh,
 } = require('../utils/sessionTokens');
+const {
+  registerLimiter,
+  loginLimiter,
+  forgotPasswordLimiter,
+} = require('../middleware/authRateLimit');
 
 const INVITE_REQUEST_EMAIL = 'ken@eratespecialists.com';
 const INVITE_REQUEST_SMS = '+14044081476';
@@ -33,7 +38,7 @@ function submittedEmail(body) {
 }
 
 // POST /api/auth/login (Verifies email/password, returns token)
-router.post('/login', async (req, res) => {
+router.post('/login', loginLimiter, async (req, res) => {
   // This initial request for login does not use middleware
   const userId = req.user?.id ?? 'User ID not in request';
   const { email, password } = req.body;
@@ -126,7 +131,7 @@ function escapeHtml(value) {
 
 // POST /api/auth/register (Creates new user, hashes password, returns token)
 // A new account requires a pending invitation for that email.
-router.post('/register', async (req, res) => {
+router.post('/register', registerLimiter, async (req, res) => {
   const userId = req.user?.id ?? 'User ID not in request';
   const { firstName, lastName, email, phoneNumber, password, address } = req.body;
   logger.info('Registration Request', {
@@ -321,7 +326,7 @@ router.post('/request-invite', async (req, res) => {
 });
 
 // POST /api/auth/forgot-password (Sends reset email with token)
-router.post('/forgot-password', async (req, res) => {
+router.post('/forgot-password', forgotPasswordLimiter, async (req, res) => {
   const userId = req.user?.id ?? 'User ID not in request';
   const { email } = req.body;
 
