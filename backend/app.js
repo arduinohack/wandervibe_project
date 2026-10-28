@@ -56,6 +56,11 @@ app.use('/api', require('./middleware/requestLog'));
 // Mount auth routes (e.g., POST /api/auth/login)
 app.use('/api/auth', require('./routes/auth'));
 
+// Per-user AI settings. Any logged-in user, only their own record.
+// The older users router stays unmounted; its delete handler is not this API.
+const { settingsRouter } = require('./routes/users');
+app.use('/api/users', authMiddleware, settingsRouter);
+
 // Mount plans routes WITH authMiddleware (protects all /api/plans/*)
 const plansRouter = require('./routes/plans');
 const { planInviteRouter, invitesRouter } = require('./routes/invites');

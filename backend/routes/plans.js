@@ -1170,6 +1170,12 @@ router.post('/:planId/suggest', authMiddleware, async (req, res) => {
       location: body.location,
       destination: plan.destination,
       aiClient,
+      usage: {
+        userId: String(callerId || ''),
+        planId,
+        feature: 'suggest',
+        aiClient,
+      },
     });
     if (result.status !== 200) {
       return res.status(result.status).json({ message: result.msg });

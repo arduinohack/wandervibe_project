@@ -9,6 +9,8 @@ const {
   encryptionConfigured,
   encryptApiKey,
 } = require('../utils/aiProvider');
+const ApiKey = require('../models/ApiKey');
+const { NAME_LIMIT, generateApiKey } = require('../utils/apiKey');
 const router = express.Router();
 const settingsRouter = express.Router();
 
@@ -93,6 +95,96 @@ settingsRouter.put('/me/ai-settings', async (req, res) => {
       : 'Server error';
     if (message === 'Server error') console.error('AI settings save failed');
     return res.status(500).json({ message });
+  }
+});
+
+// Creating, listing, and revoking keys requires the login JWT.
+// An agent key must not be able to mint another key.
+function requireLoginJwt(req, res) {
+  if (req.authType !== 'jwt' || !callerId(req)) {
+    res.status(401).json({ message: 'Token is not valid' });
+    return false;
+  }
+  return true;
+}
+
+function keyName(body) {
+  if (!body || typeof body.name !== 'string') return '';
+  return body.name.trim();
+}
+
+function publicKey(doc) {
+  return {
+    id: String(doc._id),
+    name: doc.name,
+    prefix: doc.prefix,
+    createdAt: doc.createdAt,
+    lastUsedAt: doc.lastUsedAt || null,
+  };
+}
+
+// POST /api/users/me/api-keys. The raw key is returned only from this response.
+settingsRouter.post('/me/api-keys', async (req, res) => {
+  try {
+    if (!requireLoginJwt(req, res)) return;
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+      ? req.body
+      : null;
+    const name = keyName(body);
+    if (!name) return res.status(400).json({ message: 'Name is required' });
+    if (name.length > NAME_LIMIT) {
+      return res.status(400).json({ message: 'Name must be 80 characters or less' });
+    }
+    const minted = generateApiKey();
+    const doc = await ApiKey.create({
+      userId: callerId(req),
+      name,
+      keyHash: minted.keyHash,
+      prefix: minted.prefix,
+    });
+    return res.status(201).json({
+      id: String(doc._id),
+      name: doc.name,
+      key: minted.key,
+      prefix: doc.prefix,
+      createdAt: doc.createdAt,
+    });
+  } catch (err) {
+    console.error('API key create failed');
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// GET /api/users/me/api-keys. Active keys only. Never the raw secret or its hash.
+settingsRouter.get('/me/api-keys', async (req, res) => {
+  try {
+    if (!requireLoginJwt(req, res)) return;
+    const rows = await ApiKey.find({ userId: callerId(req), revokedAt: null })
+      .sort({ createdAt: -1 })
+      .select('name prefix createdAt lastUsedAt')
+      .lean();
+    return res.json(rows.map((row) => publicKey(row)));
+  } catch (err) {
+    console.error('API key list failed');
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// DELETE /api/users/me/api-keys/:id. Revokes the caller's active key.
+settingsRouter.delete('/me/api-keys/:id', async (req, res) => {
+  try {
+    if (!requireLoginJwt(req, res)) return;
+    const id = String(req.params.id || '');
+    const updated = await ApiKey.findOneAndUpdate(
+      { _id: id, userId: callerId(req), revokedAt: null },
+      { $set: { revokedAt: new Date() } },
+      { new: true },
+    ).select('name prefix revokedAt').lean();
+    if (!updated) return res.status(404).json({ message: 'API key not found' });
+    return res.json({ id: String(updated._id), revokedAt: updated.revokedAt });
+  } catch (err) {
+    console.error('API key revoke failed');
+    return res.status(500).json({ message: 'Server error' });
   }
 });
 

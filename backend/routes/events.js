@@ -269,7 +269,10 @@ router.post('/parse-confirmation', authMiddleware, async (req, res) => {
       console.error('Confirmation AI client failed:', message);
     }
     if (client) {
-      const modeled = await confirmationFieldsFromModel(req.body.text, type, client);
+      const modeled = await confirmationFieldsFromModel(req.body.text, type, client, {
+        userId: String(callerId || ''),
+        feature: 'paste',
+      });
       if (modeled) return res.json(modeled);
     }
     return res.json(parsed);
