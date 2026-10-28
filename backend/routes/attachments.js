@@ -18,6 +18,7 @@ const {
   removeStored,
   contentDisposition,
 } = require('../utils/attachmentStore');
+const { prepareAttachment, prepareEdit } = require('../utils/planAccess');
 const fs = require('fs');
 
 const activityAttachmentRouter = express.Router();
@@ -89,6 +90,10 @@ activityAttachmentRouter.post('/:id/attachments', authMiddleware, async (req, re
       return res.status(403).json({
         message: 'Only Owner or Collaborator can add attachments',
       });
+    }
+    const gate = await prepareAttachment(callerId);
+    if (gate.status !== 200) {
+      return res.status(gate.status).json({ message: gate.message });
     }
 
     let file;
@@ -233,6 +238,10 @@ attachmentRouter.delete('/:id', authMiddleware, async (req, res) => {
       return res.status(403).json({
         message: 'Only the uploader or the Owner can delete an attachment',
       });
+    }
+    const gate = await prepareEdit(callerId);
+    if (gate.status !== 200) {
+      return res.status(gate.status).json({ message: gate.message });
     }
     await Attachment.deleteOne({ _id: attachment._id });
     try {

@@ -21,6 +21,7 @@ const { applyFlightLegs, activityZoneError, zoneNameError } = require('../utils/
 const { parseConfirmation } = require('../utils/parseConfirmation');
 const { confirmationFieldsFromModel } = require('../utils/xaiConfirmation');
 const { getAiClient } = require('../utils/aiProvider');
+const { prepareEdit, prepareAi } = require('../utils/planAccess');
 
 function applySchedule(target, schedule) {
   if (schedule.startTime) target.startTime = schedule.startTime;
@@ -44,6 +45,12 @@ async function membershipRole(planId, callerId) {
 async function callerMayEditActivities(planId, callerId) {
   const role = await membershipRole(planId, callerId);
   return role === 'Owner' || role === 'Collaborator';
+}
+
+async function editGate(callerId) {
+  const gate = await prepareEdit(callerId);
+  if (gate.status === 200) return null;
+  return { status: gate.status, body: { message: gate.message } };
 }
 
 async function callerMayParseConfirmation(callerId) {
@@ -139,6 +146,8 @@ async function createActivity(callerId, body) {
         body: { message: 'Only Owner or Collaborator can change activities' },
       };
     }
+    const blocked = await editGate(callerId);
+    if (blocked) return blocked;
 
     const insertAfterId = textId(body, 'insertAfter');
     const insertBeforeId = textId(body, 'insertBefore');
@@ -231,6 +240,8 @@ router.put('/order', authMiddleware, async (req, res) => {
     if (!allowed) {
       return res.status(403).json({ message: 'Only Owner or Collaborator can change activities' });
     }
+    const blocked = await editGate(callerId);
+    if (blocked) return res.status(blocked.status).json(blocked.body);
     const [plan, rows] = await Promise.all([
       Plan.findById(planId).select('sourcePlanId linkedActivityIds').lean(),
       Event.find({ planId }).select('_id').lean(),
@@ -279,6 +290,10 @@ router.post('/parse-confirmation', authMiddleware, async (req, res) => {
     } catch (err) {
       const message = err && err.message ? err.message : 'request failed';
       console.error('Confirmation AI client failed:', message);
+    }
+    const gate = await prepareAi(callerId, client);
+    if (gate.status !== 200) {
+      return res.status(gate.status).json({ message: gate.message });
     }
     if (client) {
       const modeled = await confirmationFieldsFromModel(req.body.text, type, client, {
@@ -347,6 +362,8 @@ router.post('/:id/restore', authMiddleware, async (req, res) => {
     if (!allowed) {
       return res.status(403).json({ message: 'Only Owner or Collaborator can change activities' });
     }
+    const blocked = await editGate(callerId);
+    if (blocked) return res.status(blocked.status).json(blocked.body);
     if (event && String(revision.planId) !== String(event.planId)) {
       return res.status(400).json({ message: 'Revision does not belong to this activity' });
     }
@@ -408,6 +425,8 @@ router.put('/:id/move', authMiddleware, async (req, res) => {
     if (!allowed) {
       return res.status(403).json({ message: 'Only Owner or Collaborator can change activities' });
     }
+    const blocked = await editGate(callerId);
+    if (blocked) return res.status(blocked.status).json(blocked.body);
     const bodyPlanId = textId(req.body, 'planId');
     if (bodyPlanId && bodyPlanId !== String(planId)) {
       return res.status(400).json({ message: 'Activity is not on this plan' });
@@ -446,6 +465,8 @@ async function updateActivity(callerId, activityId, body) {
         body: { message: 'Only Owner or Collaborator can change activities' },
       };
     }
+    const blocked = await editGate(callerId);
+    if (blocked) return blocked;
 
     const source = body || {};
     const nextType = Object.prototype.hasOwnProperty.call(source, 'type') ? source.type : event.type;
@@ -535,6 +556,8 @@ async function deleteActivity(callerId, activityId) {
         body: { message: 'Only Owner or Collaborator can change activities' },
       };
     }
+    const blocked = await editGate(callerId);
+    if (blocked) return blocked;
 
     const planId = event.planId;
     await Event.findByIdAndDelete(activityId);

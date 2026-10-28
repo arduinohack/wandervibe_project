@@ -1,0 +1,479 @@
+jest.mock('../utils/notifications', () => ({
+  notifyUsers: jest.fn().mockResolvedValue(undefined),
+}));
+
+jest.mock('axios', () => ({
+  post: jest.fn(() => Promise.resolve({ status: 500, data: {} })),
+  get: jest.fn(() => Promise.resolve({ status: 500, data: {} })),
+}));
+
+const request = require('supertest');
+const mongoose = require('mongoose');
+const axios = require('axios');
+const { MongoMemoryServer } = require('mongodb-memory-server');
+const app = require('../app');
+const { allowRegister, clearRegisterInvite } = require('./inviteForRegister');
+const User = require('../models/User');
+const Plan = require('../models/Plan');
+const PlanUser = require('../models/PlanUser');
+const Invitation = require('../models/Invitation');
+const { Event } = require('../models/Event');
+const ActivityRevision = require('../models/ActivityRevision');
+const SupportLog = require('../models/SupportLog');
+const AiUsage = require('../models/AiUsage');
+const { getBalance } = require('../utils/aiCredits');
+const { XAI_ENDPOINT } = require('../utils/aiCommand');
+const { SEARCH_URL } = require('../utils/placeSuggest');
+const {
+  CREATE_MESSAGE,
+  DELETE_MESSAGE,
+  EXPORT_MESSAGE,
+  EDIT_MESSAGE,
+  AI_MESSAGE,
+} = require('../utils/planAccess');
+
+jest.setTimeout(30000);
+
+const TRIAL_MS = 14 * 24 * 60 * 60 * 1000;
+const SECRET = '0123456789abcdef0123456789abcdef';
+const USER_KEY = 'user-xai-key-9f3c2a7b-do-not-echo';
+const SERVER_KEY = 'server-xai-key-should-be-fallback';
+const CREDITS = '/api/users/me/ai-credits';
+
+let mongo;
+const previousXai = process.env.XAI_API_KEY;
+const previousSecret = process.env.AI_KEY_ENCRYPTION_SECRET;
+const previousGoogle = process.env.GOOGLE_MAPS_API_KEY;
+
+function bearer(token) {
+  return { Authorization: `Bearer ${token}` };
+}
+
+async function registerAndLogin(email) {
+  await allowRegister(email);
+  const registerRes = await request(app)
+    .post('/api/auth/register')
+    .send({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email,
+      password: 'password1',
+    });
+  await clearRegisterInvite(email);
+  expect(registerRes.status).toBe(201);
+  const loginRes = await request(app)
+    .post('/api/auth/login')
+    .send({ email, password: 'password1' });
+  expect(loginRes.status).toBe(200);
+  return {
+    token: loginRes.body.token,
+    userId: loginRes.body.user._id,
+  };
+}
+
+async function postPlan(token, name) {
+  return request(app)
+    .post('/api/plans')
+    .set(bearer(token))
+    .send({
+      type: 'trip',
+      name,
+      destination: 'Paris',
+      timeZone: 'UTC',
+      startDate: '2026-10-27T00:00:00.000Z',
+      endDate: '2026-10-30T00:00:00.000Z',
+    });
+}
+
+async function postActivity(token, planId, name = 'Dinner') {
+  return request(app)
+    .post('/api/activities')
+    .set(bearer(token))
+    .send({
+      name,
+      type: 'dining',
+      planId,
+      startTime: '2026-10-28T19:00:00.000Z',
+      endTime: '2026-10-28T21:00:00.000Z',
+    });
+}
+
+function exportPlan(token, planId) {
+  return request(app)
+    .get(`/api/plans/${planId}/export`)
+    .query({ format: 'csv', fields: 'name' })
+    .set(bearer(token));
+}
+
+async function credits(token) {
+  const res = await request(app).get(CREDITS).set(bearer(token));
+  expect(res.status).toBe(200);
+  return res.body;
+}
+
+async function endAccess(userId) {
+  const started = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000);
+  const ended = new Date(Date.now() - 60 * 60 * 1000);
+  await User.updateOne(
+    { _id: userId },
+    {
+      $set: {
+        plusActive: false,
+        trialStartedAt: started,
+        trialEndsAt: ended,
+      },
+    },
+  );
+}
+
+async function acceptRole(ownerToken, memberToken, planId, email, role) {
+  const inviteRes = await request(app)
+    .post(`/api/plans/${planId}/invite`)
+    .set(bearer(ownerToken))
+    .send({ email, role });
+  expect(inviteRes.status).toBe(201);
+  const acceptRes = await request(app)
+    .post(`/api/invites/invitations/${inviteRes.body.invitation._id}/respond`)
+    .set(bearer(memberToken))
+    .send({ status: 'accepted' });
+  expect(acceptRes.status).toBe(200);
+}
+
+beforeAll(async () => {
+  process.env.AI_KEY_ENCRYPTION_SECRET = SECRET;
+  mongo = await MongoMemoryServer.create();
+  await mongoose.connect(mongo.getUri());
+});
+
+afterEach(async () => {
+  axios.post.mockReset();
+  axios.get.mockReset();
+  await Promise.all([
+    User.deleteMany({}),
+    Plan.deleteMany({}),
+    PlanUser.deleteMany({}),
+    Invitation.deleteMany({}),
+    Event.deleteMany({}),
+    ActivityRevision.deleteMany({}),
+    SupportLog.deleteMany({}),
+    AiUsage.deleteMany({}),
+  ]);
+});
+
+afterAll(async () => {
+  if (previousXai == null) delete process.env.XAI_API_KEY;
+  else process.env.XAI_API_KEY = previousXai;
+  if (previousSecret == null) delete process.env.AI_KEY_ENCRYPTION_SECRET;
+  else process.env.AI_KEY_ENCRYPTION_SECRET = previousSecret;
+  if (previousGoogle == null) delete process.env.GOOGLE_MAPS_API_KEY;
+  else process.env.GOOGLE_MAPS_API_KEY = previousGoogle;
+  await mongoose.disconnect();
+  if (mongo) await mongo.stop();
+});
+
+describe('free-owner trial and Plus gating', () => {
+  test('the first owned plan starts a 14-day trial and grants 15 credits once', async () => {
+    const ada = await registerAndLogin('ada-trial-first@example.com');
+    expect(await getBalance(ada.userId)).toBe(0);
+
+    const before = Date.now();
+    const first = await postPlan(ada.token, 'Paris');
+    const after = Date.now();
+    expect(first.status).toBe(201);
+    const shown = await credits(ada.token);
+    const started = Date.parse(shown.trialStartedAt);
+    const ends = Date.parse(shown.trialEndsAt);
+    expect(started).toBeGreaterThanOrEqual(before);
+    expect(started).toBeLessThanOrEqual(after);
+    expect(ends - started).toBe(TRIAL_MS);
+    expect(shown.trialActive).toBe(true);
+    expect(shown.plusActive).toBe(false);
+    expect(shown.plansOwned).toBe(1);
+    expect(shown.aiCredits).toBe(15);
+    const startedAt = shown.trialStartedAt;
+
+    const second = await postPlan(ada.token, 'Lyon');
+    expect(second.status).toBe(201);
+    expect(await getBalance(ada.userId)).toBe(15);
+    expect((await credits(ada.token)).plansOwned).toBe(2);
+
+    const removedFirst = await request(app)
+      .delete(`/api/plans/${first.body.plan._id}`)
+      .set(bearer(ada.token));
+    expect(removedFirst.status).toBe(200);
+    const removedSecond = await request(app)
+      .delete(`/api/plans/${second.body.plan._id}`)
+      .set(bearer(ada.token));
+    expect(removedSecond.status).toBe(200);
+
+    const again = await postPlan(ada.token, 'Nice');
+    expect(again.status).toBe(201);
+    const afterAgain = await credits(ada.token);
+    expect(afterAgain.aiCredits).toBe(15);
+    expect(afterAgain.trialStartedAt).toBe(startedAt);
+    expect(afterAgain.plansOwned).toBe(1);
+  });
+
+  test('a trial allows two plans, blocks a third and import, and blocks export', async () => {
+    const ada = await registerAndLogin('ada-trial-cap@example.com');
+    const first = await postPlan(ada.token, 'Paris');
+    const second = await postPlan(ada.token, 'Lyon');
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(201);
+
+    const third = await postPlan(ada.token, 'Nice');
+    expect(third.status).toBe(402);
+    expect(third.body).toEqual({ message: CREATE_MESSAGE });
+    expect(await Plan.countDocuments({ ownerId: ada.userId })).toBe(2);
+
+    const imported = await request(app)
+      .post(`/api/plans/${first.body.plan._id}/import`)
+      .set(bearer(ada.token))
+      .field('map', JSON.stringify({ name: 'name', type: 'type' }))
+      .field('defaultType', 'dining')
+      .attach('file', Buffer.from('name,type\nDinner,dining\n', 'utf8'), 'import.csv');
+    expect(imported.status).toBe(402);
+    expect(imported.body).toEqual({ message: CREATE_MESSAGE });
+    expect(await Plan.countDocuments({ ownerId: ada.userId })).toBe(2);
+
+    const exported = await exportPlan(ada.token, first.body.plan._id);
+    expect(exported.status).toBe(402);
+    expect(exported.body).toEqual({ message: EXPORT_MESSAGE });
+  });
+
+  test('after the trial, create and delete are blocked and the plan stays readable', async () => {
+    const ada = await registerAndLogin('ada-trial-ended@example.com');
+    const grace = await registerAndLogin('grace-trial-ended@example.com');
+    const created = await postPlan(ada.token, 'Paris');
+    expect(created.status).toBe(201);
+    const planId = created.body.plan._id;
+    const dinner = await postActivity(ada.token, planId);
+    expect(dinner.status).toBe(201);
+    await acceptRole(ada.token, grace.token, planId, 'grace-trial-ended@example.com', 'Guest');
+    await endAccess(ada.userId);
+
+    const another = await postPlan(ada.token, 'Lyon');
+    expect(another.status).toBe(402);
+    expect(another.body).toEqual({ message: CREATE_MESSAGE });
+
+    const removed = await request(app)
+      .delete(`/api/plans/${planId}`)
+      .set(bearer(ada.token));
+    expect(removed.status).toBe(402);
+    expect(removed.body).toEqual({ message: DELETE_MESSAGE });
+    expect(await Plan.findById(planId)).not.toBeNull();
+
+    const edited = await postActivity(ada.token, planId, 'Lunch');
+    expect(edited.status).toBe(402);
+    expect(edited.body).toEqual({ message: EDIT_MESSAGE });
+
+    const guestEdit = await postActivity(grace.token, planId, 'Guest lunch');
+    expect(guestEdit.status).toBe(403);
+
+    const plan = await request(app)
+      .get(`/api/plans/${planId}`)
+      .set(bearer(ada.token));
+    expect(plan.status).toBe(200);
+    expect(plan.body.plan.name).toBe('Paris');
+
+    const itinerary = await request(app)
+      .get(`/api/plans/${planId}/itinerary`)
+      .set(bearer(ada.token));
+    expect(itinerary.status).toBe(200);
+    expect(itinerary.body.events.some((event) => event.name === 'Dinner')).toBe(true);
+
+    const listed = await request(app).get('/api/plans').set(bearer(ada.token));
+    expect(listed.status).toBe(200);
+    expect(listed.body.plans.some((item) => item._id === planId)).toBe(true);
+
+    const shown = await credits(ada.token);
+    expect(shown.trialActive).toBe(false);
+    expect(shown.plusActive).toBe(false);
+    expect(shown.plansOwned).toBe(1);
+  });
+
+  test('Plus can create, delete, and export', async () => {
+    const ada = await registerAndLogin('ada-plus-open@example.com');
+    await User.updateOne({ _id: ada.userId }, { $set: { plusActive: true } });
+    const names = ['Paris', 'Lyon', 'Nice'];
+    const ids = [];
+    for (const name of names) {
+      const created = await postPlan(ada.token, name);
+      expect(created.status).toBe(201);
+      ids.push(created.body.plan._id);
+    }
+    expect((await credits(ada.token)).plansOwned).toBe(3);
+    expect(await getBalance(ada.userId)).toBe(15);
+
+    const exported = await exportPlan(ada.token, ids[0]);
+    expect(exported.status).toBe(200);
+    expect(exported.text).toContain('name');
+
+    const removed = await request(app)
+      .delete(`/api/plans/${ids[2]}`)
+      .set(bearer(ada.token));
+    expect(removed.status).toBe(200);
+    expect(await Plan.findById(ids[2])).toBeNull();
+  });
+
+  test('a lapsed Plus subscription is read-only and export stays blocked', async () => {
+    const ada = await registerAndLogin('ada-plus-lapsed@example.com');
+    const created = await postPlan(ada.token, 'Paris');
+    expect(created.status).toBe(201);
+    const planId = created.body.plan._id;
+    const dinner = await postActivity(ada.token, planId);
+    expect(dinner.status).toBe(201);
+
+    await User.updateOne({ _id: ada.userId }, { $set: { plusActive: false } });
+    const whileTrial = await postActivity(ada.token, planId, 'Still in trial');
+    expect(whileTrial.status).toBe(201);
+    const trialExport = await exportPlan(ada.token, planId);
+    expect(trialExport.status).toBe(402);
+    expect(trialExport.body).toEqual({ message: EXPORT_MESSAGE });
+
+    await endAccess(ada.userId);
+    const another = await postPlan(ada.token, 'Lyon');
+    expect(another.status).toBe(402);
+    expect(another.body).toEqual({ message: CREATE_MESSAGE });
+    const removed = await request(app)
+      .delete(`/api/plans/${planId}`)
+      .set(bearer(ada.token));
+    expect(removed.status).toBe(402);
+    expect(removed.body).toEqual({ message: DELETE_MESSAGE });
+    const edited = await request(app)
+      .put(`/api/plans/${planId}`)
+      .set(bearer(ada.token))
+      .send({ name: 'Renamed' });
+    expect(edited.status).toBe(402);
+    expect(edited.body).toEqual({ message: EDIT_MESSAGE });
+    const exported = await exportPlan(ada.token, planId);
+    expect(exported.status).toBe(402);
+    expect(exported.body).toEqual({ message: EXPORT_MESSAGE });
+
+    const plan = await request(app)
+      .get(`/api/plans/${planId}`)
+      .set(bearer(ada.token));
+    expect(plan.status).toBe(200);
+    expect(plan.body.plan.name).toBe('Paris');
+    const itinerary = await request(app)
+      .get(`/api/plans/${planId}/itinerary`)
+      .set(bearer(ada.token));
+    expect(itinerary.status).toBe(200);
+    expect(itinerary.body.events.some((event) => event.name === 'Dinner')).toBe(true);
+  });
+
+  test('server-key AI at zero credits during the trial is still insufficient credits', async () => {
+    process.env.XAI_API_KEY = SERVER_KEY;
+    const ada = await registerAndLogin('ada-trial-credits@example.com');
+    const created = await postPlan(ada.token, 'Paris');
+    expect(created.status).toBe(201);
+    await User.updateOne({ _id: ada.userId }, { $set: { aiCredits: 0 } });
+
+    const blocked = await request(app)
+      .post(`/api/plans/${created.body.plan._id}/ai-command`)
+      .set(bearer(ada.token))
+      .send({ instruction: 'add a dinner near the hotel on day 2' });
+    expect(blocked.status).toBe(402);
+    expect(blocked.body).toEqual({ message: 'Insufficient AI credits' });
+    expect(axios.post).not.toHaveBeenCalled();
+    expect(await getBalance(ada.userId)).toBe(0);
+  });
+
+  test('after the trial, server-key AI asks for Plus and a user key still works', async () => {
+    process.env.XAI_API_KEY = SERVER_KEY;
+    process.env.GOOGLE_MAPS_API_KEY = 'test-google-key';
+    const ada = await registerAndLogin('ada-trial-byok@example.com');
+    const created = await postPlan(ada.token, 'Paris');
+    expect(created.status).toBe(201);
+    const planId = created.body.plan._id;
+    await User.updateOne({ _id: ada.userId }, { $set: { aiCredits: 5 } });
+    await endAccess(ada.userId);
+
+    const blocked = await request(app)
+      .post(`/api/plans/${planId}/ai-command`)
+      .set(bearer(ada.token))
+      .send({ instruction: 'add a dinner near the hotel on day 2' });
+    expect(blocked.status).toBe(402);
+    expect(blocked.body).toEqual({ message: AI_MESSAGE });
+    expect(axios.post).not.toHaveBeenCalled();
+    expect(await getBalance(ada.userId)).toBe(5);
+
+    const suggested = await request(app)
+      .post(`/api/plans/${planId}/suggest`)
+      .set(bearer(ada.token))
+      .send({ query: 'cafe' });
+    expect(suggested.status).toBe(402);
+    expect(suggested.body).toEqual({ message: AI_MESSAGE });
+
+    const saved = await request(app)
+      .put('/api/users/me/ai-settings')
+      .set(bearer(ada.token))
+      .send({ aiProvider: 'xai', apiKey: USER_KEY });
+    expect(saved.status).toBe(200);
+    axios.post.mockImplementation((url) => {
+      if (url === SEARCH_URL) {
+        return Promise.resolve({ status: 200, data: { places: [] } });
+      }
+      if (url !== XAI_ENDPOINT) return Promise.resolve({ status: 500, data: {} });
+      return Promise.resolve({
+        status: 200,
+        data: {
+          output_text: JSON.stringify({
+            action: 'add',
+            activity: {
+              title: 'Quiet coffee',
+              type: 'dining',
+              location: 'cafe in Paris',
+              startTime: '2026-10-28T09:00:00.000Z',
+              endTime: '2026-10-28T10:00:00.000Z',
+            },
+          }),
+        },
+      });
+    });
+    const proposed = await request(app)
+      .post(`/api/plans/${planId}/ai-command`)
+      .set(bearer(ada.token))
+      .send({ instruction: 'add a quiet coffee on day 2' });
+    expect(proposed.status).toBe(200);
+    expect(proposed.body.proposal.action).toBe('add');
+    expect(await getBalance(ada.userId)).toBe(5);
+    const calls = axios.post.mock.calls.filter((call) => call[0] === XAI_ENDPOINT);
+    expect(calls).toHaveLength(1);
+    expect(calls[0][2].headers.Authorization).toBe(`Bearer ${USER_KEY}`);
+
+    const applied = await request(app)
+      .post(`/api/plans/${planId}/ai-command/apply`)
+      .set(bearer(ada.token))
+      .send(proposed.body.proposal);
+    expect(applied.status).toBe(402);
+    expect(applied.body).toEqual({ message: EDIT_MESSAGE });
+    expect(await Event.countDocuments({ planId })).toBe(0);
+  });
+
+  test('a collaborator keeps role rules until their own trial has ended', async () => {
+    const ada = await registerAndLogin('ada-trial-collab@example.com');
+    const grace = await registerAndLogin('grace-trial-collab@example.com');
+    const created = await postPlan(ada.token, 'Paris');
+    expect(created.status).toBe(201);
+    const planId = created.body.plan._id;
+    await acceptRole(
+      ada.token,
+      grace.token,
+      planId,
+      'grace-trial-collab@example.com',
+      'Collaborator',
+    );
+    await endAccess(ada.userId);
+
+    const open = await postActivity(grace.token, planId, 'Grace dinner');
+    expect(open.status).toBe(201);
+
+    const own = await postPlan(grace.token, 'Grace trip');
+    expect(own.status).toBe(201);
+    await endAccess(grace.userId);
+    const closed = await postActivity(grace.token, planId, 'Too late');
+    expect(closed.status).toBe(402);
+    expect(closed.body).toEqual({ message: EDIT_MESSAGE });
+  });
+});

@@ -315,7 +315,14 @@ describe('Plus subscription', () => {
 
     const balance = await request(app).get(CREDITS).set(bearer(ada.token));
     expect(balance.status).toBe(200);
-    expect(balance.body).toEqual({ aiCredits: 0, plusActive: false });
+    expect(balance.body).toEqual({
+      aiCredits: 0,
+      plusActive: false,
+      trialStartedAt: null,
+      trialEndsAt: null,
+      trialActive: false,
+      plansOwned: 0,
+    });
   });
 
   test('a paid Plus subscription grants 100 once per invoice and cancel clears Plus', async () => {
@@ -526,6 +533,13 @@ describe('Plus subscription', () => {
     expect(stored.plusActive).toBe(false);
 
     const shown = await request(app).get(CREDITS).set(bearer(ada.token));
-    expect(shown.body).toEqual({ aiCredits: 300, plusActive: false });
+    expect(shown.body).toEqual({
+      aiCredits: 300,
+      plusActive: false,
+      trialStartedAt: null,
+      trialEndsAt: null,
+      trialActive: false,
+      plansOwned: 0,
+    });
   });
 });

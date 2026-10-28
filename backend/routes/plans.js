@@ -34,6 +34,13 @@ const { getAiClient } = require('../utils/aiProvider');
 const { attachItineraryWarnings } = require('../utils/itineraryWarnings');
 const { findActivityWithPlace } = require('../utils/activityPlace');
 const { spansByPlanId } = require('../utils/activityDateSpan');
+const {
+  preparePlanCreate,
+  preparePlanDelete,
+  prepareExport,
+  prepareEdit,
+  prepareAi,
+} = require('../utils/planAccess');
 const router = express.Router();
 const csvUpload = multer({
   storage: multer.memoryStorage(),
@@ -53,6 +60,12 @@ router.post('/', authMiddleware, async (req, res) => {
   }
 
   try {
+    const callerId = req.user.userId || req.user.id;
+    const gate = await preparePlanCreate(callerId);
+    if (gate.status !== 200) {
+      return res.status(gate.status).json({ message: gate.message });
+    }
+
     // Generate UUID for plan ID
     const planId = uuidv4();
 
@@ -959,6 +972,11 @@ router.post('/:planId/import', authMiddleware, async (req, res) => {
       activities.push(activity);
     }
 
+    const gate = await preparePlanCreate(callerId);
+    if (gate.status !== 200) {
+      return res.status(gate.status).json({ message: gate.message });
+    }
+
     const newPlanId = uuidv4();
     const created = new Plan({
       _id: newPlanId,
@@ -1010,6 +1028,11 @@ router.get('/:planId/export', authMiddleware, async (req, res) => {
     const role = await callerPlanRole(plan, callerId);
     if (role !== 'Owner' && role !== 'Collaborator') {
       return res.status(403).json({ message: 'Only Owner or Collaborator can export a plan' });
+    }
+
+    const gate = await prepareExport(callerId);
+    if (gate.status !== 200) {
+      return res.status(gate.status).json({ message: gate.message });
     }
 
     const requested = readExportQuery(req.query);
@@ -1165,6 +1188,10 @@ router.post('/:planId/suggest', authMiddleware, async (req, res) => {
       const message = err && err.message ? err.message : 'request failed';
       console.error('Place suggest AI client failed:', message);
     }
+    const gate = await prepareAi(callerId, aiClient);
+    if (gate.status !== 200) {
+      return res.status(gate.status).json({ message: gate.message });
+    }
     const result = await suggestPlaces({
       query: body.query,
       activityType: body.activityType,
@@ -1235,6 +1262,10 @@ router.post('/:planId/ai-command', authMiddleware, async (req, res) => {
       const message = err && err.message ? err.message : 'request failed';
       console.error('AI command client failed:', message);
     }
+    const gate = await prepareAi(callerId, aiClient);
+    if (gate.status !== 200) {
+      return res.status(gate.status).json({ message: gate.message });
+    }
     const result = await proposePlanCommand({
       plan,
       instruction: instruction.trim(),
@@ -1267,6 +1298,11 @@ router.post('/:planId/ai-command/apply', authMiddleware, async (req, res) => {
       return res.status(403).json({ message: AI_EDIT_ROLE });
     }
 
+    const gate = await prepareEdit(callerId);
+    if (gate.status !== 200) {
+      return res.status(gate.status).json({ message: gate.message });
+    }
+
     const result = await applyPlanCommand({
       planId,
       callerId: String(callerId || ''),
@@ -1295,6 +1331,11 @@ router.put('/:planId', authMiddleware, async (req, res) => {
     const role = await callerPlanRole(plan, callerId);
     if (role !== 'Owner' && role !== 'Collaborator') {
       return res.status(403).json({ message: 'Only Owner or Collaborator can edit a plan' });
+    }
+
+    const gate = await prepareEdit(callerId);
+    if (gate.status !== 200) {
+      return res.status(gate.status).json({ message: gate.message });
     }
 
     const body = req.body && typeof req.body === 'object' ? req.body : {};
@@ -1377,6 +1418,11 @@ router.delete('/:planId', authMiddleware, async (req, res) => {
     const role = await callerPlanRole(plan, callerId);
     if (role !== 'Owner') {
       return res.status(403).json({ message: 'Only the Owner can delete a plan' });
+    }
+
+    const gate = await preparePlanDelete(callerId);
+    if (gate.status !== 200) {
+      return res.status(gate.status).json({ message: gate.message });
     }
 
     const [others, pending] = await Promise.all([

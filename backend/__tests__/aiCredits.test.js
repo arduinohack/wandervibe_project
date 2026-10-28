@@ -164,7 +164,14 @@ describe('AI credits', () => {
 
     const balance = await request(app).get(CREDITS).set(bearer(ada.token));
     expect(balance.status).toBe(200);
-    expect(balance.body).toEqual({ aiCredits: 0, plusActive: false });
+    expect(balance.body).toEqual({
+      aiCredits: 0,
+      plusActive: false,
+      trialStartedAt: null,
+      trialEndsAt: null,
+      trialActive: false,
+      plansOwned: 0,
+    });
 
     const missing = await request(app).get(CREDITS);
     expect(missing.status).toBe(401);
@@ -216,7 +223,14 @@ describe('AI credits', () => {
     expect(again.body).toEqual({ aiCredits: 5 });
 
     const balance = await request(app).get(CREDITS).set(bearer(ada.token));
-    expect(balance.body).toEqual({ aiCredits: 5, plusActive: false });
+    expect(balance.body).toEqual({
+      aiCredits: 5,
+      plusActive: false,
+      trialStartedAt: null,
+      trialEndsAt: null,
+      trialActive: false,
+      plansOwned: 0,
+    });
     expect(await getBalance(admin.userId)).toBe(0);
 
     const zero = await request(app)

@@ -186,8 +186,8 @@ describe('AI command', () => {
     process.env.XAI_API_KEY = SERVER_KEY;
     process.env.GOOGLE_MAPS_API_KEY = 'test-google-key';
     const owner = await registerAndLogin('ada@example.com', 'Ada');
-    await setCredits(owner.userId, 1);
     const planId = await createPlan(owner.token);
+    await setCredits(owner.userId, 1);
     const missing = await request(app)
       .post(command(planId))
       .set(bearer(owner.token))
@@ -277,8 +277,8 @@ describe('AI command', () => {
   test('update proposes a new time and apply writes it', async () => {
     process.env.XAI_API_KEY = SERVER_KEY;
     const owner = await registerAndLogin('ada@example.com', 'Ada');
-    await setCredits(owner.userId, 1);
     const planId = await createPlan(owner.token);
+    await setCredits(owner.userId, 1);
     const activityId = await addMuseum(owner.token, planId);
     mockModel({
       action: 'update',
@@ -335,8 +335,8 @@ describe('AI command', () => {
   test('delete proposes removal and apply removes the activity', async () => {
     process.env.XAI_API_KEY = SERVER_KEY;
     const owner = await registerAndLogin('ada@example.com', 'Ada');
-    await setCredits(owner.userId, 1);
     const planId = await createPlan(owner.token);
+    await setCredits(owner.userId, 1);
     const activityId = await addMuseum(owner.token, planId);
     mockModel({
       action: 'delete',
@@ -414,6 +414,7 @@ describe('AI command', () => {
     process.env.XAI_API_KEY = SERVER_KEY;
     const owner = await registerAndLogin('ada@example.com', 'Ada');
     const planId = await createPlan(owner.token);
+    await setCredits(owner.userId, 0);
     const blocked = await request(app)
       .post(command(planId))
       .set(bearer(owner.token))
@@ -434,13 +435,13 @@ describe('AI command', () => {
 
   test('a user key proposes without deducting credits', async () => {
     const owner = await registerAndLogin('ada@example.com', 'Ada');
-    await setCredits(owner.userId, 4);
     const saved = await request(app)
       .put('/api/users/me/ai-settings')
       .set(bearer(owner.token))
       .send({ aiProvider: 'xai', apiKey: USER_KEY });
     expect(saved.status).toBe(200);
     const planId = await createPlan(owner.token);
+    await setCredits(owner.userId, 4);
     mockModel({
       action: 'add',
       activity: {
@@ -503,8 +504,8 @@ describe('AI command', () => {
   test('a follow-up with history proposes a different change', async () => {
     process.env.XAI_API_KEY = SERVER_KEY;
     const owner = await registerAndLogin('ada@example.com', 'Ada');
-    await setCredits(owner.userId, 2);
     const planId = await createPlan(owner.token);
+    await setCredits(owner.userId, 2);
     const badHistory = await request(app)
       .post(command(planId))
       .set(bearer(owner.token))
@@ -585,8 +586,8 @@ describe('AI command', () => {
   test('history keeps the last 6 turns', async () => {
     process.env.XAI_API_KEY = SERVER_KEY;
     const owner = await registerAndLogin('ada@example.com', 'Ada');
-    await setCredits(owner.userId, 1);
     const planId = await createPlan(owner.token);
+    await setCredits(owner.userId, 1);
     mockModel({
       action: 'none',
       message: 'No change.',
@@ -634,8 +635,8 @@ describe('AI command', () => {
   test('what is missing can return action none', async () => {
     process.env.XAI_API_KEY = SERVER_KEY;
     const owner = await registerAndLogin('ada@example.com', 'Ada');
-    await setCredits(owner.userId, 1);
     const planId = await createPlan(owner.token);
+    await setCredits(owner.userId, 1);
     await addMuseum(owner.token, planId);
     mockModel({
       action: 'none',
@@ -678,8 +679,8 @@ describe('AI command', () => {
   test('a free afternoon asks for one afternoon block', async () => {
     process.env.XAI_API_KEY = SERVER_KEY;
     const owner = await registerAndLogin('ada@example.com', 'Ada');
-    await setCredits(owner.userId, 1);
     const planId = await createPlan(owner.token);
+    await setCredits(owner.userId, 1);
     mockModel({
       action: 'add',
       message: '',

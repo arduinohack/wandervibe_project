@@ -194,6 +194,8 @@ describe('csv plan import', () => {
     const sourceEvents = await Event.find({ planId });
     expect(sourceEvents.map((row) => row.name)).toEqual(['Dinner']);
 
+    // The second import is this owner's third plan. Plus lifts the trial cap.
+    await User.updateOne({ _id: ada.userId }, { $set: { plusActive: true } });
     const again = await postImport(
       ada.token,
       planId,
