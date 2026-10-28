@@ -68,7 +68,10 @@ app.use('/api/plans', authMiddleware, plansRouter, planInviteRouter);
 
 // Activity API. The handlers live at /api/activities. /api/events is not mounted.
 const eventRoutes = require('./routes/events');
+const { activityAttachmentRouter, attachmentRouter } = require('./routes/attachments');
 app.use('/api/activities', eventRoutes);
+app.use('/api/activities', activityAttachmentRouter);
+app.use('/api/attachments', attachmentRouter);
 
 // Place search. Auth is on the route. Owner or Collaborator only.
 app.use('/api/places', require('./routes/places'));

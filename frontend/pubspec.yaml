@@ -44,7 +44,8 @@ dependencies:
   url_launcher: ^6.2.2  # Added For launchUrl
   pdf: ^3.13.1
   printing: ^5.15.1
- 
+  file_picker: ^11.0.3  # Activity photo and PDF picker
+
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
