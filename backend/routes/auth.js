@@ -31,6 +31,7 @@ const {
   mustVerifyEmail,
   sendVerificationEmail,
 } = require('../utils/emailVerification');
+const { checkTurnstile } = require('../utils/turnstile');
 
 const INVITE_REQUEST_EMAIL = 'ken@eratespecialists.com';
 const INVITE_REQUEST_SMS = '+14044081476';
@@ -149,6 +150,18 @@ router.post('/register', registerLimiter, async (req, res) => {
     event: 'AuthRegister',
     context: { email: email }
   });
+
+  const turnstile = await checkTurnstile(req.body && req.body.turnstileToken, req.ip);
+  if (!turnstile.ok) {
+    if (turnstile.error) {
+      logger.error('Turnstile siteverify failed', {
+        userId: userId,
+        event: 'AuthRegister',
+        context: { error: turnstile.error },
+      });
+    }
+    return res.status(turnstile.status).json({ message: turnstile.message });
+  }
 
   // Validate required fields
   if (!firstName || !lastName || !email || !password) {
