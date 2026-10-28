@@ -12,6 +12,7 @@ const {
 const ApiKey = require('../models/ApiKey');
 const { NAME_LIMIT, generateApiKey } = require('../utils/apiKey');
 const { getBalance } = require('../utils/aiCredits');
+const { createCreditCheckout } = require('../utils/stripeCredits');
 const router = express.Router();
 const settingsRouter = express.Router();
 
@@ -110,6 +111,24 @@ settingsRouter.get('/me/ai-credits', async (req, res) => {
     return res.json({ aiCredits });
   } catch (err) {
     console.error('AI credits read failed');
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// POST /api/users/me/ai-credits/checkout. Any logged-in user. Returns a Stripe URL.
+settingsRouter.post('/me/ai-credits/checkout', async (req, res) => {
+  try {
+    const userId = callerId(req);
+    if (!userId) return res.status(401).json({ message: 'No token, authorization denied' });
+    const user = await User.findById(userId).select('_id').lean();
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+      ? req.body
+      : {};
+    const result = await createCreditCheckout({ userId, pack: body.pack });
+    return res.status(result.status).json(result.body);
+  } catch (err) {
+    console.error('AI credit checkout failed');
     return res.status(500).json({ message: 'Server error' });
   }
 });
