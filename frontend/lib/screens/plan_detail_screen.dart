@@ -20,6 +20,7 @@ import '../utils/activity_time.dart';
 import '../utils/itinerary_warning.dart';
 import '../utils/logger.dart';
 import '../utils/place_suggestion_fill.dart';
+import '../utils/plus_upgrade.dart';
 import '../utils/place_suggestion_lines.dart';
 import '../utils/plan_pdf.dart';
 import '../widgets/activity_attachments.dart';
@@ -1267,6 +1268,8 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     final userProvider = Provider.of<UserProvider>(context, listen: false);
     final planProvider = Provider.of<PlanProvider>(context, listen: false);
     final navigator = Navigator.of(context);
+    await userProvider.loadPlanAccess();
+    if (!mounted) return;
     final status = await planProvider.fetchPlan(
       widget.plan.id,
       userProvider.token,
@@ -1499,6 +1502,14 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     }
     if (status == 403) {
       messenger.showSnackBar(const SnackBar(content: Text('Not allowed')));
+      return;
+    }
+    if (status == 402) {
+      await showPlusUpgradeDialog(
+        context,
+        message: planProvider.writeMessage ?? 'Upgrade to Plus to edit this plan.',
+        token: userProvider.token,
+      );
       return;
     }
     if (status != 201) {
@@ -2163,7 +2174,11 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
       MaterialPageRoute(
         builder: (context) => ActivityHistoryScreen(
           activityId: activityId,
-          canRestore: canAddActivity(storedRole),
+          canRestore: canAddActivity(storedRole) &&
+              !(Provider.of<UserProvider>(context, listen: false)
+                      .planAccess
+                      ?.readOnly ??
+                  false),
         ),
       ),
     );
@@ -2194,7 +2209,11 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
       MaterialPageRoute(
         builder: (context) => _PlanEditScreen(
           plan: plan,
-          canDelete: storedRole?.trim() == 'Owner',
+          canDelete: storedRole?.trim() == 'Owner' &&
+              !(Provider.of<UserProvider>(context, listen: false)
+                      .planAccess
+                      ?.readOnly ??
+                  false),
         ),
       ),
     );
@@ -2381,9 +2400,10 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
             );
           }
 
+          final viewer = context.watch<UserProvider>();
           final storedRole = planProvider.viewerStoredRole(
             widget.plan.id,
-            Provider.of<UserProvider>(context, listen: false).currentUserId,
+            viewer.currentUserId,
           );
           final shown = _shownPlan(planProvider);
           final roleText = storedRole == null
@@ -2392,7 +2412,9 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
           final activities = activitiesByUtcStart(
             planProvider.itineraryActivities,
           );
+          final readOnly = viewer.planAccess?.readOnly ?? false;
           final canChange = canAddActivity(storedRole);
+          final trialLabel = viewer.planAccess?.trialEndsLabel;
           final shownTimes = _shownActivityTimes(activities);
           final daySpan = planItinerarySpan(
             starts: [for (final time in shownTimes) time.start],
@@ -2451,6 +2473,10 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                         ],
                       ),
                       const SizedBox(height: 8),
+                      if (trialLabel != null) ...[
+                        Text(trialLabel),
+                        const SizedBox(height: 8),
+                      ],
                       if (_linkedSource != null) ...[
                         Text('Linked to: ${_linkedSource!.name}'),
                         for (final member in _linkedPlanners)
@@ -2503,10 +2529,11 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                             onPressed: _openAiEdit,
                             child: const Text('AI edit'),
                           ),
-                          TextButton(
-                            onPressed: () => _addActivity(),
-                            child: const Text('Add activity'),
-                          ),
+                          if (!readOnly)
+                            TextButton(
+                              onPressed: () => _addActivity(),
+                              child: const Text('Add activity'),
+                            ),
                         ],
                       ),
                     ),
@@ -2802,7 +2829,6 @@ class _AiEditSheetState extends State<_AiEditSheet> {
     }
     final userProvider = Provider.of<UserProvider>(context, listen: false);
     final planProvider = Provider.of<PlanProvider>(context, listen: false);
-    final messenger = ScaffoldMessenger.of(context);
     setState(() {
       _loading = true;
       _error = null;
@@ -2819,8 +2845,10 @@ class _AiEditSheetState extends State<_AiEditSheet> {
       return;
     }
     if (result.status == 402) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Not enough AI credits.')),
+      await showPlusUpgradeDialog(
+        context,
+        message: result.error ?? 'Upgrade to Plus to use AI.',
+        token: userProvider.token,
       );
       setState(() => _loading = false);
       return;
@@ -2854,7 +2882,6 @@ class _AiEditSheetState extends State<_AiEditSheet> {
     if (_loading || proposal == null) return;
     final userProvider = Provider.of<UserProvider>(context, listen: false);
     final planProvider = Provider.of<PlanProvider>(context, listen: false);
-    final messenger = ScaffoldMessenger.of(context);
     setState(() {
       _loading = true;
       _error = null;
@@ -2870,8 +2897,10 @@ class _AiEditSheetState extends State<_AiEditSheet> {
       return;
     }
     if (result.status == 402) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Not enough AI credits.')),
+      await showPlusUpgradeDialog(
+        context,
+        message: result.error ?? 'Upgrade to Plus to edit this plan.',
+        token: userProvider.token,
       );
       setState(() => _loading = false);
       return;
@@ -3093,7 +3122,6 @@ class _SuggestPlacesSheetState extends State<_SuggestPlacesSheet> {
     });
     final userProvider = Provider.of<UserProvider>(context, listen: false);
     final planProvider = Provider.of<PlanProvider>(context, listen: false);
-    final messenger = ScaffoldMessenger.of(context);
     final result = await planProvider.suggestActivityPlaces(
       planId: widget.planId,
       query: query,
@@ -3107,14 +3135,16 @@ class _SuggestPlacesSheetState extends State<_SuggestPlacesSheet> {
       return;
     }
     if (result.status == 402) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Not enough AI credits.')),
-      );
       setState(() {
         _loading = false;
         _places = result.places;
         _error = null;
       });
+      await showPlusUpgradeDialog(
+        context,
+        message: result.error ?? 'Upgrade to Plus to use AI.',
+        token: userProvider.token,
+      );
       return;
     }
     if (result.status != 200) {
@@ -4176,8 +4206,10 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     }
     if (result.status == 402) {
       setState(() => _parsingConfirmation = false);
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Not enough AI credits.')),
+      await showPlusUpgradeDialog(
+        context,
+        message: result.error ?? 'Upgrade to Plus to use AI.',
+        token: userProvider.token,
       );
       return;
     }
@@ -4265,6 +4297,14 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       messenger.showSnackBar(const SnackBar(content: Text('Not allowed')));
       return;
     }
+    if (status == 402) {
+      await showPlusUpgradeDialog(
+        context,
+        message: planProvider.writeMessage ?? 'Upgrade to Plus to edit this plan.',
+        token: userProvider.token,
+      );
+      return;
+    }
     if (status != 200) {
       setState(() => _error = 'Could not update activity');
       return;
@@ -4309,6 +4349,14 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     }
     if (status == 403) {
       messenger.showSnackBar(const SnackBar(content: Text('Not allowed')));
+      return;
+    }
+    if (status == 402) {
+      await showPlusUpgradeDialog(
+        context,
+        message: planProvider.writeMessage ?? 'Upgrade to Plus to edit this plan.',
+        token: userProvider.token,
+      );
       return;
     }
     if (status != 200) {
@@ -5422,6 +5470,14 @@ class _PlanEditScreenState extends State<_PlanEditScreen> {
       messenger.showSnackBar(const SnackBar(content: Text('Not allowed')));
       return;
     }
+    if (result.status == 402) {
+      await showPlusUpgradeDialog(
+        context,
+        message: result.error ?? 'Upgrade to Plus to edit this plan.',
+        token: userProvider.token,
+      );
+      return;
+    }
     if (result.status != 200 || result.plan == null) {
       setState(() => _error = result.error ?? 'Could not update plan');
       return;
@@ -5463,6 +5519,14 @@ class _PlanEditScreenState extends State<_PlanEditScreen> {
     }
     if (result.status == 403) {
       messenger.showSnackBar(const SnackBar(content: Text('Not allowed')));
+      return;
+    }
+    if (result.status == 402) {
+      await showPlusUpgradeDialog(
+        context,
+        message: result.message ?? 'Upgrade to Plus to delete a plan.',
+        token: userProvider.token,
+      );
       return;
     }
     if (result.status == 409) {

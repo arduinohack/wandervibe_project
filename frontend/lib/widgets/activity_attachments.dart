@@ -8,6 +8,7 @@ import '../models/activity_attachment.dart';
 import '../providers/plan_provider.dart';
 import '../providers/user_provider.dart';
 import '../utils/activity_attachment.dart';
+import '../utils/plus_upgrade.dart';
 import '../utils/attachment_cache.dart';
 import '../utils/attachment_cache_binding.dart';
 import '../utils/attachment_picker.dart';
@@ -154,6 +155,15 @@ class _ActivityAttachmentsPanelState extends State<ActivityAttachmentsPanel> {
     setState(() => _busy = true);
     final result = await widget.uploadAttachment(file.filename, file.bytes);
     if (!mounted) return;
+    if (result.status == 402) {
+      setState(() => _busy = false);
+      await showPlusUpgradeDialog(
+        context,
+        message: result.error ?? 'Upgrade to Plus to add a file.',
+        token: context.read<UserProvider>().token,
+      );
+      return;
+    }
     if (result.status != 201) {
       setState(() => _busy = false);
       _snack(attachmentErrorMessage(result.status, result.error));

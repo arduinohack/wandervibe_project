@@ -7,6 +7,7 @@ import '../session_bridge.dart';
 import '../session_refresh.dart';
 import '../utils/logger.dart';
 import '../config/constants.dart'; // Add this line for backendBaseUrl
+import '../models/plan_access.dart';
 import '../models/user.dart'; // Your User model with Address/Preferences
 import '../config/config.dart';
 import '../storage/token_store.dart';
@@ -19,6 +20,7 @@ class UserProvider extends ChangeNotifier {
   UserRole? _currentUserRole; // Private stub role
   User? _currentUser; // Private full user object
   String? _jwtToken; // Stored token
+  PlanAccess? _planAccess;
   int _sessionEpoch = 0;
   bool _biometricEntry = false;
   bool _biometricDeclined = false;
@@ -39,6 +41,7 @@ class UserProvider extends ChangeNotifier {
     currentUserId = null;
     _currentUserRole = null;
     _currentUser = null;
+    _planAccess = null;
     _biometricEntry = false;
     notifyListeners();
   }
@@ -46,6 +49,25 @@ class UserProvider extends ChangeNotifier {
   UserRole? get currentUserRole => _currentUserRole;
   User? get currentUser => _currentUser;
   String? get token => _jwtToken;
+  PlanAccess? get planAccess => _planAccess;
+
+  Future<void> loadPlanAccess() async {
+    final token = _jwtToken;
+    if (token == null || token.isEmpty) return;
+    try {
+      final response = await api.get(
+        Uri.parse('$backendBaseUrl$apiUserAiCredits'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (response.statusCode != 200) return;
+      final data = json.decode(response.body);
+      if (data is! Map) return;
+      _planAccess = PlanAccess.fromJson(Map<String, dynamic>.from(data));
+      notifyListeners();
+    } catch (e) {
+      logger.e('Plan access load error: $e');
+    }
+  }
 
   bool get hasSession {
     final saved = _jwtToken;
@@ -328,6 +350,7 @@ class UserProvider extends ChangeNotifier {
     currentUserId = null;
     _currentUserRole = null;
     _currentUser = null;
+    _planAccess = null;
     notifyListeners();
     logger.i('Logged out—cleared local storage');
   }
@@ -357,6 +380,7 @@ class UserProvider extends ChangeNotifier {
     currentUserId = null;
     _currentUserRole = null;
     _currentUser = null;
+    _planAccess = null;
     notifyListeners();
     if (epoch != _sessionEpoch) return;
     try {
@@ -374,6 +398,7 @@ class UserProvider extends ChangeNotifier {
     currentUserId = null;
     _currentUserRole = null;
     _currentUser = null;
+    _planAccess = null;
     _biometricEntry = false;
     notifyListeners();
   }
@@ -385,6 +410,7 @@ class UserProvider extends ChangeNotifier {
     currentUserId = null;
     _currentUserRole = null;
     _currentUser = null;
+    _planAccess = null;
     _biometricEntry = false;
     notifyListeners();
     if (epoch != _sessionEpoch) return;
@@ -518,7 +544,9 @@ class UserProvider extends ChangeNotifier {
       }
       if (epoch != _sessionEpoch) return;
       final expired =
-          stored == null || stored.isEmpty || jwtIsExpired(stored, DateTime.now());
+          stored == null ||
+          stored.isEmpty ||
+          jwtIsExpired(stored, DateTime.now());
       if (expired) {
         final hasRefresh = await refreshTokenPresent();
         if (!hasRefresh) {

@@ -199,8 +199,13 @@ String? _roleFromUsersBody(String body, String userId) {
 class PlanDeleteResult {
   final int? status;
   final List<String> sharedWith;
+  final String? message;
 
-  const PlanDeleteResult({this.status, this.sharedWith = const []});
+  const PlanDeleteResult({
+    this.status,
+    this.sharedWith = const [],
+    this.message,
+  });
 }
 
 class PlanUpdateResult {
@@ -706,10 +711,12 @@ class PlanProvider extends ChangeNotifier {
   }
 
   String? _plansError;
+  String? _writeMessage;
   List<Activity> _itinerary = [];
   String? _itineraryError;
 
   String? get plansError => _plansError;
+  String? get writeMessage => _writeMessage;
   List<Activity> get itineraryActivities => _itinerary;
 
   /// Shows [activities] in start-time order. Does not call the API.
@@ -1014,6 +1021,7 @@ class PlanProvider extends ChangeNotifier {
   // POST /api/plans. Returns the HTTP status, or null when the call did not finish.
   Future<int?> createPlan(Plan newPlan, String? token) async {
     try {
+      _writeMessage = null;
       if (token == null || token.isEmpty) {
         return 401;
       }
@@ -1027,13 +1035,11 @@ class PlanProvider extends ChangeNotifier {
         body: json.encode(newPlan.toJson()),
       );
 
-      if (response.statusCode == 401) {
-        return 401;
-      }
-
       if (response.statusCode != 201) {
+        _writeMessage = _apiErrorMessage(response.body);
         return response.statusCode;
       }
+      _writeMessage = null;
 
       final data = json.decode(response.body);
       final planJson = data is Map ? data['plan'] : null;
@@ -1419,10 +1425,11 @@ class PlanProvider extends ChangeNotifier {
           ),
         ),
       );
-      if (response.statusCode == 401 || response.statusCode == 403) {
+      if (response.statusCode != 201) {
+        _writeMessage = _apiErrorMessage(response.body);
         return response.statusCode;
       }
-      if (response.statusCode != 201) return response.statusCode;
+      _writeMessage = null;
 
       final dynamic data = json.decode(response.body);
       final refreshed = await refreshItinerary(planId, token);
@@ -1521,10 +1528,11 @@ class PlanProvider extends ChangeNotifier {
           ),
         ),
       );
-      if (response.statusCode == 401 || response.statusCode == 403) {
+      if (response.statusCode != 200) {
+        _writeMessage = _apiErrorMessage(response.body);
         return response.statusCode;
       }
-      if (response.statusCode != 200) return response.statusCode;
+      _writeMessage = null;
 
       final dynamic data = json.decode(response.body);
       final refreshed = planId.isEmpty
@@ -2080,9 +2088,13 @@ class PlanProvider extends ChangeNotifier {
         return PlanDeleteResult(
           status: 409,
           sharedWith: _sharedWithLabels(response.body),
+          message: _apiErrorMessage(response.body),
         );
       }
-      return PlanDeleteResult(status: response.statusCode);
+      return PlanDeleteResult(
+        status: response.statusCode,
+        message: _apiErrorMessage(response.body),
+      );
     } catch (e) {
       logger.e('Error deleting plan: $e');
       return const PlanDeleteResult();
@@ -2101,10 +2113,11 @@ class PlanProvider extends ChangeNotifier {
         Uri.parse('$backendBaseUrl$apiActivities/$activityId'),
         headers: {'Authorization': 'Bearer $token'},
       );
-      if (response.statusCode == 401 || response.statusCode == 403) {
+      if (response.statusCode != 200) {
+        _writeMessage = _apiErrorMessage(response.body);
         return response.statusCode;
       }
-      if (response.statusCode != 200) return response.statusCode;
+      _writeMessage = null;
       _itinerary = [
         for (final activity in _itinerary)
           if (activity.id != activityId) activity,

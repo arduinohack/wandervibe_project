@@ -4,11 +4,13 @@ import '../providers/plan_provider.dart';
 import '../providers/invitation_provider.dart';
 import '../providers/user_provider.dart'; // For token
 import '../models/plan.dart';
+import '../utils/plus_upgrade.dart';
 import '../models/invitation.dart';
 import '../models/plan_role_label.dart';
 import '../models/user.dart'; // For UserRole
 import '../utils/logger.dart';
 import 'plan_detail_screen.dart'; // For plan details
+
 // import 'activity_screen.dart'; // For adding activities
 
 class CoordinatorDashboardScreen extends StatefulWidget {
@@ -314,7 +316,7 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('PLan New Trip'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -336,7 +338,7 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Cancel'),
           ),
           ElevatedButton(
@@ -359,9 +361,21 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
                   ownerId: userProvider.currentUserId ?? 'user123',
                   createdAt: DateTime.now(),
                 );
-                await planProvider.createPlan(newPlan, userProvider.token);
-                if (!context.mounted) return;
-                Navigator.pop(context);
+                final status = await planProvider.createPlan(
+                  newPlan,
+                  userProvider.token,
+                );
+                if (!dialogContext.mounted) return;
+                Navigator.pop(dialogContext);
+                if (status == 402 && context.mounted) {
+                  await showPlusUpgradeDialog(
+                    context,
+                    message:
+                        planProvider.writeMessage ??
+                        'Upgrade to Plus to create a plan.',
+                    token: userProvider.token,
+                  );
+                }
               }
             },
             child: const Text('Plan New'),

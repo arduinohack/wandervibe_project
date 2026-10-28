@@ -4,6 +4,7 @@ import 'login_screen.dart'; // Navigate on logout
 // Navigate to signup
 import '../models/plan.dart';
 import '../models/plan_role_label.dart';
+import '../utils/plus_upgrade.dart';
 import '../providers/plan_provider.dart';
 import '../providers/user_provider.dart'; // For role and logout
 import 'ai_settings_screen.dart';
@@ -36,6 +37,10 @@ class _HomeScreenState extends State<HomeScreen> {
     final navigator = Navigator.of(context);
     final status = await planProvider.fetchPlans(userProvider.token);
     if (!mounted) return;
+    if (status != 401) {
+      await userProvider.loadPlanAccess();
+      if (!mounted) return;
+    }
     int? roleStatus;
     if (status == 200) {
       roleStatus = await planProvider.loadViewerRoles(
@@ -150,79 +155,104 @@ class _HomeScreenState extends State<HomeScreen> {
                 value: 'ai-settings',
                 child: Text('AI settings'),
               ),
-              PopupMenuItem<String>(
-                value: 'logout',
-                child: Text('Log out'),
-              ),
+              PopupMenuItem<String>(value: 'logout', child: Text('Log out')),
             ],
           ),
         ],
       ),
-      body: Consumer<PlanProvider>(
-        builder: (context, planProvider, child) {
-          final waiting = !_loaded || planProvider.isLoading;
-          if (waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (planProvider.plansError != null) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(
-                  planProvider.plansError!,
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            );
-          }
-          if (planProvider.plans.isEmpty) {
-            return const Center(
-              child: Text(
-                'No plans yet',
-                style: TextStyle(fontSize: 20),
-                textAlign: TextAlign.center,
-              ),
-            );
-          }
-          return ListView.builder(
-            itemCount: planProvider.plans.length,
-            itemBuilder: (context, index) {
-              final plan = planProvider.plans[index];
-              final userId = Provider.of<UserProvider>(context).currentUserId;
-              final storedRole = planProvider.viewerStoredRole(plan.id, userId);
-              final roleText = storedRole == null
-                  ? null
-                  : planRoleLabel(plan.type, storedRole);
-              final dateLine = planSpanDateLine(
-                earliestStart: plan.earliestStart,
-                latestEnd: plan.latestEnd,
-                planTimeZone: plan.timeZone,
-              );
-              return Card(
-                child: ListTile(
-                  title: Text(plan.name),
-                  subtitle: Text(
-                    [
-                      'Type: ${plan.type}',
-                      if (roleText != null) 'Role: $roleText',
-                      'Destination: ${plan.destination}',
-                      'Budget: ${formatPlanBudget(plan.budget)}',
-                      if (dateLine != null) dateLine,
-                    ].join('\n'),
+      body: Column(
+        children: [
+          Consumer<UserProvider>(
+            builder: (context, userProvider, _) {
+              final label = userProvider.planAccess?.trialEndsLabel;
+              if (label == null) return const SizedBox.shrink();
+              return Material(
+                color: Theme.of(context).colorScheme.secondaryContainer,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
                   ),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => PlanDetailScreen(plan: plan),
-                      ),
-                    );
-                  },
+                  child: SizedBox(width: double.infinity, child: Text(label)),
                 ),
               );
             },
-          );
-        },
+          ),
+          Expanded(
+            child: Consumer<PlanProvider>(
+              builder: (context, planProvider, child) {
+                final waiting = !_loaded || planProvider.isLoading;
+                if (waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (planProvider.plansError != null) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(
+                        planProvider.plansError!,
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  );
+                }
+                if (planProvider.plans.isEmpty) {
+                  return const Center(
+                    child: Text(
+                      'No plans yet',
+                      style: TextStyle(fontSize: 20),
+                      textAlign: TextAlign.center,
+                    ),
+                  );
+                }
+                return ListView.builder(
+                  itemCount: planProvider.plans.length,
+                  itemBuilder: (context, index) {
+                    final plan = planProvider.plans[index];
+                    final userId = Provider.of<UserProvider>(
+                      context,
+                    ).currentUserId;
+                    final storedRole = planProvider.viewerStoredRole(
+                      plan.id,
+                      userId,
+                    );
+                    final roleText = storedRole == null
+                        ? null
+                        : planRoleLabel(plan.type, storedRole);
+                    final dateLine = planSpanDateLine(
+                      earliestStart: plan.earliestStart,
+                      latestEnd: plan.latestEnd,
+                      planTimeZone: plan.timeZone,
+                    );
+                    return Card(
+                      child: ListTile(
+                        title: Text(plan.name),
+                        subtitle: Text(
+                          [
+                            'Type: ${plan.type}',
+                            if (roleText != null) 'Role: $roleText',
+                            'Destination: ${plan.destination}',
+                            'Budget: ${formatPlanBudget(plan.budget)}',
+                            if (dateLine != null) dateLine,
+                          ].join('\n'),
+                        ),
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) =>
+                                  PlanDetailScreen(plan: plan),
+                            ),
+                          );
+                        },
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
       ),
       floatingActionButton: Consumer<UserProvider>(
         builder: (context, userProvider, child) {
@@ -297,12 +327,26 @@ class _HomeScreenState extends State<HomeScreen> {
               );
               if (!mounted) return;
               if (status == 201) {
+                await userProvider.loadPlanAccess();
+                if (!mounted) return;
                 navigator.pop();
                 return;
               }
               if (status == 401) {
                 navigator.pop();
                 await _endSession(userProvider, planProvider, navigator);
+                return;
+              }
+              if (status == 402) {
+                navigator.pop();
+                if (!context.mounted) return;
+                await showPlusUpgradeDialog(
+                  context,
+                  message:
+                      planProvider.writeMessage ??
+                      'Upgrade to Plus to create a plan.',
+                  token: userProvider.token,
+                );
                 return;
               }
               messenger.showSnackBar(
