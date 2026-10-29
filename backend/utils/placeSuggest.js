@@ -4,6 +4,7 @@ const { apiKeyFromClient } = require('./xaiConfirmation');
 const { logModelAttempt, recordAiUsage } = require('./aiUsage');
 const {
   INSUFFICIENT_MESSAGE,
+  PLACES_CREDIT_COST,
   SUGGEST_CREDIT_COST,
   usesServerKey,
   getBalance,
@@ -309,6 +310,35 @@ async function suggestPlaces({
   }
   if (typeof query !== 'string' || !query.trim()) {
     return { status: 400, msg: 'Query is required' };
+  }
+
+  // Find places passes the caller. The plan-command lookup does not, so that
+  // search stays inside the command's 1-credit charge.
+  const placesUserId = usage && typeof usage.userId === 'string' ? usage.userId.trim() : '';
+  if (placesUserId) {
+    const placesCharge = await deduct(placesUserId, PLACES_CREDIT_COST);
+    if (!placesCharge.ok) {
+      await recordAiUsage({
+        userId: placesUserId,
+        planId: usage && usage.planId,
+        feature: 'suggest',
+        provider: 'google',
+        usedUserKey: false,
+        success: false,
+        credits: PLACES_CREDIT_COST,
+        error: INSUFFICIENT_MESSAGE,
+      });
+      return { status: 402, msg: INSUFFICIENT_MESSAGE, places: [] };
+    }
+    await recordAiUsage({
+      userId: placesUserId,
+      planId: usage && usage.planId,
+      feature: 'suggest',
+      provider: 'google',
+      usedUserKey: false,
+      success: true,
+      credits: PLACES_CREDIT_COST,
+    });
   }
 
   const typeText = typeof activityType === 'string' ? activityType : '';

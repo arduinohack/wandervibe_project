@@ -1,7 +1,7 @@
 const AiUsage = require('../models/AiUsage');
 
 const FEATURES = new Set(['paste', 'suggest', 'command']);
-const PROVIDERS = new Set(['xai', 'openai', 'anthropic', 'gemini', 'server']);
+const PROVIDERS = new Set(['xai', 'openai', 'anthropic', 'gemini', 'server', 'google']);
 const USER_PROVIDERS = new Set(['xai', 'openai', 'anthropic', 'gemini']);
 
 function tokenCount(value) {
@@ -72,6 +72,9 @@ async function recordAiUsage(entry) {
     const planId = typeof entry.planId === 'string' ? entry.planId.trim() : '';
     if (planId) doc.planId = planId;
     if (typeof entry.model === 'string' && entry.model.trim()) doc.model = entry.model.trim();
+    if (typeof entry.credits === 'number' && Number.isFinite(entry.credits) && entry.credits > 0) {
+      doc.credits = entry.credits;
+    }
     if (!entry.success) doc.error = clipError(entry.error);
     await AiUsage.create(doc);
   } catch (_) {

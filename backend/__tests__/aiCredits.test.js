@@ -15,7 +15,7 @@ const PlanUser = require('../models/PlanUser');
 const Invitation = require('../models/Invitation');
 const { Event } = require('../models/Event');
 const AiUsage = require('../models/AiUsage');
-const { deduct, getBalance } = require('../utils/aiCredits');
+const { add, deduct, getBalance } = require('../utils/aiCredits');
 const { SEARCH_URL, XAI_ENDPOINT } = require('../utils/placeSuggest');
 
 jest.setTimeout(30000);
@@ -195,6 +195,16 @@ describe('AI credits', () => {
     expect(await getBalance(ada.userId)).toBe(0);
   });
 
+  test('deduct and add accept a half credit', async () => {
+    const ada = await registerAndLogin('ada-credits-half@example.com');
+    expect(await add(ada.userId, 0.5)).toBe(0.5);
+    const paid = await deduct(ada.userId, 0.5);
+    expect(paid).toEqual({ ok: true, aiCredits: 0 });
+    expect(await getBalance(ada.userId)).toBe(0);
+    const short = await deduct(ada.userId, 0.5);
+    expect(short.ok).toBe(false);
+  });
+
   test('an admin grant increases the balance and a member cannot grant', async () => {
     const ada = await registerAndLogin('ada-credits-grant@example.com');
     const admin = await registerAndLogin('admin-credits@example.com');
@@ -347,10 +357,66 @@ describe('AI credits', () => {
     expect(found.status).toBe(200);
     expect(Array.isArray(found.body)).toBe(true);
     expect(found.body[0].summary).toBe('A small cafe in Paris.');
-    expect(await getBalance(ada.userId)).toBe(1);
-    expect(await AiUsage.countDocuments({ feature: 'suggest', success: true })).toBe(1);
+    expect(await getBalance(ada.userId)).toBe(0.5);
+    const placesCharge = await AiUsage.findOne({ provider: 'google' }).lean();
+    expect(placesCharge.feature).toBe('suggest');
+    expect(placesCharge.credits).toBe(0.5);
+    expect(placesCharge.success).toBe(true);
+    expect(await AiUsage.countDocuments({ feature: 'suggest', provider: 'server', success: true })).toBeGreaterThan(0);
 
     await setCredits(ada.userId, 0);
+    await AiUsage.deleteMany({});
+    axios.post.mockClear();
+    axios.get.mockClear();
+
+    const blocked = await request(app)
+      .post(`/api/plans/${planId}/suggest`)
+      .set(bearer(ada.token))
+      .send({ query: 'cafe' });
+
+    expect(blocked.status).toBe(402);
+    expect(blocked.body.message).toBe('Insufficient AI credits');
+    expect(blocked.body.places).toEqual([]);
+    expect(axios.post).not.toHaveBeenCalled();
+    expect(axios.get).not.toHaveBeenCalled();
+    expect(await getBalance(ada.userId)).toBe(0);
+    const rows = await AiUsage.find({}).lean();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].feature).toBe('suggest');
+    expect(rows[0].provider).toBe('google');
+    expect(rows[0].credits).toBe(0.5);
+    expect(rows[0].usedUserKey).toBe(false);
+    expect(rows[0].success).toBe(false);
+    expect(rows[0].error).toBe('Insufficient AI credits');
+    expect(rows[0].planId).toBe(planId);
+  });
+
+  test('a balance of 0.5 pays for Places and 0.4 does not call Places', async () => {
+    delete process.env.XAI_API_KEY;
+    process.env.GOOGLE_MAPS_API_KEY = 'maps-key';
+    axios.get.mockResolvedValue({ status: 200, data: { results: [] } });
+    axios.post.mockResolvedValue(googleOk());
+    const ada = await registerAndLogin('ada-credits-places@example.com');
+    const planId = await createPlan(ada.token);
+    await setCredits(ada.userId, 0.5);
+
+    const found = await request(app)
+      .post(`/api/plans/${planId}/suggest`)
+      .set(bearer(ada.token))
+      .send({ query: 'cafe' });
+
+    expect(found.status).toBe(200);
+    expect(found.body[0].placeId).toBe(PLACE_ID);
+    expect(found.body[0].name).toBe('Cafe Paris');
+    expect(await getBalance(ada.userId)).toBe(0);
+    expect(axios.post.mock.calls.some((call) => call[0] === SEARCH_URL)).toBe(true);
+    const charged = await AiUsage.find({ provider: 'google' }).lean();
+    expect(charged).toHaveLength(1);
+    expect(charged[0].feature).toBe('suggest');
+    expect(charged[0].credits).toBe(0.5);
+    expect(charged[0].success).toBe(true);
+
+    await setCredits(ada.userId, 0.4);
     await AiUsage.deleteMany({});
     axios.post.mockClear();
 
@@ -361,20 +427,7 @@ describe('AI credits', () => {
 
     expect(blocked.status).toBe(402);
     expect(blocked.body.message).toBe('Insufficient AI credits');
-    expect(blocked.body.places[0].placeId).toBe(PLACE_ID);
-    expect(blocked.body.places[0].name).toBe('Cafe Paris');
-    expect(blocked.body.places[0].summary).toBeUndefined();
-    const xaiCalls = axios.post.mock.calls.filter((call) => call[0] === XAI_ENDPOINT);
-    expect(xaiCalls).toHaveLength(0);
-    expect(axios.post.mock.calls.some((call) => call[0] === SEARCH_URL)).toBe(true);
-    expect(await getBalance(ada.userId)).toBe(0);
-    const rows = await AiUsage.find({}).lean();
-    expect(rows).toHaveLength(1);
-    expect(rows[0].feature).toBe('suggest');
-    expect(rows[0].provider).toBe('server');
-    expect(rows[0].usedUserKey).toBe(false);
-    expect(rows[0].success).toBe(false);
-    expect(rows[0].error).toBe('Insufficient AI credits');
-    expect(rows[0].planId).toBe(planId);
+    expect(axios.post).not.toHaveBeenCalled();
+    expect(await getBalance(ada.userId)).toBe(0.4);
   });
 });

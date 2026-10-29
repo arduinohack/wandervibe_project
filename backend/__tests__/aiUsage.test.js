@@ -300,18 +300,23 @@ describe('AI usage', () => {
     expect(found.body[0].summary).toBe('A small cafe in Paris.');
     expect(JSON.stringify(found.body)).not.toContain(USER_KEY);
     const rows = await AiUsage.find({}).lean();
-    expect(rows).toHaveLength(1);
-    expect(rows[0].userId).toBe(ada.userId);
-    expect(rows[0].planId).toBe(planId);
-    expect(rows[0].feature).toBe('suggest');
-    expect(rows[0].provider).toBe('xai');
-    expect(rows[0].usedUserKey).toBe(true);
-    expect(rows[0].model).toBe('grok-4.7');
-    expect(rows[0].success).toBe(true);
-    expect(rows[0].inputTokens).toBe(20);
-    expect(rows[0].outputTokens).toBe(6);
-    expect(rows[0].totalTokens).toBe(26);
-    expect(JSON.stringify(rows[0])).not.toContain(USER_KEY);
+    expect(rows).toHaveLength(2);
+    const placesRow = rows.find((row) => row.provider === 'google');
+    const modelRow = rows.find((row) => row.provider === 'xai');
+    expect(placesRow.feature).toBe('suggest');
+    expect(placesRow.credits).toBe(0.5);
+    expect(placesRow.success).toBe(true);
+    expect(modelRow.userId).toBe(ada.userId);
+    expect(modelRow.planId).toBe(planId);
+    expect(modelRow.feature).toBe('suggest');
+    expect(modelRow.provider).toBe('xai');
+    expect(modelRow.usedUserKey).toBe(true);
+    expect(modelRow.model).toBe('grok-4.7');
+    expect(modelRow.success).toBe(true);
+    expect(modelRow.inputTokens).toBe(20);
+    expect(modelRow.outputTokens).toBe(6);
+    expect(modelRow.totalTokens).toBe(26);
+    expect(JSON.stringify(modelRow)).not.toContain(USER_KEY);
 
     await AiUsage.deleteMany({});
     axios.post.mockReset();
@@ -330,7 +335,8 @@ describe('AI usage', () => {
     expect(skipped.status).toBe(200);
     expect(skipped.body[0].name).toBe('Cafe Paris');
     expect(skipped.body[0].summary).toBeUndefined();
-    expect(await AiUsage.countDocuments({})).toBe(0);
+    expect(await AiUsage.countDocuments({ provider: 'google', credits: 0.5 })).toBe(1);
+    expect(await AiUsage.countDocuments({ provider: { $ne: 'google' } })).toBe(0);
 
     process.env.XAI_API_KEY = SERVER_KEY;
     await request(app)
@@ -343,7 +349,8 @@ describe('AI usage', () => {
       .send({ query: 'cafe' });
     expect(other.status).toBe(200);
     expect(other.body[0].placeId).toBe(PLACE_ID);
-    expect(await AiUsage.countDocuments({})).toBe(0);
+    expect(await AiUsage.countDocuments({ provider: 'google' })).toBe(2);
+    expect(await AiUsage.countDocuments({ provider: { $ne: 'google' } })).toBe(0);
   });
 
   test('a failed suggest summary is recorded and the Places list is unchanged', async () => {
@@ -366,14 +373,18 @@ describe('AI usage', () => {
     expect(found.body[0].placeId).toBe(PLACE_ID);
     expect(found.body[0].summary).toBeUndefined();
     const rows = await AiUsage.find({}).lean();
-    expect(rows).toHaveLength(1);
-    expect(rows[0].userId).toBe(ada.userId);
-    expect(rows[0].planId).toBe(planId);
-    expect(rows[0].feature).toBe('suggest');
-    expect(rows[0].provider).toBe('server');
-    expect(rows[0].usedUserKey).toBe(false);
-    expect(rows[0].success).toBe(false);
-    expect(rows[0].error).toBe('model down');
-    expect(rows[0].inputTokens).toBeNull();
+    expect(rows).toHaveLength(2);
+    const placesRow = rows.find((row) => row.provider === 'google');
+    const failed = rows.find((row) => row.provider === 'server');
+    expect(placesRow.credits).toBe(0.5);
+    expect(placesRow.success).toBe(true);
+    expect(failed.userId).toBe(ada.userId);
+    expect(failed.planId).toBe(planId);
+    expect(failed.feature).toBe('suggest');
+    expect(failed.provider).toBe('server');
+    expect(failed.usedUserKey).toBe(false);
+    expect(failed.success).toBe(false);
+    expect(failed.error).toBe('model down');
+    expect(failed.inputTokens).toBeNull();
   });
 });
