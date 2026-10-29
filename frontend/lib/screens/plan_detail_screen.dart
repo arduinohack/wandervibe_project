@@ -3140,6 +3140,12 @@ class _SuggestPlacesSheetState extends State<_SuggestPlacesSheet> {
         _places = result.places;
         _error = null;
       });
+      if (result.error == 'Insufficient AI credits') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Not enough AI credits.')),
+        );
+        return;
+      }
       await showPlusUpgradeDialog(
         context,
         message: result.error ?? 'Upgrade to Plus to use AI.',

@@ -8,6 +8,12 @@ import '../api/api_client.dart' as api;
 import '../config/constants.dart';
 import '../providers/user_provider.dart';
 
+/// Whole balances stay whole. Any fraction shows one decimal, such as 2.5.
+String creditBalanceText(num value) {
+  if (value == value.roundToDouble()) return value.toInt().toString();
+  return value.toStringAsFixed(1);
+}
+
 const _providerValues = <String>[
   'xai',
   'openai',
@@ -107,8 +113,7 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
   }
 
   String _creditText(num value) {
-    if (value == value.roundToDouble()) return value.toInt().toString();
-    return value.toString();
+    return creditBalanceText(value);
   }
 
   Future<void> _load() async {
