@@ -32,10 +32,6 @@ function placeRow(id, name) {
     id,
     displayName: { text: name },
     formattedAddress: 'Paris, France',
-    rating: 4.6,
-    userRatingCount: 120,
-    priceLevel: 'PRICE_LEVEL_MODERATE',
-    types: ['restaurant', 'food'],
   };
 }
 
@@ -158,10 +154,6 @@ describe('POST /api/plans/:planId/suggest', () => {
         placeId: PLACE_ID,
         name: 'Cafe Paris',
         address: 'Paris, France',
-        rating: 4.6,
-        reviewCount: 120,
-        priceLevel: 'PRICE_LEVEL_MODERATE',
-        types: ['restaurant', 'food'],
       },
     ]);
     expect(found.body[0].summary).toBeUndefined();
@@ -172,6 +164,7 @@ describe('POST /api/plans/:planId/suggest', () => {
     expect(call[1].pageSize).toBe(8);
     expect(call[1].locationBias).toBeUndefined();
     expect(call[2].headers['X-Goog-Api-Key']).toBe('test-key');
+    expect(FIELD_MASK).toBe('places.id,places.displayName,places.formattedAddress');
     expect(call[2].headers['X-Goog-FieldMask']).toBe(FIELD_MASK);
     expect(JSON.stringify(call[1])).not.toContain('test-key');
     expect(JSON.stringify(found.body)).not.toContain('test-key');

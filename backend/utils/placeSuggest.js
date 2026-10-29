@@ -17,10 +17,6 @@ const FIELD_MASK = [
   'places.id',
   'places.displayName',
   'places.formattedAddress',
-  'places.rating',
-  'places.userRatingCount',
-  'places.priceLevel',
-  'places.types',
 ].join(',');
 const MAX_RESULTS = 8;
 const BIAS_RADIUS_METERS = 20000;
@@ -119,45 +115,15 @@ function placeIdOf(place) {
   return '';
 }
 
-function priceLevelOf(value) {
-  const text = String(value || '').trim();
-  if (!text || text === 'PRICE_LEVEL_UNSPECIFIED') return null;
-  return text;
-}
-
-function reviewCountOf(value) {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return null;
-  return Math.round(value);
-}
-
-function typesOf(value) {
-  if (!Array.isArray(value)) return [];
-  const types = [];
-  for (const item of value) {
-    const text = String(item || '').trim();
-    if (!text || types.includes(text)) continue;
-    types.push(text);
-    if (types.length >= 12) break;
-  }
-  return types;
-}
-
 function rowFromPlace(place) {
   if (!place || typeof place !== 'object') return null;
   const placeId = placeIdOf(place);
   const name = textOf(place.displayName);
   if (!placeId || !name) return null;
-  const rating = typeof place.rating === 'number' && Number.isFinite(place.rating)
-    ? place.rating
-    : null;
   return {
     placeId,
     name,
     address: String(place.formattedAddress || '').trim(),
-    rating,
-    reviewCount: reviewCountOf(place.userRatingCount),
-    priceLevel: priceLevelOf(place.priceLevel),
-    types: typesOf(place.types),
   };
 }
 
