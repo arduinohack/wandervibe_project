@@ -149,13 +149,13 @@ describe('notifyUsers SMS', () => {
     await notifyUsers([user._id], 'Hello from WanderVibe and Wander Vibe');
     await notifyUsers(
       [user._id],
-      'You\'ve been invited to "Paris" as Attendee on PlanItVibe! Check app to accept.',
+      'You\'ve been invited to "Paris" as Traveler on PlanItVibe! Check app to accept.',
     );
 
     const bodies = sendSms.mock.calls.map((call) => call[0].body);
     expect(bodies).toEqual([
       'Hello from PlanItVibe and PlanItVibe',
-      'You\'ve been invited to "Paris" as Attendee on PlanItVibe! Check app to accept.',
+      'You\'ve been invited to "Paris" as Traveler on PlanItVibe! Check app to accept.',
     ]);
     expect(bodies.every((body) => body.includes('PlanItVibe'))).toBe(true);
     expect(bodies.join('\n')).not.toMatch(/Wander\s?Vibe/i);

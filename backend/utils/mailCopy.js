@@ -20,7 +20,7 @@ function mailRoleLabel(planType, storedRole) {
   const trip = planKind(planType) === 'trip';
   const role = canonicalMembershipRole(storedRole);
   if (role === 'Collaborator') return trip ? 'Co-Planner' : 'Planner';
-  if (role === 'Guest') return trip ? 'Attendee' : 'Guest';
+  if (role === 'Guest') return trip ? 'Traveler' : 'Guest';
   if (role === 'Owner') return trip ? 'Organizer' : 'Host';
   return '';
 }

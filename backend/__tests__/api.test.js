@@ -633,7 +633,7 @@ describe('invites', () => {
     );
     expect(notifyUsers).toHaveBeenCalledWith(
       [email],
-      expect.stringContaining('as Attendee'),
+      expect.stringContaining('as Traveler'),
       'email',
     );
     expect(notifyUsers.mock.calls.every((call) => !String(call[1]).includes('undefined'))).toBe(true);

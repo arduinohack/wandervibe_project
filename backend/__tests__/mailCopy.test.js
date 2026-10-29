@@ -32,11 +32,11 @@ describe('mail copy', () => {
     expect(planKind(undefined)).toBe('plan');
   });
 
-  test('trip roles are Co-Planner and Attendee', () => {
+  test('trip roles are Co-Planner and Traveler', () => {
     expect(mailRoleLabel('trip', 'Collaborator')).toBe('Co-Planner');
-    expect(mailRoleLabel('trip', 'Guest')).toBe('Attendee');
+    expect(mailRoleLabel('trip', 'Guest')).toBe('Traveler');
     expect(mailRoleLabel('trip', 'VibePlanner')).toBe('Co-Planner');
-    expect(mailRoleLabel('trip', 'Wanderer')).toBe('Attendee');
+    expect(mailRoleLabel('trip', 'Wanderer')).toBe('Traveler');
   });
 
   test('plan roles are Planner and Guest', () => {
@@ -50,7 +50,7 @@ describe('mail copy', () => {
       planType: 'trip',
       storedRole: 'Guest',
     });
-    expect(invite).toContain('as Attendee');
+    expect(invite).toContain('as Traveler');
     expect(invite).not.toMatch(/undefined/);
     expect(invite).not.toMatch(/Collaborator/);
     expect(invite).not.toMatch(/\bGuest\b/);
