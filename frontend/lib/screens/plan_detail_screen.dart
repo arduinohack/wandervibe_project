@@ -3242,9 +3242,6 @@ class _SuggestPlacesSheetState extends State<_SuggestPlacesSheet> {
 
   String _suggestionLines(PlaceSuggestion place) {
     return suggestionListSubtitle(
-      rating: place.rating,
-      reviewCount: place.reviewCount,
-      priceLevel: place.priceLevel,
       address: place.address,
       summary: place.summary,
     );

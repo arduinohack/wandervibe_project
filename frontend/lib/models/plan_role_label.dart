@@ -12,7 +12,7 @@ String planRoleLabel(String? planType, String storedRole) {
       return usesPlanLabels ? 'Planner' : 'Co-Planner';
     case 'guest':
     case 'wanderer':
-      return usesPlanLabels ? 'Guest' : 'Attendee';
+      return usesPlanLabels ? 'Guest' : 'Traveler';
     default:
       final raw = storedRole.trim();
       return raw.isEmpty ? 'Unknown' : raw;

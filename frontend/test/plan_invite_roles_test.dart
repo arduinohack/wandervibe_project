@@ -11,7 +11,7 @@ void main() {
 
   test('trip labels stay off the POST body', () {
     expect(planRoleLabel('trip', 'Collaborator'), 'Co-Planner');
-    expect(planRoleLabel('trip', 'Guest'), 'Attendee');
+    expect(planRoleLabel('trip', 'Guest'), 'Traveler');
   });
 
   test('plan labels stay off the POST body', () {
@@ -19,19 +19,19 @@ void main() {
     expect(planRoleLabel('plan', 'Guest'), 'Guest');
   });
 
-  test('a plan does not show Attendee; a trip does not show Guest', () {
+  test('a plan shows Guest and a trip shows Traveler', () {
     expect(planRoleLabel('plan', 'Guest'), 'Guest');
     expect(planRoleLabel('plan', 'Collaborator'), 'Planner');
-    expect(planRoleLabel('trip', 'Guest'), 'Attendee');
+    expect(planRoleLabel('trip', 'Guest'), 'Traveler');
     expect(planRoleLabel('trip', 'Collaborator'), 'Co-Planner');
   });
 
   test('trip people list uses trip labels and Pending', () {
     expect(planMemberRoleLine('trip', 'Owner', 'accepted'), 'Organizer');
     expect(planMemberRoleLine('trip', 'Collaborator', 'accepted'), 'Co-Planner');
-    expect(planMemberRoleLine('trip', 'Guest', 'accepted'), 'Attendee');
+    expect(planMemberRoleLine('trip', 'Guest', 'accepted'), 'Traveler');
     expect(planMemberRoleLine('trip', 'Collaborator', 'pending'), 'Co-Planner Pending');
-    expect(planMemberRoleLine('trip', 'Guest', 'pending'), 'Attendee Pending');
+    expect(planMemberRoleLine('trip', 'Guest', 'pending'), 'Traveler Pending');
   });
 
   test('plan people list uses plan labels and Pending', () {
