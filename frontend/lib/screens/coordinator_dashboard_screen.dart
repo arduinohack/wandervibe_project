@@ -114,6 +114,7 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
           final typeMatch = plan.type == 'trip'; // Debug: Check type
           logger.i('Plan ${plan.name} type: ${plan.type} (match: $typeMatch)');
           return typeMatch &&
+              !plan.isArchived &&
               (_showAllPlans
                   ? _isUserParticipantInPlan(plan, userProvider.currentUserId)
                   : plan.ownerId == userProvider.currentUserId);

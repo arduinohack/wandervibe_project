@@ -683,7 +683,10 @@ class PlanProvider extends ChangeNotifier {
         return 401;
       }
       if (response.statusCode == 403) {
-        _itineraryError = 'Not allowed to view this itinerary';
+        final message = _apiErrorMessage(response.body);
+        _itineraryError = message == archivedPlanMessage
+            ? archivedPlanMessage
+            : 'Not allowed to view this itinerary';
         return 403;
       }
       if (response.statusCode != 200) {
@@ -857,7 +860,7 @@ class PlanProvider extends ChangeNotifier {
       }
 
       final response = await http.get(
-        Uri.parse((backendBaseUrl) + apiPlans),
+        Uri.parse('$backendBaseUrl$apiPlans?includeArchived=1'),
         headers: {'Authorization': 'Bearer $token'},
       );
 
@@ -910,6 +913,7 @@ class PlanProvider extends ChangeNotifier {
         next[plan.id] = 'Owner';
         continue;
       }
+      if (plan.isArchived) continue;
       pending.add(_readMembershipRole(plan.id, token, userId, next));
     }
     final codes = await Future.wait(pending);
@@ -1075,6 +1079,84 @@ class PlanProvider extends ChangeNotifier {
       logger.e('Error creating plan: $e');
       return null;
     }
+  }
+
+  void _replacePlan(Plan next) {
+    final updated = <Plan>[];
+    var found = false;
+    for (final plan in _plans) {
+      if (plan.id == next.id) {
+        updated.add(next);
+        found = true;
+      } else {
+        updated.add(plan);
+      }
+    }
+    if (!found) updated.add(next);
+    _plans = updated;
+    notifyListeners();
+  }
+
+  Future<int?> _postPlanAction({
+    required String planId,
+    required String action,
+    required String? token,
+    Map<String, dynamic>? body,
+  }) async {
+    try {
+      _writeMessage = null;
+      _upgradePack = null;
+      _upgradeTierName = null;
+      if (token == null || token.isEmpty) return 401;
+      final response = await http.post(
+        Uri.parse('$backendBaseUrl$apiPlans/$planId/$action'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode(body ?? const {}),
+      );
+      if (response.statusCode != 200) {
+        _writeMessage = _apiErrorMessage(response.body);
+        _readUpgrade(response.body);
+        return response.statusCode;
+      }
+      final data = json.decode(response.body);
+      final planJson = data is Map ? data['plan'] : null;
+      if (planJson is Map) {
+        _replacePlan(Plan.fromJson(Map<String, dynamic>.from(planJson)));
+      }
+      return 200;
+    } catch (e) {
+      logger.e('Error on plan $action: $e');
+      return null;
+    }
+  }
+
+  /// POST /api/plans/:planId/archive. Owner only.
+  Future<int?> archivePlan({
+    required String planId,
+    required String description,
+    required String? token,
+  }) {
+    return _postPlanAction(
+      planId: planId,
+      action: 'archive',
+      token: token,
+      body: {'description': description},
+    );
+  }
+
+  /// POST /api/plans/:planId/recall. Owner or accepted Co-Planner.
+  Future<int?> recallPlan({
+    required String planId,
+    required String? token,
+  }) {
+    return _postPlanAction(
+      planId: planId,
+      action: 'recall',
+      token: token,
+    );
   }
 
   /// GET /api/plans/:planId. Does not replace the open plan list or itinerary.

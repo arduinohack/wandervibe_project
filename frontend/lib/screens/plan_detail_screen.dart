@@ -2204,6 +2204,60 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     }
   }
 
+  Future<void> _archivePlan(Plan plan) async {
+    final descriptionController = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Archive ${plan.name}?'),
+        content: TextField(
+          controller: descriptionController,
+          maxLength: 500,
+          maxLines: 3,
+          decoration: const InputDecoration(labelText: 'Description'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Archive'),
+          ),
+        ],
+      ),
+    );
+    final description = descriptionController.text.trim();
+    descriptionController.dispose();
+    if (confirmed != true || !mounted) return;
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final status = await planProvider.archivePlan(
+      planId: plan.id,
+      description: description,
+      token: userProvider.token,
+    );
+    if (!mounted) return;
+    if (status == 401) {
+      await _endSession(userProvider, planProvider, navigator);
+      return;
+    }
+    if (status == 200) {
+      await userProvider.loadPlanAccess();
+      if (!mounted) return;
+      navigator.pop();
+      return;
+    }
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(planProvider.writeMessage ?? 'Could not archive this plan'),
+      ),
+    );
+  }
+
   Future<void> _openPlanEdit(Plan plan, String? storedRole) async {
     final removed = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
@@ -2377,13 +2431,14 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
             return const Center(child: CircularProgressIndicator());
           }
           if (_status == 403) {
-            return const Center(
+            return Center(
               child: Padding(
-                padding: EdgeInsets.all(24),
+                padding: const EdgeInsets.all(24),
                 child: Text(
-                  'Not allowed to view this itinerary',
+                  planProvider.itineraryError ??
+                      'Not allowed to view this itinerary',
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 20),
+                  style: const TextStyle(fontSize: 20),
                 ),
               ),
             );
@@ -2495,6 +2550,14 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                         ),
                       if (dateLine != null) Text(dateLine),
                       Text('State: ${shown.planningState}'),
+                      if (storedRole?.trim() == 'Owner')
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton(
+                            onPressed: () => _archivePlan(shown),
+                            child: const Text('Archive'),
+                          ),
+                        ),
                       if (_showLinkMyPlan(shown))
                         Align(
                           alignment: Alignment.centerLeft,

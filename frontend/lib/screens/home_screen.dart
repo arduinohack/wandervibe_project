@@ -247,49 +247,31 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   );
                 }
-                return ListView.builder(
-                  itemCount: planProvider.plans.length,
-                  itemBuilder: (context, index) {
-                    final plan = planProvider.plans[index];
-                    final userId = Provider.of<UserProvider>(
-                      context,
-                    ).currentUserId;
-                    final storedRole = planProvider.viewerStoredRole(
-                      plan.id,
-                      userId,
-                    );
-                    final roleText = storedRole == null
-                        ? null
-                        : planRoleLabel(plan.type, storedRole);
-                    final dateLine = planSpanDateLine(
-                      earliestStart: plan.earliestStart,
-                      latestEnd: plan.latestEnd,
-                      planTimeZone: plan.timeZone,
-                    );
-                    return Card(
-                      child: ListTile(
-                        title: Text(plan.name),
-                        subtitle: Text(
-                          [
-                            'Type: ${plan.type}',
-                            if (roleText != null) 'Role: $roleText',
-                            'Destination: ${plan.destination}',
-                            'Budget: ${formatPlanBudget(plan.budget)}',
-                            if (dateLine != null) dateLine,
-                          ].join('\n'),
+                final active = [
+                  for (final plan in planProvider.plans)
+                    if (!plan.isArchived) plan,
+                ];
+                final archived = [
+                  for (final plan in planProvider.plans)
+                    if (plan.isArchived) plan,
+                ];
+                return ListView(
+                  children: [
+                    for (final plan in active) _activePlanCard(plan),
+                    if (archived.isNotEmpty) ...[
+                      const Padding(
+                        padding: EdgeInsets.fromLTRB(16, 24, 16, 8),
+                        child: Text(
+                          'Archived',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) =>
-                                  PlanDetailScreen(plan: plan),
-                            ),
-                          );
-                        },
                       ),
-                    );
-                  },
+                      for (final plan in archived) _archivedPlanCard(plan),
+                    ],
+                  ],
                 );
               },
             ),
@@ -308,6 +290,126 @@ class _HomeScreenState extends State<HomeScreen> {
           }
           return const SizedBox.shrink();
         },
+      ),
+    );
+  }
+
+  Widget _activePlanCard(Plan plan) {
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final userId = Provider.of<UserProvider>(context, listen: false).currentUserId;
+    final storedRole = planProvider.viewerStoredRole(plan.id, userId);
+    final roleText = storedRole == null
+        ? null
+        : planRoleLabel(plan.type, storedRole);
+    final dateLine = planSpanDateLine(
+      earliestStart: plan.earliestStart,
+      latestEnd: plan.latestEnd,
+      planTimeZone: plan.timeZone,
+    );
+    return Card(
+      child: ListTile(
+        title: Text(plan.name),
+        subtitle: Text(
+          [
+            'Type: ${plan.type}',
+            if (roleText != null) 'Role: $roleText',
+            'Destination: ${plan.destination}',
+            'Budget: ${formatPlanBudget(plan.budget)}',
+            if (dateLine != null) dateLine,
+          ].join('\n'),
+        ),
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => PlanDetailScreen(plan: plan),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _archivedPlanCard(Plan plan) {
+    final archivedOn = plan.archivedAt == null
+        ? null
+        : 'Archived: ${formatPlanDate(plan.archivedAt)}';
+    final lines = [
+      if (plan.archiveDescription.trim().isNotEmpty)
+        plan.archiveDescription.trim(),
+      if (archivedOn != null) archivedOn,
+    ];
+    return Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ListTile(
+            title: Text(plan.name),
+            subtitle: lines.isEmpty ? null : Text(lines.join('\n')),
+            onTap: _showArchivedPlan,
+          ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              onPressed: () => _recallPlan(plan),
+              child: const Text('Recall'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showArchivedPlan() {
+    return showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        content: const Text(archivedPlanMessage),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _recallPlan(Plan plan) async {
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final status = await planProvider.recallPlan(
+      planId: plan.id,
+      token: userProvider.token,
+    );
+    if (!mounted) return;
+    if (status == 401) {
+      await _endSession(userProvider, planProvider, navigator);
+      return;
+    }
+    if (status == 200) {
+      await planProvider.fetchPlans(userProvider.token);
+      if (!mounted) return;
+      await userProvider.loadPlanAccess();
+      return;
+    }
+    if (status == 402) {
+      if (!context.mounted) return;
+      await showPlusUpgradeDialog(
+        context,
+        message: planProvider.writeMessage ?? 'Upgrade to own more plans.',
+        token: userProvider.token,
+        pack: planProvider.upgradePack ?? 'plus_monthly',
+        tierName: planProvider.upgradeTierName,
+        showUpgrade: planProvider.upgradePack != null,
+      );
+      return;
+    }
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(planProvider.writeMessage ?? 'Could not recall this plan'),
       ),
     );
   }

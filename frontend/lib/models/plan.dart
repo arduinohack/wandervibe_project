@@ -258,6 +258,8 @@ List<List<int>> planItineraryDayIndexes({
   return [for (final day in days) buckets[day.dayKey] ?? <int>[]];
 }
 
+const String archivedPlanMessage = 'This plan is archived.';
+
 const guestHiddenFieldNames = <String>[
   'destination',
   'budget',
@@ -341,6 +343,12 @@ class Plan {
   final DateTime? linkStart;
   final DateTime? linkEnd;
   final List<String> hiddenFields;
+  final String status;
+  final String archiveDescription;
+  final DateTime? archivedAt;
+  final String archivedBy;
+
+  bool get isArchived => status == 'archived';
 
   Plan({
     required this.id, // planID?
@@ -366,6 +374,10 @@ class Plan {
     this.linkStart,
     this.linkEnd,
     this.hiddenFields = const [],
+    this.status = 'active',
+    this.archiveDescription = '',
+    this.archivedAt,
+    this.archivedBy = '',
   });
 
   factory Plan.fromJson(Map<String, dynamic> json) {
@@ -408,6 +420,10 @@ class Plan {
       linkStart: _dateValue(json['linkStart']),
       linkEnd: _dateValue(json['linkEnd']),
       hiddenFields: _stringList(json['hiddenFields']),
+      status: _stringValue(json['status'], fallback: 'active'),
+      archiveDescription: _stringValue(json['archiveDescription']),
+      archivedAt: _dateValue(json['archivedAt']),
+      archivedBy: _stringValue(json['archivedBy']),
     );
   }
   /*
