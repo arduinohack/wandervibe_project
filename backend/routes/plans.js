@@ -48,6 +48,13 @@ const {
   readArchiveDescription,
   isArchivedStatus,
 } = require('../utils/planArchive');
+const Template = require('../models/Template');
+const {
+  readTemplateName,
+  readTemplateDescription,
+  activitySnapshot,
+  templateFieldsFromPlan,
+} = require('../utils/planTemplate');
 const router = express.Router();
 router.use('/:planId', archivedPlanGuard);
 const csvUpload = multer({
@@ -1536,6 +1543,55 @@ router.post('/:planId/copy', authMiddleware, async (req, res) => {
     return res.status(201).json({ plan: saved });
   } catch (err) {
     console.error('Copy plan error:', err);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// POST /api/plans/:planId/save-as-template { name, description? }
+// Owner only. The source must be active. The template is not a plan.
+router.post('/:planId/save-as-template', authMiddleware, async (req, res) => {
+  const planId = String(req.params.planId || '');
+  try {
+    const source = await Plan.findById(planId).lean();
+    if (!source) return res.status(404).json({ message: 'Plan not found' });
+    const callerId = req.user.userId || req.user.id;
+    const role = await callerPlanRole(source, callerId);
+    if (role !== 'Owner') {
+      return res.status(403).json({ message: 'Only the Owner can save a plan as a template.' });
+    }
+    if (isArchivedStatus(source)) {
+      return res.status(403).json({ message: 'This plan is archived.' });
+    }
+    const named = readTemplateName(req.body);
+    if (named.error) return res.status(400).json({ message: named.error });
+    const described = readTemplateDescription(req.body);
+    if (described.error) return res.status(400).json({ message: described.error });
+
+    const activities = await Event.find({ planId }).lean();
+    activities.sort(compareStoredOrder);
+    const template = new Template({
+      _id: uuidv4(),
+      ownerId: String(callerId),
+      name: named.name,
+      description: described.text,
+      sourcePlanId: planId,
+      ...templateFieldsFromPlan(source),
+      activities: activities.map(activitySnapshot),
+    });
+    await template.save();
+
+    await logSupport({
+      level: 'info',
+      event: 'TemplateSaved',
+      actorUserId: callerId,
+      planId,
+      message: 'Plan saved as template',
+      extra: { templateId: template._id, name: named.name },
+    });
+
+    return res.status(201).json({ template });
+  } catch (err) {
+    console.error('Save template error:', err);
     return res.status(500).json({ message: 'Server error' });
   }
 });
