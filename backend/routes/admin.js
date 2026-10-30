@@ -65,9 +65,14 @@ router.get('/users/:userId', async (req, res) => {
     const roleByPlan = new Map(memberships.map((row) => [String(row.planId), row.role || '']));
     const planIds = memberships.map((row) => row.planId).filter(Boolean);
     const plans = await Plan.find({
-      $or: [
-        { _id: { $in: planIds } },
-        { ownerId: userId },
+      $and: [
+        {
+          $or: [
+            { _id: { $in: planIds } },
+            { ownerId: userId },
+          ],
+        },
+        { status: { $ne: 'archived' } },
       ],
     })
       .select('name type startDate endDate ownerId')

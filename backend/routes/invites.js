@@ -14,8 +14,10 @@ const {
   welcomeMail,
   rejectedMail,
 } = require('../utils/mailCopy');
+const { archivedPlanGuard } = require('../utils/planArchive');
 const planInviteRouter = express.Router();
 const invitesRouter = express.Router();
+planInviteRouter.use('/:planId', archivedPlanGuard);
 
 const INVITE_ROLES = {
   Collaborator: 'Collaborator',

@@ -424,6 +424,7 @@ describe('Plus subscription', () => {
     expect(stored.stripeSubscriptionId).toBe('sub_plus');
     expect(stored.plusCurrentPeriodEnd.getTime()).toBe(period1 * 1000);
 
+    await User.updateOne({ _id: ada.userId }, { $set: { aiCredits: 25 } });
     const renewal = await postWebhook({
       id: 'evt_plus_invoice_2',
       type: 'invoice.paid',
@@ -439,7 +440,7 @@ describe('Plus subscription', () => {
       },
     });
     expect(renewal.status).toBe(200);
-    expect(await getBalance(ada.userId)).toBe(200);
+    expect(await getBalance(ada.userId)).toBe(100);
     const renewalRetry = await postWebhook({
       id: 'evt_plus_invoice_2',
       type: 'invoice.paid',
@@ -454,7 +455,7 @@ describe('Plus subscription', () => {
       },
     });
     expect(renewalRetry.status).toBe(200);
-    expect(await getBalance(ada.userId)).toBe(200);
+    expect(await getBalance(ada.userId)).toBe(100);
     stored = await User.findById(ada.userId).lean();
     expect(stored.plusCurrentPeriodEnd.getTime()).toBe(period2 * 1000);
 
@@ -473,7 +474,7 @@ describe('Plus subscription', () => {
       },
     });
     expect(periodCheckout.status).toBe(200);
-    expect(await getBalance(ada.userId)).toBe(300);
+    expect(await getBalance(ada.userId)).toBe(100);
     const samePeriod = await postWebhook({
       id: 'evt_plus_invoice_3',
       type: 'invoice.paid',
@@ -489,7 +490,7 @@ describe('Plus subscription', () => {
       },
     });
     expect(samePeriod.status).toBe(200);
-    expect(await getBalance(ada.userId)).toBe(300);
+    expect(await getBalance(ada.userId)).toBe(100);
 
     const canceled = await postWebhook({
       id: 'evt_plus_canceled',
@@ -507,7 +508,7 @@ describe('Plus subscription', () => {
     stored = await User.findById(ada.userId).lean();
     expect(stored.plusActive).toBe(false);
     expect(stored.tier).toBe('trial');
-    expect(await getBalance(ada.userId)).toBe(300);
+    expect(await getBalance(ada.userId)).toBe(100);
 
     await User.updateOne({ _id: ada.userId }, { $set: { plusActive: true } });
     const deleted = await postWebhook({
@@ -524,7 +525,7 @@ describe('Plus subscription', () => {
     expect(deleted.status).toBe(200);
     stored = await User.findById(ada.userId).lean();
     expect(stored.plusActive).toBe(false);
-    expect(await getBalance(ada.userId)).toBe(300);
+    expect(await getBalance(ada.userId)).toBe(100);
 
     await User.updateOne({ _id: ada.userId }, { $set: { plusActive: true } });
     const unpaidSub = await postWebhook({
@@ -546,7 +547,7 @@ describe('Plus subscription', () => {
 
     const shown = await request(app).get(CREDITS).set(bearer(ada.token));
     expect(shown.body).toEqual({
-      aiCredits: 300,
+      aiCredits: 100,
       plusActive: false,
       trialStartedAt: null,
       trialEndsAt: null,
@@ -622,6 +623,7 @@ describe('Plus subscription', () => {
           },
         },
       };
+      await User.updateOne({ _id: ada.userId }, { $set: { aiCredits: 40 } });
       const paid = await postWebhook(invoice);
       expect(paid.status).toBe(200);
       expect(await getBalance(ada.userId)).toBe(credits);
@@ -664,12 +666,13 @@ describe('Plus subscription', () => {
           },
         },
       };
+      await User.updateOne({ _id: ada.userId }, { $set: { aiCredits: 7 } });
       const renewed = await postWebhook(renewal);
       expect(renewed.status).toBe(200);
-      expect(await getBalance(ada.userId)).toBe(credits * 2);
+      expect(await getBalance(ada.userId)).toBe(credits);
       const renewalRetry = await postWebhook(renewal);
       expect(renewalRetry.status).toBe(200);
-      expect(await getBalance(ada.userId)).toBe(credits * 2);
+      expect(await getBalance(ada.userId)).toBe(credits);
 
       const stored = await User.findById(ada.userId).lean();
       expect(stored.tier).toBe(tier);

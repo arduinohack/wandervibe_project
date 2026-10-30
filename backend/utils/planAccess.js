@@ -1,6 +1,7 @@
 const Plan = require('../models/Plan');
 const User = require('../models/User');
 const { add } = require('./aiCredits');
+const { notArchivedFilter } = require('./planArchive');
 const {
   UPGRADE_MESSAGE,
   planCapFor,
@@ -78,7 +79,7 @@ function allowed() {
 async function ownedPlanCount(userId) {
   const id = userIdOf(userId);
   if (!id) return 0;
-  return Plan.countDocuments({ ownerId: id });
+  return Plan.countDocuments({ ownerId: id, ...notArchivedFilter() });
 }
 
 async function loadAccessUser(userId) {
@@ -155,6 +156,17 @@ async function preparePlanCreate(userId) {
   return allowed();
 }
 
+async function preparePlanRecall(ownerId) {
+  const id = userIdOf(ownerId);
+  const [user, plansOwned] = await Promise.all([
+    loadAccessUser(id),
+    ownedPlanCount(id),
+  ]);
+  const tier = resolveTier(user);
+  if (plansOwned >= planCapFor(tier)) return blockedUpgrade(tier);
+  return allowed();
+}
+
 async function preparePlanDelete(userId) {
   const user = await loadAccessUser(userId);
   if (canRemovePlan(user)) return allowed();
@@ -205,6 +217,7 @@ module.exports = {
   VERIFY_EMAIL_MESSAGE,
   accessSummary,
   preparePlanCreate,
+  preparePlanRecall,
   preparePlanDelete,
   prepareExport,
   prepareEdit,

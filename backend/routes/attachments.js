@@ -19,6 +19,7 @@ const {
   contentDisposition,
 } = require('../utils/attachmentStore');
 const { prepareAttachment, prepareEdit } = require('../utils/planAccess');
+const { archivedMemberResult } = require('../utils/planArchive');
 const fs = require('fs');
 
 const activityAttachmentRouter = express.Router();
@@ -58,6 +59,13 @@ function callerIdOf(req) {
   return String((req.user && (req.user.userId || req.user.id)) || '');
 }
 
+async function sendIfArchived(res, planId, callerId) {
+  const block = await archivedMemberResult(planId, callerId);
+  if (!block) return false;
+  res.status(block.status).json(block.body);
+  return true;
+}
+
 function publicAttachment(doc) {
   return {
     id: String(doc._id),
@@ -85,6 +93,7 @@ activityAttachmentRouter.post('/:id/attachments', authMiddleware, async (req, re
     const activity = await loadActivity(req.params.id);
     if (!activity) return res.status(404).json({ message: 'Activity not found' });
     const callerId = callerIdOf(req);
+    if (await sendIfArchived(res, activity.planId, callerId)) return;
     const role = await membershipRole(activity.planId, callerId);
     if (role !== 'Owner' && role !== 'Collaborator') {
       return res.status(403).json({
@@ -167,7 +176,9 @@ activityAttachmentRouter.get('/:id/attachments', authMiddleware, async (req, res
   try {
     const activity = await loadActivity(req.params.id);
     if (!activity) return res.status(404).json({ message: 'Activity not found' });
-    const role = await membershipRole(activity.planId, callerIdOf(req));
+    const callerId = callerIdOf(req);
+    if (await sendIfArchived(res, activity.planId, callerId)) return;
+    const role = await membershipRole(activity.planId, callerId);
     if (role !== 'Owner' && role !== 'Collaborator' && role !== 'Guest') {
       return res.status(403).json({ message: 'Only plan members can view attachments' });
     }
@@ -194,7 +205,9 @@ attachmentRouter.get('/:id/file', authMiddleware, async (req, res) => {
   try {
     const attachment = await loadAttachment(req.params.id);
     if (!attachment) return res.status(404).json({ message: 'Attachment not found' });
-    const role = await membershipRole(attachment.planId, callerIdOf(req));
+    const callerId = callerIdOf(req);
+    if (await sendIfArchived(res, attachment.planId, callerId)) return;
+    const role = await membershipRole(attachment.planId, callerId);
     if (role !== 'Owner' && role !== 'Collaborator' && role !== 'Guest') {
       return res.status(403).json({ message: 'Only plan members can view attachments' });
     }
@@ -232,6 +245,7 @@ attachmentRouter.delete('/:id', authMiddleware, async (req, res) => {
     const attachment = await loadAttachment(req.params.id);
     if (!attachment) return res.status(404).json({ message: 'Attachment not found' });
     const callerId = callerIdOf(req);
+    if (await sendIfArchived(res, attachment.planId, callerId)) return;
     const role = await membershipRole(attachment.planId, callerId);
     const uploader = String(attachment.uploadedBy) === callerId;
     if (role !== 'Owner' && !uploader) {

@@ -22,6 +22,7 @@ const { parseConfirmation } = require('../utils/parseConfirmation');
 const { confirmationFieldsFromModel } = require('../utils/xaiConfirmation');
 const { getAiClient } = require('../utils/aiProvider');
 const { prepareEdit, prepareAi } = require('../utils/planAccess');
+const { archivedMemberResult } = require('../utils/planArchive');
 
 function applySchedule(target, schedule) {
   if (schedule.startTime) target.startTime = schedule.startTime;
@@ -125,6 +126,9 @@ function revisionPayload(revision) {
 // GET all events for a plan
 router.get('/plan/:planId', authMiddleware, async (req, res) => {
   try {
+    const callerId = req.user.userId || req.user.id;
+    const archived = await archivedMemberResult(req.params.planId, callerId);
+    if (archived) return res.status(archived.status).json(archived.body);
     const events = await Event.find({ planId: req.params.planId, ownerId: req.user.userId });
     res.json(events);
   } catch (error) {
@@ -139,6 +143,8 @@ async function createActivity(callerId, body) {
     if (!planId) {
       return { status: 400, body: { message: 'planId is required' } };
     }
+    const archived = await archivedMemberResult(planId, callerId);
+    if (archived) return archived;
     const allowed = await callerMayEditActivities(planId, callerId);
     if (!allowed) {
       return {
@@ -236,6 +242,8 @@ router.put('/order', authMiddleware, async (req, res) => {
       return res.status(400).json({ message: 'activityIds is required' });
     }
     const callerId = req.user.userId || req.user.id;
+    const archived = await archivedMemberResult(planId, callerId);
+    if (archived) return res.status(archived.status).json(archived.body);
     const allowed = await callerMayEditActivities(planId, callerId);
     if (!allowed) {
       return res.status(403).json({ message: 'Only Owner or Collaborator can change activities' });
@@ -327,6 +335,8 @@ router.get('/:id/history', authMiddleware, async (req, res) => {
     const event = await Event.findById(eventId).select('planId');
     const planId = (event && event.planId) || revisions[0].planId;
     const callerId = req.user.userId || req.user.id;
+    const archived = await archivedMemberResult(planId, callerId);
+    if (archived) return res.status(archived.status).json(archived.body);
     const allowed = await callerMayReadHistory(planId, callerId);
     if (!allowed) {
       return res.status(403).json({ message: 'Only plan members can view activity history' });
@@ -358,6 +368,8 @@ router.post('/:id/restore', authMiddleware, async (req, res) => {
     const event = await Event.findById(eventId);
     const planId = (event && event.planId) || revision.planId;
     const callerId = req.user.userId || req.user.id;
+    const archived = await archivedMemberResult(planId, callerId);
+    if (archived) return res.status(archived.status).json(archived.body);
     const allowed = await callerMayEditActivities(planId, callerId);
     if (!allowed) {
       return res.status(403).json({ message: 'Only Owner or Collaborator can change activities' });
@@ -421,6 +433,8 @@ router.put('/:id/move', authMiddleware, async (req, res) => {
     if (!event) return res.status(404).json({ message: 'Event not found' });
     const callerId = req.user.userId || req.user.id;
     const planId = event.planId;
+    const archived = await archivedMemberResult(planId, callerId);
+    if (archived) return res.status(archived.status).json(archived.body);
     const allowed = await callerMayEditActivities(planId, callerId);
     if (!allowed) {
       return res.status(403).json({ message: 'Only Owner or Collaborator can change activities' });
@@ -458,6 +472,8 @@ async function updateActivity(callerId, activityId, body) {
     const event = await Event.findById(activityId);
     if (!event) return { status: 404, body: { message: 'Event not found' } };
     const originalEnd = event.endTime ? new Date(event.endTime) : null;
+    const archived = await archivedMemberResult(event.planId, callerId);
+    if (archived) return archived;
     const allowed = await callerMayEditActivities(event.planId, callerId);
     if (!allowed) {
       return {
@@ -549,6 +565,8 @@ async function deleteActivity(callerId, activityId) {
   try {
     const event = await Event.findById(activityId);
     if (!event) return { status: 404, body: { message: 'Event not found' } };
+    const archived = await archivedMemberResult(event.planId, callerId);
+    if (archived) return archived;
     const allowed = await callerMayEditActivities(event.planId, callerId);
     if (!allowed) {
       return {

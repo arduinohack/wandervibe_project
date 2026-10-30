@@ -1,5 +1,5 @@
 const logger = require('./logger');
-const { add } = require('./aiCredits');
+const { add, setBalance } = require('./aiCredits');
 const StripeEvent = require('../models/StripeEvent');
 const User = require('../models/User');
 const {
@@ -407,7 +407,7 @@ async function grantTierOnce(userId, keys, credits) {
         throw err;
       }
     }
-    const balance = await add(userId, grant);
+    const balance = await setBalance(userId, grant);
     if (balance == null) {
       logger.error('Stripe Plus user was not found', {
         event: 'StripeWebhook',

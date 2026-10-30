@@ -62,6 +62,21 @@ async function add(userId, amount) {
   return creditNumber(updated.aiCredits);
 }
 
+// Replaces the balance. A tier subscribe or renewal uses this so leftover
+// credits do not stack on the monthly grant.
+async function setBalance(userId, amount) {
+  const id = typeof userId === 'string' ? userId.trim() : '';
+  const grant = creditNumber(amount);
+  if (!id || grant <= 0) return null;
+  const updated = await User.findOneAndUpdate(
+    { _id: id },
+    { $set: { aiCredits: grant } },
+    { new: true },
+  ).select('aiCredits').lean();
+  if (!updated) return null;
+  return creditNumber(updated.aiCredits);
+}
+
 module.exports = {
   INSUFFICIENT_MESSAGE,
   PASTE_CREDIT_COST,
@@ -72,4 +87,5 @@ module.exports = {
   getBalance,
   deduct,
   add,
+  setBalance,
 };

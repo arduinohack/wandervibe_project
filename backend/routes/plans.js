@@ -36,12 +36,20 @@ const { findActivityWithPlace } = require('../utils/activityPlace');
 const { spansByPlanId } = require('../utils/activityDateSpan');
 const {
   preparePlanCreate,
+  preparePlanRecall,
   preparePlanDelete,
   prepareExport,
   prepareEdit,
   prepareAi,
 } = require('../utils/planAccess');
+const {
+  archivedPlanGuard,
+  notArchivedFilter,
+  readArchiveDescription,
+  isArchivedStatus,
+} = require('../utils/planArchive');
 const router = express.Router();
+router.use('/:planId', archivedPlanGuard);
 const csvUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 },
@@ -134,14 +142,33 @@ router.get('/', authMiddleware, async (req, res) => {
 
   try {
     const userId = req.user.userId || req.user.id;
-    const memberships = await PlanUser.find({ userId }).select('planId');
+    const memberships = await PlanUser.find({ userId }).select('planId role');
     const planIds = memberships.map((membership) => membership.planId);
-    const plans = await Plan.find({
+    const includeArchived = req.query.includeArchived === '1'
+      || req.query.includeArchived === 'true';
+    const memberOf = {
       $or: [
         { _id: { $in: planIds } },
         { ownerId: userId },
       ],
-    }).populate('participants');
+    };
+    let query = { $and: [memberOf, notArchivedFilter()] };
+    if (includeArchived) {
+      const recallIds = memberships
+        .filter((membership) => {
+          const role = canonicalMembershipRole(membership.role);
+          return role === 'Owner' || role === 'Collaborator';
+        })
+        .map((membership) => membership.planId);
+      query = {
+        $or: [
+          query,
+          { status: 'archived', ownerId: userId },
+          { status: 'archived', _id: { $in: recallIds } },
+        ],
+      };
+    }
+    const plans = await Plan.find(query).populate('participants');
     const ids = plans.map((plan) => plan._id);
     const activities = ids.length
       ? await Event.find({ planId: { $in: ids } }).select('planId startTime endTime').lean()
@@ -1410,6 +1437,66 @@ router.put('/:planId', authMiddleware, async (req, res) => {
     return res.json({ plan });
   } catch (err) {
     console.error('Edit plan error:', err);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// POST /api/plans/:planId/archive { description }
+// Owner only. The plan leaves the owned-plan count and stays closed to members.
+router.post('/:planId/archive', authMiddleware, async (req, res) => {
+  const planId = String(req.params.planId || '');
+  try {
+    const plan = await Plan.findById(planId);
+    if (!plan) return res.status(404).json({ message: 'Plan not found' });
+    const callerId = req.user.userId || req.user.id;
+    const role = await callerPlanRole(plan, callerId);
+    if (role !== 'Owner') {
+      return res.status(403).json({ message: 'Only the Owner can archive a plan.' });
+    }
+    const description = readArchiveDescription(req.body);
+    if (description.error) return res.status(400).json({ message: description.error });
+    plan.status = 'archived';
+    plan.archiveDescription = description.text;
+    plan.archivedAt = new Date();
+    plan.archivedBy = String(callerId);
+    await plan.save();
+    return res.json({ plan });
+  } catch (err) {
+    console.error('Archive plan error:', err);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// POST /api/plans/:planId/recall
+// The Owner or an accepted Co-Planner. The plan counts toward the owner's cap again.
+router.post('/:planId/recall', authMiddleware, async (req, res) => {
+  const planId = String(req.params.planId || '');
+  try {
+    const plan = await Plan.findById(planId);
+    if (!plan) return res.status(404).json({ message: 'Plan not found' });
+    const callerId = req.user.userId || req.user.id;
+    const role = await callerPlanRole(plan, callerId);
+    if (role !== 'Owner' && role !== 'Collaborator') {
+      return res.status(403).json({ message: 'Only the Owner or a Co-Planner can recall a plan.' });
+    }
+    if (!isArchivedStatus(plan)) {
+      return res.status(400).json({ message: 'This plan is not archived.' });
+    }
+    const gate = await preparePlanRecall(plan.ownerId);
+    if (gate.status !== 200) {
+      return res.status(gate.status).json(planGateBody(gate));
+    }
+    await Plan.updateOne(
+      { _id: planId },
+      {
+        $set: { status: 'active', archiveDescription: '' },
+        $unset: { archivedAt: 1, archivedBy: 1 },
+      },
+    );
+    const saved = await Plan.findById(planId);
+    return res.json({ plan: saved });
+  } catch (err) {
+    console.error('Recall plan error:', err);
     return res.status(500).json({ message: 'Server error' });
   }
 });
