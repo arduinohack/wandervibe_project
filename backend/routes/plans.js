@@ -1441,6 +1441,105 @@ router.put('/:planId', authMiddleware, async (req, res) => {
   }
 });
 
+const ACTIVITY_COPY_SKIP = new Set([
+  '_id',
+  'id',
+  '__v',
+  'createdAt',
+  'updatedAt',
+  'planId',
+  'ownerId',
+]);
+
+function copyPlanName(source, body) {
+  const supplied = body && body.name;
+  if (supplied != null && typeof supplied !== 'string') {
+    return { error: 'Name must be text.' };
+  }
+  if (typeof supplied === 'string' && supplied.trim()) return { name: supplied.trim() };
+  const original = typeof source.name === 'string' ? source.name.trim() : '';
+  return { name: original ? `Copy of ${original}` : 'Copy of plan' };
+}
+
+function copiedActivity(source, planId, ownerId) {
+  const doc = { _id: uuidv4(), planId, ownerId: String(ownerId) };
+  for (const [key, value] of Object.entries(source)) {
+    if (ACTIVITY_COPY_SKIP.has(key)) continue;
+    doc[key] = value;
+  }
+  return doc;
+}
+
+// POST /api/plans/:planId/copy { name? }
+// Owner only. The source must be active. The new plan counts toward the cap.
+router.post('/:planId/copy', authMiddleware, async (req, res) => {
+  const planId = String(req.params.planId || '');
+  try {
+    const source = await Plan.findById(planId).lean();
+    if (!source) return res.status(404).json({ message: 'Plan not found' });
+    const callerId = req.user.userId || req.user.id;
+    const role = await callerPlanRole(source, callerId);
+    if (role !== 'Owner') {
+      return res.status(403).json({ message: 'Only the Owner can copy a plan.' });
+    }
+    if (isArchivedStatus(source)) {
+      return res.status(403).json({ message: 'This plan is archived.' });
+    }
+    const named = copyPlanName(source, req.body);
+    if (named.error) return res.status(400).json({ message: named.error });
+
+    const gate = await preparePlanCreate(callerId);
+    if (gate.status !== 200) {
+      return res.status(gate.status).json(planGateBody(gate));
+    }
+
+    const newId = uuidv4();
+    const plan = new Plan({
+      _id: newId,
+      type: source.type,
+      name: named.name,
+      destination: source.destination,
+      startDate: source.startDate || null,
+      endDate: source.endDate || null,
+      autoCalculateStartDate: source.autoCalculateStartDate === true,
+      autoCalculateEndDate: source.autoCalculateEndDate === true,
+      location: source.location,
+      budget: source.budget,
+      hiddenFields: Array.isArray(source.hiddenFields) ? source.hiddenFields : [],
+      planningState: source.planningState,
+      timeZone: source.timeZone,
+      ownerId: callerId,
+    });
+    const activities = await Event.find({ planId }).lean();
+    const copies = activities.map((activity) => copiedActivity(activity, newId, callerId));
+    try {
+      await plan.save();
+      await new PlanUser({ planId: newId, userId: callerId, role: 'Owner' }).save();
+      if (copies.length) await Event.insertMany(copies);
+    } catch (err) {
+      await Event.deleteMany({ planId: newId });
+      await PlanUser.deleteMany({ planId: newId });
+      await Plan.deleteOne({ _id: newId });
+      throw err;
+    }
+
+    await logSupport({
+      level: 'info',
+      event: 'PlanCopied',
+      actorUserId: callerId,
+      planId: newId,
+      message: 'Plan copied',
+      extra: { sourcePlanId: planId, name: named.name },
+    });
+
+    const saved = await Plan.findById(newId);
+    return res.status(201).json({ plan: saved });
+  } catch (err) {
+    console.error('Copy plan error:', err);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // POST /api/plans/:planId/archive { description }
 // Owner only. The plan leaves the owned-plan count and stays closed to members.
 router.post('/:planId/archive', authMiddleware, async (req, res) => {
