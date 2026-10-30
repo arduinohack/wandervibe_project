@@ -1147,6 +1147,55 @@ class PlanProvider extends ChangeNotifier {
     );
   }
 
+  /// POST /api/plans/:planId/copy. Owner only. 201 adds the new plan to the list.
+  Future<PlanLinkResult> copyPlan({
+    required String planId,
+    required String? name,
+    required String? token,
+  }) async {
+    try {
+      _writeMessage = null;
+      _upgradePack = null;
+      _upgradeTierName = null;
+      if (token == null || token.isEmpty) {
+        return const PlanLinkResult(status: 401);
+      }
+      final body = <String, dynamic>{};
+      final trimmed = name?.trim() ?? '';
+      if (trimmed.isNotEmpty) body['name'] = trimmed;
+      final response = await http.post(
+        Uri.parse('$backendBaseUrl$apiPlans/$planId/copy'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode(body),
+      );
+      if (response.statusCode != 201) {
+        _writeMessage = _apiErrorMessage(response.body);
+        _readUpgrade(response.body);
+        return PlanLinkResult(
+          status: response.statusCode,
+          error: _writeMessage,
+        );
+      }
+      final data = json.decode(response.body);
+      final planJson = data is Map ? data['plan'] : null;
+      if (planJson is! Map) {
+        return PlanLinkResult(status: response.statusCode);
+      }
+      final created = Plan.fromJson(Map<String, dynamic>.from(planJson));
+      _replacePlan(created);
+      if (token.isNotEmpty) {
+        _viewerRoles[created.id] = 'Owner';
+      }
+      return PlanLinkResult(status: 201, plan: created);
+    } catch (e) {
+      logger.e('Error copying plan: $e');
+      return const PlanLinkResult();
+    }
+  }
+
   /// POST /api/plans/:planId/recall. Owner or accepted Co-Planner.
   Future<int?> recallPlan({
     required String planId,

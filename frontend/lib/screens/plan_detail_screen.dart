@@ -2258,6 +2258,72 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     );
   }
 
+  Future<void> _copyPlan(Plan plan) async {
+    final nameController = TextEditingController(text: 'Copy of ${plan.name}');
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Copy plan'),
+        content: TextField(
+          controller: nameController,
+          decoration: const InputDecoration(labelText: 'Name'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Copy'),
+          ),
+        ],
+      ),
+    );
+    final name = nameController.text.trim();
+    nameController.dispose();
+    if (confirmed != true || !mounted) return;
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final result = await planProvider.copyPlan(
+      planId: plan.id,
+      name: name,
+      token: userProvider.token,
+    );
+    if (!mounted) return;
+    if (result.status == 401) {
+      await _endSession(userProvider, planProvider, navigator);
+      return;
+    }
+    if (result.status == 402) {
+      await showPlusUpgradeDialog(
+        context,
+        message: result.error ?? 'Upgrade to own more plans.',
+        token: userProvider.token,
+        pack: planProvider.upgradePack ?? 'plus_monthly',
+        tierName: planProvider.upgradeTierName,
+        showUpgrade: planProvider.upgradePack != null,
+      );
+      return;
+    }
+    final created = result.plan;
+    if (result.status != 201 || created == null) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(result.error ?? 'Could not copy this plan')),
+      );
+      return;
+    }
+    await userProvider.loadPlanAccess();
+    if (!mounted) return;
+    await navigator.push(
+      MaterialPageRoute(
+        builder: (context) => PlanDetailScreen(plan: created),
+      ),
+    );
+  }
+
   Future<void> _openPlanEdit(Plan plan, String? storedRole) async {
     final removed = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
@@ -2550,6 +2616,14 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                         ),
                       if (dateLine != null) Text(dateLine),
                       Text('State: ${shown.planningState}'),
+                      if (storedRole?.trim() == 'Owner' && !shown.isArchived)
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton(
+                            onPressed: () => _copyPlan(shown),
+                            child: const Text('Copy'),
+                          ),
+                        ),
                       if (storedRole?.trim() == 'Owner')
                         Align(
                           alignment: Alignment.centerLeft,
