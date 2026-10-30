@@ -45,6 +45,11 @@ const userSchema = new mongoose.Schema({
   aiApiKeyEncrypted: { type: String, select: false },
   aiCredits: { type: Number, default: 0, min: 0 },
   plusActive: { type: Boolean, default: false },
+  tier: {
+    type: String,
+    enum: ['trial', 'planitvibe', 'plus', 'pro'],
+    default: 'trial',
+  },
   trialStartedAt: { type: Date },
   trialEndsAt: { type: Date },
   plusPriceId: { type: String },

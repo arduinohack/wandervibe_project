@@ -2,6 +2,12 @@ const logger = require('./logger');
 const { add } = require('./aiCredits');
 const StripeEvent = require('../models/StripeEvent');
 const User = require('../models/User');
+const {
+  resolveTier,
+  tierCredits,
+  tierForPack,
+  tierRank,
+} = require('./membershipTiers');
 
 const CREDIT_PACKS = {
   100: 100,
@@ -37,10 +43,19 @@ function priceEnv(credits) {
   return '';
 }
 
-function plusPriceEnv(pack) {
+function priceForPack(pack) {
   const text = typeof pack === 'string' ? pack.trim() : '';
-  if (text === 'plus_monthly') return 'STRIPE_PRICE_PLUS_MONTHLY';
-  if (text === 'plus_yearly') return 'STRIPE_PRICE_PLUS_YEARLY';
+  if (text === 'planitvibe') return envValue('STRIPE_PRICE_PLANITVIBE');
+  if (text === 'pro') return envValue('STRIPE_PRICE_PRO');
+  if (text === 'plus_yearly') return envValue('STRIPE_PRICE_PLUS_YEARLY');
+  if (text === 'plus_monthly') {
+    return envValue('STRIPE_PRICE_PLUS') || envValue('STRIPE_PRICE_PLUS_MONTHLY');
+  }
+  return '';
+}
+
+function metadataType(tier) {
+  if (tier === 'planitvibe' || tier === 'plus' || tier === 'pro') return tier === 'plus' ? 'plus' : tier;
   return '';
 }
 
@@ -103,12 +118,12 @@ function unixDate(value) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-async function createPlusCheckout(userId, priceEnvName) {
-  const price = envValue(priceEnvName);
+async function createPlusCheckout(userId, pack, tier) {
+  const price = priceForPack(pack);
   const stripe = stripeClient();
   if (!stripe || !price) return { status: 503, body: { message: NOT_CONFIGURED } };
   try {
-    const metadata = { userId, type: 'plus', priceId: price };
+    const metadata = { userId, type: metadataType(tier), priceId: price };
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       line_items: [{ price, quantity: 1 }],
@@ -132,8 +147,8 @@ async function createPlusCheckout(userId, priceEnvName) {
 
 async function createCreditCheckout({ userId, pack }) {
   if (typeof pack !== 'string') return { status: 400, body: { message: BAD_PACK } };
-  const plusEnv = plusPriceEnv(pack);
-  if (plusEnv) return createPlusCheckout(userId, plusEnv);
+  const tier = tierForPack(pack);
+  if (tier) return createPlusCheckout(userId, pack.trim(), tier);
   const credits = packCredits(pack);
   if (!credits) return { status: 400, body: { message: BAD_PACK } };
   const price = envValue(priceEnv(credits));
@@ -189,8 +204,12 @@ function plusCheckoutUserId(session) {
   return textId(session && session.client_reference_id);
 }
 
+function isPaidTierType(type) {
+  return type === 'planitvibe' || type === 'plus' || type === 'pro';
+}
+
 function isPlusSession(session) {
-  if (metaType(session) === 'plus') return true;
+  if (isPaidTierType(metaType(session))) return true;
   return Boolean(session && session.mode === 'subscription');
 }
 
@@ -209,15 +228,31 @@ function linePriceId(line) {
   return details ? stripeId(details.price) : '';
 }
 
-function configuredPlusPrices() {
+function configuredTierPrices() {
   return [
+    envValue('STRIPE_PRICE_PLANITVIBE'),
+    envValue('STRIPE_PRICE_PLUS'),
     envValue('STRIPE_PRICE_PLUS_MONTHLY'),
     envValue('STRIPE_PRICE_PLUS_YEARLY'),
+    envValue('STRIPE_PRICE_PRO'),
   ].filter(Boolean);
 }
 
+function tierFromPriceId(priceId) {
+  if (!priceId) return '';
+  if (priceId === envValue('STRIPE_PRICE_PLANITVIBE')) return 'planitvibe';
+  if (priceId === envValue('STRIPE_PRICE_PRO')) return 'pro';
+  const plusPrices = [
+    envValue('STRIPE_PRICE_PLUS'),
+    envValue('STRIPE_PRICE_PLUS_MONTHLY'),
+    envValue('STRIPE_PRICE_PLUS_YEARLY'),
+  ].filter(Boolean);
+  if (plusPrices.includes(priceId)) return 'plus';
+  return '';
+}
+
 function matchesPlusPrice(invoice) {
-  const configured = configuredPlusPrices();
+  const configured = configuredTierPrices();
   if (!configured.length) return false;
   return lineItems(invoice).some((line) => configured.includes(linePriceId(line)));
 }
@@ -244,13 +279,33 @@ function subscriptionIdOfInvoice(invoice) {
   return parent ? stripeId(parent.subscription) : '';
 }
 
+function tierFromMetadata(value) {
+  const type = metaType(value);
+  return isPaidTierType(type) ? type : '';
+}
+
 function isPlusInvoice(invoice) {
   if (!invoice) return false;
-  if (metaType(invoice) === 'plus') return true;
-  if (metaType(invoice.subscription_details) === 'plus') return true;
-  if (invoice.parent && metaType(invoice.parent.subscription_details) === 'plus') return true;
-  if (lineItems(invoice).some((line) => metaType(line) === 'plus')) return true;
+  if (tierFromMetadata(invoice)) return true;
+  if (tierFromMetadata(invoice.subscription_details)) return true;
+  if (invoice.parent && tierFromMetadata(invoice.parent.subscription_details)) return true;
+  if (lineItems(invoice).some((line) => tierFromMetadata(line) || tierFromPriceId(linePriceId(line)))) {
+    return true;
+  }
   return matchesPlusPrice(invoice);
+}
+
+function tierFromInvoice(invoice) {
+  const fromMeta = tierFromMetadata(invoice)
+    || tierFromMetadata(invoice && invoice.subscription_details)
+    || (invoice && invoice.parent ? tierFromMetadata(invoice.parent.subscription_details) : '');
+  if (fromMeta) return fromMeta;
+  for (const line of lineItems(invoice)) {
+    const fromLine = tierFromMetadata(line) || tierFromPriceId(linePriceId(line));
+    if (fromLine) return fromLine;
+  }
+  const fromPrice = tierFromPriceId(priceIdFromInvoice(invoice));
+  return fromPrice || 'plus';
 }
 
 function periodEndFromSession(session) {
@@ -324,7 +379,9 @@ async function runOnce(eventId, fields, work) {
 
 // Invoice id is shared by checkout.session.completed and invoice.paid.
 // The period key covers a checkout session that has no invoice id yet.
-async function grantPlusOnce(userId, keys) {
+async function grantTierOnce(userId, keys, credits) {
+  const grant = Number(credits);
+  if (!Number.isFinite(grant) || grant <= 0) return;
   const unique = [];
   const seen = new Set();
   for (const key of keys) {
@@ -342,7 +399,7 @@ async function grantPlusOnce(userId, keys) {
           _id: key,
           sessionId: '',
           userId,
-          credits: PLUS_GRANT,
+          credits: grant,
         });
         created.push(key);
       } catch (err) {
@@ -350,7 +407,7 @@ async function grantPlusOnce(userId, keys) {
         throw err;
       }
     }
-    const balance = await add(userId, PLUS_GRANT);
+    const balance = await add(userId, grant);
     if (balance == null) {
       logger.error('Stripe Plus user was not found', {
         event: 'StripeWebhook',
@@ -363,21 +420,33 @@ async function grantPlusOnce(userId, keys) {
   }
 }
 
-async function markPlus({ userId, customerId, subscriptionId, priceId, periodEnd, active }) {
+function paidTierOf(user) {
+  return resolveTier(user);
+}
+
+async function markPlus({ userId, customerId, subscriptionId, priceId, periodEnd, active, tier }) {
+  const existing = await User.findById(userId).select('tier plusActive stripeSubscriptionId').lean();
+  if (!existing) {
+    logger.error('Stripe Plus user was not found', {
+      event: 'StripeWebhook',
+      userId,
+    });
+    return;
+  }
+  const currentTier = paidTierOf(existing);
+  const currentSub = textId(existing.stripeSubscriptionId);
+  if (tier && subscriptionId && currentSub && currentSub !== subscriptionId) {
+    if (tierRank(tier) < tierRank(currentTier)) return;
+  }
   const update = {};
   if (typeof active === 'boolean') update.plusActive = active;
+  if (tier) update.tier = tier;
   if (customerId) update.stripeCustomerId = customerId;
   if (subscriptionId) update.stripeSubscriptionId = subscriptionId;
   if (priceId) update.plusPriceId = priceId;
   if (periodEnd) update.plusCurrentPeriodEnd = periodEnd;
   if (!Object.keys(update).length) return;
-  const user = await User.findByIdAndUpdate(userId, { $set: update }, { new: true }).select('_id');
-  if (!user) {
-    logger.error('Stripe Plus user was not found', {
-      event: 'StripeWebhook',
-      userId,
-    });
-  }
+  await User.updateOne({ _id: userId }, { $set: update });
 }
 
 async function userIdForSubscription(subscriptionId, customerId) {
@@ -408,7 +477,9 @@ async function applyPlusCheckout(event, session) {
   const periodEnd = periodEndFromSession(session);
   const invoiceId = stripeId(session.invoice);
   const sessionId = textId(session.id);
-  await runOnce(eventId, { sessionId, userId, credits: PLUS_GRANT }, async () => {
+  const tier = tierFromMetadata(session) || tierFromPriceId(priceId) || 'plus';
+  const credits = tierCredits(tier) || PLUS_GRANT;
+  await runOnce(eventId, { sessionId, userId, credits }, async () => {
     await markPlus({
       userId,
       customerId,
@@ -416,13 +487,14 @@ async function applyPlusCheckout(event, session) {
       priceId,
       periodEnd,
       active: true,
+      tier,
     });
     const keys = [
       periodGrantKey(subscriptionId, periodEnd),
       invoiceId ? `grant:invoice:${invoiceId}` : '',
     ];
     if (!keys.some(Boolean) && sessionId) keys.push(`grant:session:${sessionId}`);
-    await grantPlusOnce(userId, keys);
+    await grantTierOnce(userId, keys, credits);
   });
 }
 
@@ -457,7 +529,9 @@ async function applyPlusInvoice(event) {
   }
   const subscriptionId = subscriptionIdOfInvoice(invoice);
   const periodEnd = periodEndFromInvoice(invoice);
-  await runOnce(eventId, { sessionId: invoiceId, userId, credits: PLUS_GRANT }, async () => {
+  const tier = tierFromInvoice(invoice);
+  const credits = tierCredits(tier) || PLUS_GRANT;
+  await runOnce(eventId, { sessionId: invoiceId, userId, credits }, async () => {
     await markPlus({
       userId,
       customerId: stripeId(invoice.customer),
@@ -465,11 +539,12 @@ async function applyPlusInvoice(event) {
       priceId: priceIdFromInvoice(invoice),
       periodEnd,
       active: true,
+      tier,
     });
-    await grantPlusOnce(userId, [
+    await grantTierOnce(userId, [
       periodGrantKey(subscriptionId, periodEnd),
       `grant:invoice:${invoiceId}`,
-    ]);
+    ], credits);
   });
 }
 
@@ -494,16 +569,25 @@ async function applyPlusSubscription(event) {
   }
   await runOnce(eventId, { sessionId: subscriptionId, userId, credits: 0 }, async () => {
     if (turnOff) {
-      await User.updateOne({ _id: userId }, { $set: { plusActive: false } });
+      const existing = await User.findById(userId).select('stripeSubscriptionId').lean();
+      const currentSub = existing ? textId(existing.stripeSubscriptionId) : '';
+      if (subscriptionId && currentSub && currentSub !== subscriptionId) return;
+      await User.updateOne(
+        { _id: userId },
+        { $set: { plusActive: false, tier: 'trial' } },
+      );
       return;
     }
+    const priceId = plusPriceFromSubscription(subscription);
+    const tier = tierFromMetadata(subscription) || tierFromPriceId(priceId) || '';
     await markPlus({
       userId,
       customerId,
       subscriptionId,
-      priceId: plusPriceFromSubscription(subscription),
+      priceId,
       periodEnd: unixDate(subscription.current_period_end),
       active: true,
+      tier,
     });
   });
 }

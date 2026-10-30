@@ -1,12 +1,19 @@
 const Plan = require('../models/Plan');
 const User = require('../models/User');
 const { add } = require('./aiCredits');
+const {
+  UPGRADE_MESSAGE,
+  planCapFor,
+  resolveTier,
+  tierName,
+  upgradeBody,
+} = require('./membershipTiers');
 
 const TRIAL_MS = 14 * 24 * 60 * 60 * 1000;
 const TRIAL_CREDITS = 15;
 const TRIAL_PLAN_LIMIT = 2;
 
-const CREATE_MESSAGE = 'Upgrade to Plus to create a plan.';
+const CREATE_MESSAGE = UPGRADE_MESSAGE;
 const DELETE_MESSAGE = 'Upgrade to Plus to delete a plan.';
 const EXPORT_MESSAGE = 'Upgrade to Plus to export.';
 const EDIT_MESSAGE = 'Upgrade to Plus to edit this plan.';
@@ -20,7 +27,7 @@ function userIdOf(value) {
 }
 
 function isPlus(user) {
-  return Boolean(user && user.plusActive === true);
+  return resolveTier(user) !== 'trial';
 }
 
 function trialIsActive(user, now = new Date()) {
@@ -59,6 +66,11 @@ function blocked(message) {
   return { status: 402, message };
 }
 
+function blockedUpgrade(tier) {
+  const body = upgradeBody(tier);
+  return { status: 402, message: body.message, body };
+}
+
 function allowed() {
   return { status: 200 };
 }
@@ -72,7 +84,7 @@ async function ownedPlanCount(userId) {
 async function loadAccessUser(userId) {
   const id = userIdOf(userId);
   if (!id) return null;
-  return User.findById(id).select('plusActive trialStartedAt trialEndsAt emailVerified').lean();
+  return User.findById(id).select('plusActive tier trialStartedAt trialEndsAt emailVerified').lean();
 }
 
 async function accessSummary(userId) {
@@ -81,12 +93,16 @@ async function accessSummary(userId) {
     loadAccessUser(id),
     ownedPlanCount(id),
   ]);
+  const tier = resolveTier(user);
   return {
     trialStartedAt: isoOrNull(user && user.trialStartedAt),
     trialEndsAt: isoOrNull(user && user.trialEndsAt),
     trialActive: trialIsActive(user),
-    plusActive: isPlus(user),
+    plusActive: tier !== 'trial',
     plansOwned,
+    tier,
+    tierName: tierName(tier),
+    planCap: planCapFor(tier),
   };
 }
 
@@ -121,16 +137,21 @@ async function preparePlanCreate(userId) {
     loadAccessUser(id),
     ownedPlanCount(id),
   ]);
-  if (user && user.emailVerified === false && !isPlus(user)) {
+  const tier = resolveTier(user);
+  const paid = tier !== 'trial';
+  if (user && user.emailVerified === false && !paid) {
     return { status: 403, message: VERIFY_EMAIL_MESSAGE };
   }
   const now = new Date();
-  const firstPlan = plansOwned === 0 && !trialHasStarted(user);
-  const open = isPlus(user)
-    || firstPlan
-    || (trialIsActive(user, now) && plansOwned < TRIAL_PLAN_LIMIT);
-  if (!open) return blocked(CREATE_MESSAGE);
-  if (firstPlan) await startTrial(id, now);
+  const cap = planCapFor(tier);
+  // A person who owns no plans is a guest of other plans only. Memberships
+  // do not count, and the cap does not block that first owned plan.
+  if (paid) {
+    if (plansOwned >= cap) return blockedUpgrade(tier);
+  } else if (plansOwned > 0 && (!trialIsActive(user, now) || plansOwned >= cap)) {
+    return blockedUpgrade(tier);
+  }
+  if (plansOwned === 0 && !trialHasStarted(user)) await startTrial(id, now);
   return allowed();
 }
 
@@ -175,6 +196,7 @@ module.exports = {
   TRIAL_CREDITS,
   TRIAL_PLAN_LIMIT,
   CREATE_MESSAGE,
+  UPGRADE_MESSAGE,
   DELETE_MESSAGE,
   EXPORT_MESSAGE,
   EDIT_MESSAGE,

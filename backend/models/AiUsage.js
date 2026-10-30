@@ -8,9 +8,10 @@ const aiUsageSchema = new mongoose.Schema({
   feature: { type: String, enum: ['paste', 'suggest', 'command'], required: true },
   provider: {
     type: String,
-    enum: ['xai', 'openai', 'anthropic', 'gemini', 'server'],
+    enum: ['xai', 'openai', 'anthropic', 'gemini', 'server', 'google'],
     required: true,
   },
+  credits: { type: Number },
   usedUserKey: { type: Boolean, required: true },
   model: { type: String },
   inputTokens: { type: Number, default: null },

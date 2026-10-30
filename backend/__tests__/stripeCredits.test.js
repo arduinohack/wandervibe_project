@@ -39,6 +39,9 @@ const previous = {
   price500: process.env.STRIPE_PRICE_CREDITS_500,
   plusMonthly: process.env.STRIPE_PRICE_PLUS_MONTHLY,
   plusYearly: process.env.STRIPE_PRICE_PLUS_YEARLY,
+  planitvibe: process.env.STRIPE_PRICE_PLANITVIBE,
+  plus: process.env.STRIPE_PRICE_PLUS,
+  pro: process.env.STRIPE_PRICE_PRO,
 };
 
 function bearer(token) {
@@ -57,6 +60,9 @@ function restoreStripeEnv() {
   restore('STRIPE_PRICE_CREDITS_500', previous.price500);
   restore('STRIPE_PRICE_PLUS_MONTHLY', previous.plusMonthly);
   restore('STRIPE_PRICE_PLUS_YEARLY', previous.plusYearly);
+  restore('STRIPE_PRICE_PLANITVIBE', previous.planitvibe);
+  restore('STRIPE_PRICE_PLUS', previous.plus);
+  restore('STRIPE_PRICE_PRO', previous.pro);
 }
 
 function sessionsCreate() {
@@ -322,6 +328,9 @@ describe('Plus subscription', () => {
       trialEndsAt: null,
       trialActive: false,
       plansOwned: 0,
+      tier: 'trial',
+      tierName: 'PlanItVibe (Trial)',
+      planCap: 2,
     });
   });
 
@@ -409,6 +418,7 @@ describe('Plus subscription', () => {
     expect(await getBalance(ada.userId)).toBe(100);
     let stored = await User.findById(ada.userId).lean();
     expect(stored.plusActive).toBe(true);
+    expect(stored.tier).toBe('plus');
     expect(stored.plusPriceId).toBe(PRICE_PLUS_MONTHLY);
     expect(stored.stripeCustomerId).toBe('cus_plus');
     expect(stored.stripeSubscriptionId).toBe('sub_plus');
@@ -496,6 +506,7 @@ describe('Plus subscription', () => {
     expect(canceled.status).toBe(200);
     stored = await User.findById(ada.userId).lean();
     expect(stored.plusActive).toBe(false);
+    expect(stored.tier).toBe('trial');
     expect(await getBalance(ada.userId)).toBe(300);
 
     await User.updateOne({ _id: ada.userId }, { $set: { plusActive: true } });
@@ -531,6 +542,7 @@ describe('Plus subscription', () => {
     expect(unpaidSub.status).toBe(200);
     stored = await User.findById(ada.userId).lean();
     expect(stored.plusActive).toBe(false);
+    expect(stored.tier).toBe('trial');
 
     const shown = await request(app).get(CREDITS).set(bearer(ada.token));
     expect(shown.body).toEqual({
@@ -540,6 +552,129 @@ describe('Plus subscription', () => {
       trialEndsAt: null,
       trialActive: false,
       plansOwned: 0,
+      tier: 'trial',
+      tierName: 'PlanItVibe (Trial)',
+      planCap: 2,
     });
+  });
+
+  test('tier checkout uses the matching subscription price', async () => {
+    const ada = await registerAndLogin('tier-checkout@example.com');
+    sessionsCreate().mockResolvedValue({ url: CHECKOUT_URL });
+    process.env.STRIPE_PRICE_PLANITVIBE = 'price_planitvibe';
+    process.env.STRIPE_PRICE_PLUS = 'price_plus_new';
+    process.env.STRIPE_PRICE_PLUS_MONTHLY = 'price_plus_old';
+    process.env.STRIPE_PRICE_PRO = 'price_pro';
+
+    const packs = [
+      ['planitvibe', 'price_planitvibe', 'planitvibe'],
+      ['plus_monthly', 'price_plus_new', 'plus'],
+      ['pro', 'price_pro', 'pro'],
+    ];
+    for (const [pack, price, type] of packs) {
+      const response = await request(app)
+        .post(CHECKOUT)
+        .set(bearer(ada.token))
+        .send({ pack });
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ url: CHECKOUT_URL });
+      const metadata = { userId: ada.userId, type, priceId: price };
+      expect(sessionsCreate()).toHaveBeenLastCalledWith({
+        mode: 'subscription',
+        line_items: [{ price, quantity: 1 }],
+        client_reference_id: ada.userId,
+        metadata,
+        subscription_data: { metadata },
+        success_url: 'https://planitvibe.com/?checkout=success',
+        cancel_url: 'https://planitvibe.com/?checkout=cancel',
+      });
+    }
+    expect(await getBalance(ada.userId)).toBe(0);
+  });
+
+  test('each tier grants its credits once per invoice', async () => {
+    process.env.STRIPE_PRICE_PLANITVIBE = 'price_planitvibe';
+    process.env.STRIPE_PRICE_PLUS = 'price_plus';
+    process.env.STRIPE_PRICE_PRO = 'price_pro';
+    const cases = [
+      ['planitvibe', 'price_planitvibe', 50, 'planitvibe'],
+      ['plus', 'price_plus', 100, 'plus'],
+      ['pro', 'price_pro', 300, 'pro'],
+    ];
+    for (const [tier, price, credits, type] of cases) {
+      const ada = await registerAndLogin(`${tier}-grant@example.com`);
+      await User.updateOne(
+        { _id: ada.userId },
+        { $set: { stripeCustomerId: `cus_${tier}`, stripeSubscriptionId: `sub_${tier}` } },
+      );
+      const periodEnd = 1767225600;
+      const invoice = {
+        id: `evt_${tier}_invoice`,
+        type: 'invoice.paid',
+        data: {
+          object: {
+            id: `in_${tier}_1`,
+            customer: `cus_${tier}`,
+            subscription: `sub_${tier}`,
+            lines: {
+              data: [{ price: { id: price }, period: { end: periodEnd } }],
+            },
+          },
+        },
+      };
+      const paid = await postWebhook(invoice);
+      expect(paid.status).toBe(200);
+      expect(await getBalance(ada.userId)).toBe(credits);
+      const retry = await postWebhook(invoice);
+      expect(retry.status).toBe(200);
+      expect(await getBalance(ada.userId)).toBe(credits);
+
+      const checkout = {
+        id: `evt_${tier}_checkout`,
+        type: 'checkout.session.completed',
+        data: {
+          object: {
+            id: `cs_${tier}`,
+            mode: 'subscription',
+            payment_status: 'paid',
+            client_reference_id: ada.userId,
+            customer: `cus_${tier}`,
+            subscription: `sub_${tier}`,
+            invoice: `in_${tier}_1`,
+            metadata: { userId: ada.userId, type, priceId: price },
+          },
+        },
+      };
+      const started = await postWebhook(checkout);
+      expect(started.status).toBe(200);
+      expect(await getBalance(ada.userId)).toBe(credits);
+
+      const renewal = {
+        id: `evt_${tier}_renewal`,
+        type: 'invoice.paid',
+        data: {
+          object: {
+            id: `in_${tier}_2`,
+            customer: `cus_${tier}`,
+            subscription: `sub_${tier}`,
+            metadata: { userId: ada.userId, type },
+            lines: {
+              data: [{ price: { id: price }, period: { end: periodEnd + 86400 } }],
+            },
+          },
+        },
+      };
+      const renewed = await postWebhook(renewal);
+      expect(renewed.status).toBe(200);
+      expect(await getBalance(ada.userId)).toBe(credits * 2);
+      const renewalRetry = await postWebhook(renewal);
+      expect(renewalRetry.status).toBe(200);
+      expect(await getBalance(ada.userId)).toBe(credits * 2);
+
+      const stored = await User.findById(ada.userId).lean();
+      expect(stored.tier).toBe(tier);
+      expect(stored.plusActive).toBe(true);
+      expect(stored.stripeSubscriptionId).toBe(`sub_${tier}`);
+    }
   });
 });

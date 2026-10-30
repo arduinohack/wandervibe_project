@@ -101,8 +101,8 @@ settingsRouter.put('/me/ai-settings', async (req, res) => {
   }
 });
 
-// GET /api/users/me/ai-credits. The caller's balance only.
-settingsRouter.get('/me/ai-credits', async (req, res) => {
+// GET /api/users/me and GET /api/users/me/ai-credits. Balance plus the membership tier.
+async function sendCreditStatus(req, res) {
   try {
     const userId = callerId(req);
     if (!userId) return res.status(401).json({ message: 'No token, authorization denied' });
@@ -117,7 +117,10 @@ settingsRouter.get('/me/ai-credits', async (req, res) => {
     console.error('AI credits read failed');
     return res.status(500).json({ message: 'Server error' });
   }
-});
+}
+
+settingsRouter.get('/me', sendCreditStatus);
+settingsRouter.get('/me/ai-credits', sendCreditStatus);
 
 // POST /api/users/me/ai-credits/checkout. Any logged-in user. Returns a Stripe URL.
 settingsRouter.post('/me/ai-credits/checkout', async (req, res) => {

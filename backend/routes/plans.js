@@ -48,6 +48,11 @@ const csvUpload = multer({
 });
 const logger = require('../utils/logger');  // Added: Borrow exported logger from ../util/logger.js
 
+function planGateBody(gate) {
+  if (gate && gate.body && typeof gate.body === 'object') return gate.body;
+  return { message: gate && gate.message };
+}
+
 
 // POST /api/plans (Protected: Creates plan and assigns Owner role)
 router.post('/', authMiddleware, async (req, res) => {
@@ -63,7 +68,7 @@ router.post('/', authMiddleware, async (req, res) => {
     const callerId = req.user.userId || req.user.id;
     const gate = await preparePlanCreate(callerId);
     if (gate.status !== 200) {
-      return res.status(gate.status).json({ message: gate.message });
+      return res.status(gate.status).json(planGateBody(gate));
     }
 
     // Generate UUID for plan ID
@@ -710,6 +715,11 @@ router.post('/:planId/link', authMiddleware, async (req, res) => {
       return res.status(400).json({ message: 'An activity is not on this plan' });
     }
 
+    const gate = await preparePlanCreate(callerId);
+    if (gate.status !== 200) {
+      return res.status(gate.status).json(planGateBody(gate));
+    }
+
     const personalId = uuidv4();
     const sourceName = typeof source.name === 'string' ? source.name.trim() : '';
     const personal = new Plan({
@@ -974,7 +984,7 @@ router.post('/:planId/import', authMiddleware, async (req, res) => {
 
     const gate = await preparePlanCreate(callerId);
     if (gate.status !== 200) {
-      return res.status(gate.status).json({ message: gate.message });
+      return res.status(gate.status).json(planGateBody(gate));
     }
 
     const newPlanId = uuidv4();

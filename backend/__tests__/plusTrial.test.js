@@ -25,12 +25,12 @@ const { getBalance } = require('../utils/aiCredits');
 const { XAI_ENDPOINT } = require('../utils/aiCommand');
 const { SEARCH_URL } = require('../utils/placeSuggest');
 const {
-  CREATE_MESSAGE,
   DELETE_MESSAGE,
   EXPORT_MESSAGE,
   EDIT_MESSAGE,
   AI_MESSAGE,
 } = require('../utils/planAccess');
+const { upgradeBody } = require('../utils/membershipTiers');
 
 jest.setTimeout(30000);
 
@@ -188,6 +188,9 @@ describe('free-owner trial and Plus gating', () => {
     expect(ends - started).toBe(TRIAL_MS);
     expect(shown.trialActive).toBe(true);
     expect(shown.plusActive).toBe(false);
+    expect(shown.tier).toBe('trial');
+    expect(shown.tierName).toBe('PlanItVibe (Trial)');
+    expect(shown.planCap).toBe(2);
     expect(shown.plansOwned).toBe(1);
     expect(shown.aiCredits).toBe(15);
     const startedAt = shown.trialStartedAt;
@@ -223,7 +226,7 @@ describe('free-owner trial and Plus gating', () => {
 
     const third = await postPlan(ada.token, 'Nice');
     expect(third.status).toBe(402);
-    expect(third.body).toEqual({ message: CREATE_MESSAGE });
+    expect(third.body).toEqual(upgradeBody('trial'));
     expect(await Plan.countDocuments({ ownerId: ada.userId })).toBe(2);
 
     const imported = await request(app)
@@ -233,7 +236,7 @@ describe('free-owner trial and Plus gating', () => {
       .field('defaultType', 'dining')
       .attach('file', Buffer.from('name,type\nDinner,dining\n', 'utf8'), 'import.csv');
     expect(imported.status).toBe(402);
-    expect(imported.body).toEqual({ message: CREATE_MESSAGE });
+    expect(imported.body).toEqual(upgradeBody('trial'));
     expect(await Plan.countDocuments({ ownerId: ada.userId })).toBe(2);
 
     const exported = await exportPlan(ada.token, first.body.plan._id);
@@ -254,7 +257,7 @@ describe('free-owner trial and Plus gating', () => {
 
     const another = await postPlan(ada.token, 'Lyon');
     expect(another.status).toBe(402);
-    expect(another.body).toEqual({ message: CREATE_MESSAGE });
+    expect(another.body).toEqual(upgradeBody('trial'));
 
     const removed = await request(app)
       .delete(`/api/plans/${planId}`)
@@ -289,6 +292,9 @@ describe('free-owner trial and Plus gating', () => {
     const shown = await credits(ada.token);
     expect(shown.trialActive).toBe(false);
     expect(shown.plusActive).toBe(false);
+    expect(shown.tier).toBe('trial');
+    expect(shown.tierName).toBe('PlanItVibe (Trial)');
+    expect(shown.planCap).toBe(2);
     expect(shown.plansOwned).toBe(1);
   });
 
@@ -302,7 +308,12 @@ describe('free-owner trial and Plus gating', () => {
       expect(created.status).toBe(201);
       ids.push(created.body.plan._id);
     }
-    expect((await credits(ada.token)).plansOwned).toBe(3);
+    const open = await credits(ada.token);
+    expect(open.plansOwned).toBe(3);
+    expect(open.plusActive).toBe(true);
+    expect(open.tier).toBe('plus');
+    expect(open.tierName).toBe('PlanItVibe Plus');
+    expect(open.planCap).toBe(10);
     expect(await getBalance(ada.userId)).toBe(15);
 
     const exported = await exportPlan(ada.token, ids[0]);
@@ -334,7 +345,7 @@ describe('free-owner trial and Plus gating', () => {
     await endAccess(ada.userId);
     const another = await postPlan(ada.token, 'Lyon');
     expect(another.status).toBe(402);
-    expect(another.body).toEqual({ message: CREATE_MESSAGE });
+    expect(another.body).toEqual(upgradeBody('trial'));
     const removed = await request(app)
       .delete(`/api/plans/${planId}`)
       .set(bearer(ada.token));
@@ -475,5 +486,69 @@ describe('free-owner trial and Plus gating', () => {
     const closed = await postActivity(grace.token, planId, 'Too late');
     expect(closed.status).toBe(402);
     expect(closed.body).toEqual({ message: EDIT_MESSAGE });
+  });
+
+  test('a guest membership does not count toward the plan cap', async () => {
+    const ada = await registerAndLogin('ada-guest-cap@example.com');
+    const grace = await registerAndLogin('grace-guest-cap@example.com');
+    const owned = await postPlan(ada.token, 'Paris');
+    expect(owned.status).toBe(201);
+    const planId = owned.body.plan._id;
+    await acceptRole(ada.token, grace.token, planId, 'grace-guest-cap@example.com', 'Guest');
+
+    const inbox = await request(app).get('/api/invites').set(bearer(grace.token));
+    expect(inbox.status).toBe(200);
+    const plan = await request(app).get(`/api/plans/${planId}`).set(bearer(grace.token));
+    expect(plan.status).toBe(200);
+    const itinerary = await request(app)
+      .get(`/api/plans/${planId}/itinerary`)
+      .set(bearer(grace.token));
+    expect(itinerary.status).toBe(200);
+
+    const first = await postPlan(grace.token, 'Grace one');
+    const second = await postPlan(grace.token, 'Grace two');
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(201);
+    const third = await postPlan(grace.token, 'Grace three');
+    expect(third.status).toBe(402);
+    expect(third.body).toEqual(upgradeBody('trial'));
+    expect(await Plan.countDocuments({ ownerId: grace.userId })).toBe(2);
+    expect(await Plan.countDocuments({ ownerId: ada.userId })).toBe(1);
+    const shown = await credits(grace.token);
+    expect(shown.plansOwned).toBe(2);
+    expect(shown.tierName).toBe('PlanItVibe (Trial)');
+  });
+
+  test('each paid tier stops at its plan cap', async () => {
+    const cases = [
+      ['planitvibe', 4, upgradeBody('planitvibe')],
+      ['plus', 10, upgradeBody('plus')],
+      ['pro', 30, upgradeBody('pro')],
+    ];
+    for (const [tier, cap, blockedBody] of cases) {
+      const ada = await registerAndLogin(`${tier}-cap@example.com`);
+      await User.updateOne({ _id: ada.userId }, { $set: { tier, plusActive: true } });
+      const existing = [];
+      for (let i = 0; i < cap - 1; i += 1) {
+        existing.push({
+          _id: `${tier}-owned-${i}`,
+          type: 'trip',
+          name: `${tier} ${i}`,
+          destination: 'Paris',
+          ownerId: ada.userId,
+        });
+      }
+      await Plan.insertMany(existing);
+      const allowed = await postPlan(ada.token, 'Room for one more');
+      expect(allowed.status).toBe(201);
+      const blocked = await postPlan(ada.token, 'Over the cap');
+      expect(blocked.status).toBe(402);
+      expect(blocked.body).toEqual(blockedBody);
+      expect(await Plan.countDocuments({ ownerId: ada.userId })).toBe(cap);
+      const shown = await credits(ada.token);
+      expect(shown.tier).toBe(tier);
+      expect(shown.planCap).toBe(cap);
+      expect(shown.plansOwned).toBe(cap);
+    }
   });
 });
