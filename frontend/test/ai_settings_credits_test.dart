@@ -18,9 +18,18 @@ void main() {
 
     expect(find.text('Buy 100 credits'), findsOneWidget);
     expect(find.text('Buy 500 credits'), findsOneWidget);
-    expect(find.text('Upgrade to Plus'), findsOneWidget);
-    expect(find.text('Plus active'), findsNothing);
+    expect(find.text('PlanItVibe (Trial)'), findsOneWidget);
+    expect(find.text('Plan cap: 2'), findsOneWidget);
+    expect(find.text('Upgrade to PlanItVibe'), findsOneWidget);
+    expect(find.text('Upgrade to PlanItVibe Plus'), findsOneWidget);
+    expect(find.text('Upgrade to PlanItVibe Pro'), findsOneWidget);
     expect(find.text('Refresh'), findsOneWidget);
     expect(find.text('AI credits'), findsOneWidget);
+  });
+
+  test('a fractional balance shows one decimal', () {
+    expect(creditBalanceText(2), '2');
+    expect(creditBalanceText(2.5), '2.5');
+    expect(creditBalanceText(0.5), '0.5');
   });
 }

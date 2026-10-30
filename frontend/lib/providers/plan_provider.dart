@@ -7,6 +7,7 @@ import 'dart:typed_data';
 import '../config/constants.dart'; // Add this line for backendBaseUrl
 // Add this line for UserProvider (token)
 import 'package:flutter/material.dart'; // Added: Required for Icon
+import '../models/membership_tier.dart';
 import '../models/plan.dart'; // Your Plan model
 import '../models/plan_member.dart';
 import '../models/activity.dart';
@@ -508,6 +509,13 @@ String? _apiErrorMessage(String body) {
   }
 }
 
+String? _apiText(Map data, String key) {
+  final value = data[key];
+  if (value is! String) return null;
+  final text = value.trim();
+  return text.isEmpty ? null : text;
+}
+
 String _personName(Map item) {
   final first = _trimmed(item['firstName']);
   final last = _trimmed(item['lastName']);
@@ -704,11 +712,27 @@ class PlanProvider extends ChangeNotifier {
 
   String? _plansError;
   String? _writeMessage;
+  String? _upgradePack;
+  String? _upgradeTierName;
   List<Activity> _itinerary = [];
   String? _itineraryError;
 
   String? get plansError => _plansError;
   String? get writeMessage => _writeMessage;
+  String? get upgradePack => _upgradePack;
+  String? get upgradeTierName => _upgradeTierName;
+
+  void _readUpgrade(String body) {
+    _upgradePack = null;
+    _upgradeTierName = null;
+    try {
+      final data = json.decode(body);
+      if (data is! Map) return;
+      final tier = _apiText(data, 'nextTier');
+      _upgradePack = checkoutPackForTier(tier);
+      _upgradeTierName = _apiText(data, 'nextTierName');
+    } catch (_) {}
+  }
   List<Activity> get itineraryActivities => _itinerary;
 
   /// Shows [activities] in start-time order. Does not call the API.
@@ -1014,6 +1038,8 @@ class PlanProvider extends ChangeNotifier {
   Future<int?> createPlan(Plan newPlan, String? token) async {
     try {
       _writeMessage = null;
+      _upgradePack = null;
+      _upgradeTierName = null;
       if (token == null || token.isEmpty) {
         return 401;
       }
@@ -1029,6 +1055,7 @@ class PlanProvider extends ChangeNotifier {
 
       if (response.statusCode != 201) {
         _writeMessage = _apiErrorMessage(response.body);
+        _readUpgrade(response.body);
         return response.statusCode;
       }
       _writeMessage = null;

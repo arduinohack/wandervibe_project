@@ -382,8 +382,11 @@ class _CoordinatorDashboardScreenState extends State<CoordinatorDashboardScreen>
                     context,
                     message:
                         planProvider.writeMessage ??
-                        'Upgrade to Plus to create a plan.',
+                        'Upgrade to own more plans.',
                     token: userProvider.token,
+                    pack: planProvider.upgradePack ?? 'plus_monthly',
+                    tierName: planProvider.upgradeTierName,
+                    showUpgrade: planProvider.upgradePack != null,
                   );
                 }
               }

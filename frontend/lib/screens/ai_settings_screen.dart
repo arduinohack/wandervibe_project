@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../api/api_client.dart' as api;
 import '../config/constants.dart';
+import '../models/membership_tier.dart';
 import '../providers/user_provider.dart';
 
 /// Whole balances stay whole. Any fraction shows one decimal, such as 2.5.
@@ -68,7 +69,10 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
   String _savedProvider = 'none';
   bool _hasKey = false;
   num? _credits;
-  bool _plusActive = false;
+  String _tier = tierTrial;
+  String _tierName = tierTrialName;
+  int _planCap = 2;
+  int? _plansOwned;
   bool _loading = true;
   bool _busy = false;
   String? _error;
@@ -96,14 +100,22 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
     String provider,
     bool hasKey,
     num credits, {
-    bool plusActive = false,
+    String tier = tierTrial,
+    String? tierName,
+    int? planCap,
+    int? plansOwned,
   }) {
     _keyController.clear();
     setState(() {
       _savedProvider = provider;
       _hasKey = hasKey;
       _credits = credits;
-      _plusActive = plusActive;
+      _tier = tier;
+      _tierName = tierName == null || tierName.trim().isEmpty
+          ? tierDisplayName(tier)
+          : tierName.trim();
+      _planCap = planCap ?? planCapForTier(tier);
+      _plansOwned = plansOwned;
       _provider = provider;
       _formGeneration += 1;
       _error = null;
@@ -162,11 +174,22 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
         });
         return;
       }
+      final rawTier = creditBody is Map ? creditBody['tier'] : null;
+      final paid = creditBody is Map && creditBody['plusActive'] == true;
+      final tier = rawTier is String && rawTier.trim().isNotEmpty
+          ? rawTier.trim()
+          : (paid ? tierPlus : tierTrial);
+      final rawName = creditBody is Map ? creditBody['tierName'] : null;
+      final rawCap = creditBody is Map ? creditBody['planCap'] : null;
+      final rawOwned = creditBody is Map ? creditBody['plansOwned'] : null;
       _applyStatus(
         _knownProvider(data['aiProvider']),
         data['hasKey'] as bool,
         balance,
-        plusActive: creditBody is Map && creditBody['plusActive'] == true,
+        tier: tier,
+        tierName: rawName is String ? rawName : null,
+        planCap: rawCap is num ? rawCap.round() : null,
+        plansOwned: rawOwned is num ? rawOwned.round() : null,
       );
     } catch (_) {
       if (!mounted) return;
@@ -304,6 +327,14 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
                   const SizedBox(height: 8),
                   Text(_hasKey ? 'A key is saved' : 'No key is saved'),
                   const SizedBox(height: 8),
+                  Text(_tierName),
+                  const SizedBox(height: 8),
+                  Text('Plan cap: $_planCap'),
+                  if (_plansOwned != null) ...[
+                    const SizedBox(height: 8),
+                    Text('Plans owned: $_plansOwned'),
+                  ],
+                  const SizedBox(height: 8),
                   Text(
                     _credits == null
                         ? 'AI credits'
@@ -322,12 +353,14 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
                         onPressed: _busy ? null : () => _buy('500'),
                         child: const Text('Buy 500 credits'),
                       ),
-                      if (_plusActive)
-                        const Text('Plus active')
-                      else
+                      for (final tierId in upgradeTiersAbove(_tier))
                         OutlinedButton(
-                          onPressed: _busy ? null : () => _buy('plus_monthly'),
-                          child: const Text('Upgrade to Plus'),
+                          onPressed: _busy
+                              ? null
+                              : () => _buy(checkoutPackForTier(tierId)!),
+                          child: Text(
+                            'Upgrade to ${tierDisplayName(tierId)}',
+                          ),
                         ),
                       TextButton(
                         onPressed: _busy ? null : _load,

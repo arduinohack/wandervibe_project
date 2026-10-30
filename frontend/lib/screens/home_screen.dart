@@ -397,8 +397,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   context,
                   message:
                       planProvider.writeMessage ??
-                      'Upgrade to Plus to create a plan.',
+                      'Upgrade to own more plans.',
                   token: userProvider.token,
+                  pack: planProvider.upgradePack ?? 'plus_monthly',
+                  tierName: planProvider.upgradeTierName,
+                  showUpgrade: planProvider.upgradePack != null,
                 );
                 return;
               }

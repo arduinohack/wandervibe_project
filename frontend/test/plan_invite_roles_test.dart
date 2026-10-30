@@ -11,35 +11,35 @@ void main() {
 
   test('trip labels stay off the POST body', () {
     expect(planRoleLabel('trip', 'Collaborator'), 'Co-Planner');
-    expect(planRoleLabel('trip', 'Guest'), 'Traveler');
+    expect(planRoleLabel('trip', 'Guest'), 'PlanItVibe Guest');
   });
 
   test('plan labels stay off the POST body', () {
     expect(planRoleLabel('plan', 'Collaborator'), 'Planner');
-    expect(planRoleLabel('plan', 'Guest'), 'Guest');
+    expect(planRoleLabel('plan', 'Guest'), 'PlanItVibe Guest');
   });
 
-  test('a plan shows Guest and a trip shows Traveler', () {
-    expect(planRoleLabel('plan', 'Guest'), 'Guest');
+  test('a guest is labeled PlanItVibe Guest', () {
+    expect(planRoleLabel('plan', 'Guest'), 'PlanItVibe Guest');
     expect(planRoleLabel('plan', 'Collaborator'), 'Planner');
-    expect(planRoleLabel('trip', 'Guest'), 'Traveler');
+    expect(planRoleLabel('trip', 'Guest'), 'PlanItVibe Guest');
     expect(planRoleLabel('trip', 'Collaborator'), 'Co-Planner');
   });
 
   test('trip people list uses trip labels and Pending', () {
     expect(planMemberRoleLine('trip', 'Owner', 'accepted'), 'Organizer');
     expect(planMemberRoleLine('trip', 'Collaborator', 'accepted'), 'Co-Planner');
-    expect(planMemberRoleLine('trip', 'Guest', 'accepted'), 'Traveler');
+    expect(planMemberRoleLine('trip', 'Guest', 'accepted'), 'PlanItVibe Guest');
     expect(planMemberRoleLine('trip', 'Collaborator', 'pending'), 'Co-Planner Pending');
-    expect(planMemberRoleLine('trip', 'Guest', 'pending'), 'Traveler Pending');
+    expect(planMemberRoleLine('trip', 'Guest', 'pending'), 'PlanItVibe Guest Pending');
   });
 
   test('plan people list uses plan labels and Pending', () {
     expect(planMemberRoleLine('plan', 'Owner', 'accepted'), 'Host');
     expect(planMemberRoleLine('plan', 'Collaborator', 'accepted'), 'Planner');
-    expect(planMemberRoleLine('plan', 'Guest', 'accepted'), 'Guest');
+    expect(planMemberRoleLine('plan', 'Guest', 'accepted'), 'PlanItVibe Guest');
     expect(planMemberRoleLine('plan', 'Collaborator', 'pending'), 'Planner Pending');
-    expect(planMemberRoleLine('plan', 'Guest', 'pending'), 'Guest Pending');
+    expect(planMemberRoleLine('plan', 'Guest', 'pending'), 'PlanItVibe Guest Pending');
   });
 
   test('only the Owner can assign an accepted Co-Planner or Planner', () {

@@ -23,7 +23,13 @@ Future<void> showPlusUpgradeDialog(
   BuildContext context, {
   required String message,
   required String? token,
+  String pack = 'plus_monthly',
+  String? tierName,
+  bool showUpgrade = true,
 }) {
+  final label = tierName == null || tierName.trim().isEmpty
+      ? 'Upgrade to Plus'
+      : 'Upgrade to ${tierName.trim()}';
   return showDialog<void>(
     context: context,
     builder: (dialogContext) => AlertDialog(
@@ -33,19 +39,24 @@ Future<void> showPlusUpgradeDialog(
           onPressed: () => Navigator.pop(dialogContext),
           child: const Text('Close'),
         ),
-        ElevatedButton(
-          onPressed: () async {
-            Navigator.pop(dialogContext);
-            await startPlusCheckout(context, token);
-          },
-          child: const Text('Upgrade to Plus'),
-        ),
+        if (showUpgrade)
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(dialogContext);
+              await startPlusCheckout(context, token, pack: pack);
+            },
+            child: Text(label),
+          ),
       ],
     ),
   );
 }
 
-Future<void> startPlusCheckout(BuildContext context, String? token) async {
+Future<void> startPlusCheckout(
+  BuildContext context,
+  String? token, {
+  String pack = 'plus_monthly',
+}) async {
   final messenger = ScaffoldMessenger.of(context);
   if (token == null || token.isEmpty) {
     messenger.showSnackBar(
@@ -60,7 +71,7 @@ Future<void> startPlusCheckout(BuildContext context, String? token) async {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer $token',
       },
-      body: json.encode({'pack': 'plus_monthly'}),
+      body: json.encode({'pack': pack}),
     );
     if (!context.mounted) return;
     if (response.statusCode != 200) {
