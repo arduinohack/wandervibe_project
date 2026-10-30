@@ -378,7 +378,7 @@ describe('AI credits', () => {
     const blocked = await request(app)
       .post(`/api/plans/${planId}/suggest`)
       .set(bearer(ada.token))
-      .send({ query: 'cafe' });
+      .send({ query: 'museum' });
 
     expect(blocked.status).toBe(402);
     expect(blocked.body.message).toBe('Insufficient AI credits');
@@ -429,7 +429,7 @@ describe('AI credits', () => {
     const blocked = await request(app)
       .post(`/api/plans/${planId}/suggest`)
       .set(bearer(ada.token))
-      .send({ query: 'cafe' });
+      .send({ query: 'museum' });
 
     expect(blocked.status).toBe(402);
     expect(blocked.body.message).toBe('Insufficient AI credits');

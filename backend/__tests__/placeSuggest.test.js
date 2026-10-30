@@ -14,10 +14,15 @@ const Plan = require('../models/Plan');
 const PlanUser = require('../models/PlanUser');
 const Invitation = require('../models/Invitation');
 const { Event } = require('../models/Event');
+const AiUsage = require('../models/AiUsage');
+const { getBalance } = require('../utils/aiCredits');
 const {
   SEARCH_URL,
   FIELD_MASK,
   XAI_ENDPOINT,
+  suggestPlaces,
+  clearSuggestCache,
+  expireSuggestCache,
 } = require('../utils/placeSuggest');
 
 jest.setTimeout(30000);
@@ -104,7 +109,12 @@ beforeAll(async () => {
   await mongoose.connect(mongo.getUri());
 });
 
+function placesCalls() {
+  return axios.post.mock.calls.filter((call) => call[0] === SEARCH_URL);
+}
+
 afterEach(async () => {
+  clearSuggestCache();
   axios.post.mockReset();
   axios.get.mockReset();
   if (previousKey == null) delete process.env.GOOGLE_MAPS_API_KEY;
@@ -404,5 +414,128 @@ describe('POST /api/plans/:planId/suggest', () => {
     expect(blank.status).toBe(400);
     expect(blank.body.message).toBe('Query is required');
     expect(axios.post).not.toHaveBeenCalled();
+  });
+
+  test('an identical suggest within 5 minutes is cached and charged once', async () => {
+    process.env.GOOGLE_MAPS_API_KEY = 'test-key';
+    delete process.env.XAI_API_KEY;
+    axios.get.mockResolvedValue({ status: 200, data: { results: [] } });
+    axios.post.mockResolvedValue(googleOk());
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada-suggest-cache@example.com',
+    });
+    const planId = await createPlan(ada.token);
+    await User.updateOne({ _id: ada.userId }, { $set: { aiCredits: 20 } });
+    const body = { query: 'quiet cafe', activityType: 'dining', location: 'Paris' };
+
+    const first = await request(app)
+      .post(`/api/plans/${planId}/suggest`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send(body);
+
+    expect(first.status).toBe(200);
+    expect(first.body[0].placeId).toBe(PLACE_ID);
+    expect(placesCalls()).toHaveLength(1);
+    expect(await getBalance(ada.userId)).toBe(19.5);
+    expect(await AiUsage.countDocuments({
+      userId: ada.userId,
+      provider: 'google',
+      credits: 0.5,
+    })).toBe(1);
+
+    axios.post.mockClear();
+    axios.get.mockClear();
+    const again = await request(app)
+      .post(`/api/plans/${planId}/suggest`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send(body);
+
+    expect(again.status).toBe(200);
+    expect(again.body).toEqual(first.body);
+    expect(axios.post).not.toHaveBeenCalled();
+    expect(axios.get).not.toHaveBeenCalled();
+    expect(await getBalance(ada.userId)).toBe(19.5);
+    expect(await AiUsage.countDocuments({
+      userId: ada.userId,
+      provider: 'google',
+    })).toBe(1);
+
+    const spaced = await request(app)
+      .post(`/api/plans/${planId}/suggest`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ query: '  Quiet   Cafe ', activityType: 'Dining', location: ' paris ' });
+    expect(spaced.status).toBe(200);
+    expect(spaced.body).toEqual(first.body);
+    expect(axios.post).not.toHaveBeenCalled();
+    expect(await getBalance(ada.userId)).toBe(19.5);
+
+    axios.post.mockResolvedValue(googleOk([placeRow('museum-1', 'Louvre')]));
+    const otherQuery = await request(app)
+      .post(`/api/plans/${planId}/suggest`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ query: 'museum', activityType: 'dining', location: 'Paris' });
+    expect(otherQuery.status).toBe(200);
+    expect(otherQuery.body[0].placeId).toBe('museum-1');
+    expect(placesCalls()).toHaveLength(1);
+    expect(await getBalance(ada.userId)).toBe(19);
+
+    axios.post.mockClear();
+    axios.get.mockClear();
+    const otherPlace = await request(app)
+      .post(`/api/plans/${planId}/suggest`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ query: 'quiet cafe', activityType: 'dining', location: 'Rome' });
+    expect(otherPlace.status).toBe(200);
+    expect(placesCalls()).toHaveLength(1);
+    expect(await getBalance(ada.userId)).toBe(18.5);
+
+    axios.post.mockClear();
+    axios.get.mockClear();
+    const otherType = await request(app)
+      .post(`/api/plans/${planId}/suggest`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ query: 'quiet cafe', activityType: 'hotel', location: 'Paris' });
+    expect(otherType.status).toBe(200);
+    expect(placesCalls()).toHaveLength(1);
+    expect(placesCalls()[0][1].includedType).toBe('lodging');
+    expect(await getBalance(ada.userId)).toBe(18);
+
+    axios.post.mockClear();
+    axios.get.mockClear();
+    axios.post.mockResolvedValue(googleOk());
+    expireSuggestCache();
+    const expired = await request(app)
+      .post(`/api/plans/${planId}/suggest`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send(body);
+    expect(expired.status).toBe(200);
+    expect(expired.body[0].placeId).toBe(PLACE_ID);
+    expect(placesCalls()).toHaveLength(1);
+    expect(await getBalance(ada.userId)).toBe(17.5);
+    expect(await AiUsage.countDocuments({
+      userId: ada.userId,
+      provider: 'google',
+      success: true,
+    })).toBe(5);
+
+    axios.post.mockClear();
+    axios.get.mockClear();
+    const uncached = await suggestPlaces({
+      query: 'quiet cafe',
+      activityType: 'dining',
+      location: 'Paris',
+      destination: 'Paris',
+    });
+    const uncachedAgain = await suggestPlaces({
+      query: 'quiet cafe',
+      activityType: 'dining',
+      location: 'Paris',
+      destination: 'Paris',
+    });
+    expect(uncached.status).toBe(200);
+    expect(uncachedAgain.status).toBe(200);
+    expect(placesCalls()).toHaveLength(2);
   });
 });

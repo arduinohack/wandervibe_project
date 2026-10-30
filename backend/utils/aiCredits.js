@@ -8,7 +8,8 @@ const COMMAND_CREDIT_COST = 1;
 
 // The balance is checked before a server-key model call, so a zero balance
 // never spends that key. Paste deducts 1 credit after usable model JSON.
-// Every Places suggest deducts 0.5 before Google is called. The suggest
+// A Places suggest deducts 0.5 before Google is called. A 5-minute cache hit
+// returns the stored places and does not deduct. The suggest
 // summary still reserves 1 credit immediately before the summary and puts it
 // back when that summary does not succeed. A plan command deducts 1 credit
 // after a usable proposal. A user key costs nothing for those model calls.

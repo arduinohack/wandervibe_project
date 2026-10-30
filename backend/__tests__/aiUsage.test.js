@@ -346,7 +346,7 @@ describe('AI usage', () => {
     const other = await request(app)
       .post(`/api/plans/${planId}/suggest`)
       .set(auth(ada.token))
-      .send({ query: 'cafe' });
+      .send({ query: 'bakery' });
     expect(other.status).toBe(200);
     expect(other.body[0].placeId).toBe(PLACE_ID);
     expect(await AiUsage.countDocuments({ provider: 'google' })).toBe(2);

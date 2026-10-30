@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const axios = require('axios');
 const { googleMapsKey, redactKey } = require('./placeMap');
 const { apiKeyFromClient } = require('./xaiConfirmation');
@@ -23,6 +24,9 @@ const MAX_RESULTS = 8;
 const BIAS_RADIUS_METERS = 20000;
 const XAI_ENDPOINT = 'https://api.x.ai/v1/responses';
 const XAI_MODEL = 'grok-4.7';
+const SUGGEST_CACHE_TTL_MS = 5 * 60 * 1000;
+const SUGGEST_CACHE_MAX = 500;
+const suggestCache = new Map();
 
 const INCLUDED_TYPES = {
   dining: 'restaurant',
@@ -87,6 +91,60 @@ function biasText(location, destination) {
   const supplied = String(location || '').trim();
   if (supplied) return supplied;
   return String(destination || '').trim();
+}
+
+function normalizeCachePart(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+// userId + the caller's query + the location bias. Activity type is included
+// because it changes the Google included type and the text query.
+function suggestCacheKey(userId, query, bias, activityType) {
+  const raw = [
+    String(userId || '').trim(),
+    normalizeCachePart(query),
+    normalizeCachePart(bias),
+    normalizeCachePart(activityType),
+  ].join('\n');
+  return crypto.createHash('sha256').update(raw).digest('hex');
+}
+
+function copyPlaces(places) {
+  return places.map((place) => ({ ...place }));
+}
+
+function readSuggestCache(key, now) {
+  const hit = suggestCache.get(key);
+  if (!hit) return null;
+  if (hit.expiresAt <= now) {
+    suggestCache.delete(key);
+    return null;
+  }
+  return copyPlaces(hit.results);
+}
+
+function storeSuggestCache(key, results, now) {
+  if (suggestCache.has(key)) suggestCache.delete(key);
+  while (suggestCache.size >= SUGGEST_CACHE_MAX) {
+    const oldest = suggestCache.keys().next().value;
+    if (oldest == null) break;
+    suggestCache.delete(oldest);
+  }
+  suggestCache.set(key, {
+    results: copyPlaces(results),
+    expiresAt: now + SUGGEST_CACHE_TTL_MS,
+  });
+}
+
+function clearSuggestCache() {
+  suggestCache.clear();
+}
+
+function expireSuggestCache() {
+  const past = Date.now() - 1;
+  for (const entry of suggestCache.values()) {
+    entry.expiresAt = past;
+  }
 }
 
 function googleMessage(data) {
@@ -313,8 +371,20 @@ async function suggestPlaces({
   }
 
   // Find places passes the caller. The plan-command lookup does not, so that
-  // search stays inside the command's 1-credit charge.
+  // search stays inside the command's 1-credit charge and is not cached.
   const placesUserId = usage && typeof usage.userId === 'string' ? usage.userId.trim() : '';
+  const typeText = typeof activityType === 'string' ? activityType : '';
+  const bias = biasText(
+    typeof location === 'string' ? location : '',
+    destination,
+  );
+  const cacheKey = placesUserId
+    ? suggestCacheKey(placesUserId, query, bias, typeText)
+    : '';
+  if (cacheKey) {
+    const cached = readSuggestCache(cacheKey, Date.now());
+    if (cached) return { status: 200, places: cached };
+  }
   if (placesUserId) {
     const placesCharge = await deduct(placesUserId, PLACES_CREDIT_COST);
     if (!placesCharge.ok) {
@@ -341,11 +411,6 @@ async function suggestPlaces({
     });
   }
 
-  const typeText = typeof activityType === 'string' ? activityType : '';
-  const bias = biasText(
-    typeof location === 'string' ? location : '',
-    destination,
-  );
   let modelKey = apiKeyFromClient(aiClient);
   const serverCharge = Boolean(modelKey && usesServerKey(aiClient));
   let blocked = false;
@@ -466,6 +531,7 @@ async function suggestPlaces({
     if (model) places = attachSummaries(places, model);
   }
 
+  if (cacheKey) storeSuggestCache(cacheKey, places, Date.now());
   return { status: 200, places };
 }
 
@@ -474,6 +540,10 @@ module.exports = {
   localTextQuery,
   includedPlaceType,
   placesFromPayload,
+  clearSuggestCache,
+  expireSuggestCache,
+  SUGGEST_CACHE_TTL_MS,
+  SUGGEST_CACHE_MAX,
   SEARCH_URL,
   FIELD_MASK,
   MAX_RESULTS,
