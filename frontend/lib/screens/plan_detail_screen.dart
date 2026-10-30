@@ -2324,6 +2324,77 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     );
   }
 
+  Future<void> _saveAsTemplate(Plan plan) async {
+    final nameController = TextEditingController(text: plan.name);
+    final descriptionController = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Save as template'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(labelText: 'Name'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: descriptionController,
+                decoration: const InputDecoration(labelText: 'Description'),
+                maxLines: 3,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    final name = nameController.text.trim();
+    final description = descriptionController.text.trim();
+    nameController.dispose();
+    descriptionController.dispose();
+    if (confirmed != true || !mounted) return;
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    if (name.isEmpty) {
+      messenger.showSnackBar(const SnackBar(content: Text('Name is required.')));
+      return;
+    }
+    final status = await planProvider.saveAsTemplate(
+      planId: plan.id,
+      name: name,
+      description: description,
+      token: userProvider.token,
+    );
+    if (!mounted) return;
+    if (status == 401) {
+      await _endSession(userProvider, planProvider, navigator);
+      return;
+    }
+    if (status == 201) {
+      messenger.showSnackBar(const SnackBar(content: Text('Saved as template')));
+      return;
+    }
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(planProvider.writeMessage ?? 'Could not save this template'),
+      ),
+    );
+  }
+
   Future<void> _openPlanEdit(Plan plan, String? storedRole) async {
     final removed = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
@@ -2619,9 +2690,17 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                       if (storedRole?.trim() == 'Owner' && !shown.isArchived)
                         Align(
                           alignment: Alignment.centerLeft,
-                          child: TextButton(
-                            onPressed: () => _copyPlan(shown),
-                            child: const Text('Copy'),
+                          child: Wrap(
+                            children: [
+                              TextButton(
+                                onPressed: () => _copyPlan(shown),
+                                child: const Text('Copy'),
+                              ),
+                              TextButton(
+                                onPressed: () => _saveAsTemplate(shown),
+                                child: const Text('Save as template'),
+                              ),
+                            ],
                           ),
                         ),
                       if (storedRole?.trim() == 'Owner')

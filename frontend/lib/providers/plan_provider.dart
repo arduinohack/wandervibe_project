@@ -9,6 +9,7 @@ import '../config/constants.dart'; // Add this line for backendBaseUrl
 import 'package:flutter/material.dart'; // Added: Required for Icon
 import '../models/membership_tier.dart';
 import '../models/plan.dart'; // Your Plan model
+import '../models/plan_template.dart';
 import '../models/plan_member.dart';
 import '../models/activity.dart';
 import '../models/activity_attachment.dart';
@@ -573,12 +574,18 @@ List<String> _sharedWithLabels(String body) {
 
 class PlanProvider extends ChangeNotifier {
   List<Plan> _plans = []; // Private list of plans
+  List<PlanTemplate> _templates = [];
+  bool _templatesLoading = false;
+  String? _templatesError;
   Plan? _currentPlan; // Current selected plan
   Plan? get currentPlan => _currentPlan;
   List<Activity> _activities = []; // Private list of activities for the current plan
   bool _isLoading = false; // Loading state for UI spinners
 
   List<Plan> get plans => _plans; // Public getter
+  List<PlanTemplate> get templates => _templates;
+  bool get templatesLoading => _templatesLoading;
+  String? get templatesError => _templatesError;
   List<Activity> get activities => _activities;
   List<PlanUser> _planUsers =
       []; // Private list of users/roles for current plan
@@ -837,6 +844,9 @@ class PlanProvider extends ChangeNotifier {
 
   void clearPlans() {
     _plans = [];
+    _templates = [];
+    _templatesLoading = false;
+    _templatesError = null;
     _viewerRoles.clear();
     _plansError = null;
     _itinerary = [];
@@ -1192,6 +1202,127 @@ class PlanProvider extends ChangeNotifier {
       return PlanLinkResult(status: 201, plan: created);
     } catch (e) {
       logger.e('Error copying plan: $e');
+      return const PlanLinkResult();
+    }
+  }
+
+  /// GET /api/templates. Does not replace the plan list or its loading flag.
+  Future<int?> fetchTemplates(String? token) async {
+    _templatesLoading = true;
+    _templatesError = null;
+    notifyListeners();
+    try {
+      if (token == null || token.isEmpty) {
+        _templates = [];
+        return 401;
+      }
+      final response = await http.get(
+        Uri.parse('$backendBaseUrl$apiTemplates'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (response.statusCode != 200) {
+        _templatesError = _apiErrorMessage(response.body) ?? 'Could not load templates';
+        return response.statusCode;
+      }
+      final data = json.decode(response.body);
+      final rows = data is Map ? data['templates'] : null;
+      _templates = rows is List
+          ? rows
+              .whereType<Map>()
+              .map((row) => PlanTemplate.fromJson(Map<String, dynamic>.from(row)))
+              .where((row) => row.id.isNotEmpty)
+              .toList()
+          : <PlanTemplate>[];
+      _templatesError = null;
+      return 200;
+    } catch (e) {
+      logger.e('Error fetching templates: $e');
+      _templatesError = 'Could not load templates';
+      return null;
+    } finally {
+      _templatesLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// POST /api/plans/:planId/save-as-template. Owner only. Does not change the plan.
+  Future<int?> saveAsTemplate({
+    required String planId,
+    required String name,
+    required String description,
+    required String? token,
+  }) async {
+    try {
+      _writeMessage = null;
+      _upgradePack = null;
+      _upgradeTierName = null;
+      if (token == null || token.isEmpty) return 401;
+      final response = await http.post(
+        Uri.parse('$backendBaseUrl$apiPlans/$planId/save-as-template'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode({
+          'name': name,
+          'description': description,
+        }),
+      );
+      if (response.statusCode != 201) {
+        _writeMessage = _apiErrorMessage(response.body);
+        return response.statusCode;
+      }
+      return 201;
+    } catch (e) {
+      logger.e('Error saving template: $e');
+      return null;
+    }
+  }
+
+  /// POST /api/templates/:templateId/create-plan. 201 adds the new plan.
+  Future<PlanLinkResult> createPlanFromTemplate({
+    required String templateId,
+    required String name,
+    required String startDate,
+    required String? token,
+  }) async {
+    try {
+      _writeMessage = null;
+      _upgradePack = null;
+      _upgradeTierName = null;
+      if (token == null || token.isEmpty) {
+        return const PlanLinkResult(status: 401);
+      }
+      final response = await http.post(
+        Uri.parse('$backendBaseUrl$apiTemplates/$templateId/create-plan'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode({
+          'name': name,
+          'startDate': startDate,
+        }),
+      );
+      if (response.statusCode != 201) {
+        _writeMessage = _apiErrorMessage(response.body);
+        _readUpgrade(response.body);
+        return PlanLinkResult(
+          status: response.statusCode,
+          error: _writeMessage,
+        );
+      }
+      final data = json.decode(response.body);
+      final planJson = data is Map ? data['plan'] : null;
+      if (planJson is! Map) {
+        return PlanLinkResult(status: response.statusCode);
+      }
+      final created = Plan.fromJson(Map<String, dynamic>.from(planJson));
+      _replacePlan(created);
+      _viewerRoles[created.id] = 'Owner';
+      return PlanLinkResult(status: 201, plan: created);
+    } catch (e) {
+      logger.e('Error creating plan from template: $e');
       return const PlanLinkResult();
     }
   }
