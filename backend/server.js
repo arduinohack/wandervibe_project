@@ -1,6 +1,8 @@
 require('dotenv').config();  // Loads .env vars (e.g., JWT_SECRET, MONGODB_URI)
+const http = require('http');
 const mongoose = require('mongoose');
 const logger = require('./utils/logger');
+const { ensureHotIndexes } = require('./utils/ensureHotIndexes');
 const app = require('./app');
 
 const PORT = process.env.PORT || 3000;
@@ -12,8 +14,13 @@ mongoose.connect(process.env.MONGODB_URI, {
   bufferTimeoutMS: 5000,  // 5s timeout for buffering (fails fast if DB slow)
   serverSelectionTimeoutMS: 5000,  // 5s for server selection (quick detect if DB down)
   maxPoolSize: 10,  // Limit connections to 10 (prevents overload)
-}).then(() => {
+}).then(async () => {
   logger.info('Connected to MongoDB');
+  try {
+    await ensureHotIndexes();
+  } catch (err) {
+    logger.error('Hot index setup failed:', err);
+  }
 }).catch((err) => {
   logger.error('MongoDB connection error:', err);
 });
@@ -47,7 +54,11 @@ mongoose.connection.on('disconnected', () => {
 })();
 
 if (require.main === module) {
-  app.listen(PORT, () => {
+  // Jest loads app.js and does not listen. Presence stays on this process only.
+  const server = http.createServer(app);
+  const { attachPresence } = require('./realtime/presence');
+  attachPresence(server, { allowsBrowserOrigin: app.allowsBrowserOrigin });
+  server.listen(PORT, () => {
     logger.info(`Server running on port ${PORT}`);
   });
 }

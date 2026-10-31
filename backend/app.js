@@ -74,6 +74,7 @@ app.use('/api/users', authMiddleware, settingsRouter);
 const plansRouter = require('./routes/plans');
 const { planInviteRouter, invitesRouter } = require('./routes/invites');
 app.use('/api/plans', authMiddleware, plansRouter, planInviteRouter);
+app.use('/api/templates', authMiddleware, require('./routes/templates'));
 
 // Activity API. The handlers live at /api/activities. /api/events is not mounted.
 const eventRoutes = require('./routes/events');
@@ -105,3 +106,4 @@ app.get('/', (req, res) => {
 });
 
 module.exports = app;
+module.exports.allowsBrowserOrigin = allowsBrowserOrigin;
