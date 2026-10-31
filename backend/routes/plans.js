@@ -32,6 +32,7 @@ const { suggestPlaces } = require('../utils/placeSuggest');
 const { proposePlanCommand, applyPlanCommand, commandHistory } = require('../utils/aiCommand');
 const { getAiClient } = require('../utils/aiProvider');
 const { attachItineraryWarnings } = require('../utils/itineraryWarnings');
+const { buildPlanWarnings } = require('../utils/planWarnings');
 const { findActivityWithPlace } = require('../utils/activityPlace');
 const { spansByPlanId } = require('../utils/activityDateSpan');
 const {
@@ -822,6 +823,28 @@ router.put('/:planId/link', authMiddleware, async (req, res) => {
     return res.json({ plan });
   } catch (err) {
     console.error('Update linked activities error:', err);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// GET /api/plans/:planId/warnings
+// Any plan member. Advisory overlaps and a 30-minute Place ID gap. Nothing is saved.
+router.get('/:planId/warnings', authMiddleware, async (req, res) => {
+  const planId = String(req.params.planId || '');
+  try {
+    const plan = await Plan.findById(planId);
+    if (!plan) {
+      return res.status(404).json({ message: 'Plan not found' });
+    }
+    const callerId = req.user.userId || req.user.id;
+    const role = await callerPlanRole(plan, callerId);
+    if (!role) {
+      return res.status(403).json({ message: 'Not authorized to read plan' });
+    }
+    const activities = await Event.find({ planId: String(plan._id) }).lean();
+    return res.json({ warnings: buildPlanWarnings(activities) });
+  } catch (err) {
+    console.error('Plan warnings error:', err);
     return res.status(500).json({ message: 'Server error' });
   }
 });
