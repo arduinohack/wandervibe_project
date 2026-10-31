@@ -29,6 +29,7 @@ const String apiPlans = '/api/plans';
 const String apiTemplates = '/api/templates';
 const String apiPlanLink = '/api/plans/{planId}/link';
 const String apiPlansItinerary = '/api/plans/{planId}/itinerary';
+const String apiPlanWarnings = '/api/plans/{planId}/warnings';
 const String apiPlanUsers = '/api/plans/{planId}/users';
 const String apiPlanMembers = '/api/plans/{planId}/members';
 const String apiPlanReassign = '/api/plans/{planId}/reassign-coordinator';

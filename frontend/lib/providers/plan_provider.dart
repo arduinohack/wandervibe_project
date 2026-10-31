@@ -12,6 +12,7 @@ import '../models/plan.dart'; // Your Plan model
 import '../models/plan_template.dart';
 import '../models/plan_member.dart';
 import '../models/activity.dart';
+import '../models/activity_warning.dart';
 import '../models/activity_attachment.dart';
 import '../models/activity_type.dart';
 import '../models/user.dart'; // Your User model
@@ -654,6 +655,7 @@ class PlanProvider extends ChangeNotifier {
       final ordered = _readItinerary(response.body);
       if (ordered == null) return response.statusCode;
       _storeItinerary(ordered);
+      await _loadActivityWarnings(planId, token);
       notifyListeners();
       return 200;
     } catch (e) {
@@ -668,6 +670,7 @@ class PlanProvider extends ChangeNotifier {
     _isLoading = true;
     _itinerary = [];
     _itineraryError = null;
+    _activityWarnings = [];
     _planMembers = [];
     notifyListeners();
 
@@ -707,11 +710,13 @@ class PlanProvider extends ChangeNotifier {
         return response.statusCode;
       }
       _storeItinerary(ordered);
+      await _loadActivityWarnings(planId, token);
       logger.i('Fetched ${_itinerary.length} activities for plan $planId');
       return 200;
     } catch (e) {
       logger.e('Error fetching itinerary: $e');
       _itinerary = [];
+      _activityWarnings = [];
       _itineraryError = 'Could not load activities';
       return null;
     } finally {
@@ -725,6 +730,7 @@ class PlanProvider extends ChangeNotifier {
   String? _upgradePack;
   String? _upgradeTierName;
   List<Activity> _itinerary = [];
+  List<ActivityWarning> _activityWarnings = [];
   String? _itineraryError;
 
   String? get plansError => _plansError;
@@ -744,6 +750,41 @@ class PlanProvider extends ChangeNotifier {
     } catch (_) {}
   }
   List<Activity> get itineraryActivities => _itinerary;
+
+  /// Warnings whose row is this activity. Empty when the id is blank.
+  List<ActivityWarning> warningsFor(String? activityId) {
+    final id = activityId?.trim() ?? '';
+    if (id.isEmpty) return const [];
+    return [
+      for (final warning in _activityWarnings)
+        if (warning.activityId == id && warning.message.isNotEmpty) warning,
+    ];
+  }
+
+  Future<void> _loadActivityWarnings(String planId, String? token) async {
+    if (planId.isEmpty || token == null || token.isEmpty) {
+      _activityWarnings = [];
+      return;
+    }
+    try {
+      final response = await http.get(
+        Uri.parse(
+          backendBaseUrl + apiPlanWarnings.replaceAll('{planId}', planId),
+        ),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (response.statusCode != 200) return;
+      final data = json.decode(response.body);
+      if (data is! Map || data['warnings'] is! List) return;
+      _activityWarnings = [
+        for (final item in data['warnings'])
+          if (item is Map)
+            ActivityWarning.fromJson(Map<String, dynamic>.from(item)),
+      ];
+    } catch (e) {
+      logger.e('Error fetching activity warnings: $e');
+    }
+  }
 
   /// Shows [activities] in start-time order. Does not call the API.
   /// Drag uses this so the moved row sits after its target once its start is later.
@@ -850,6 +891,7 @@ class PlanProvider extends ChangeNotifier {
     _viewerRoles.clear();
     _plansError = null;
     _itinerary = [];
+    _activityWarnings = [];
     _itineraryError = null;
     _planMembers = [];
     _isLoading = false;
@@ -1729,6 +1771,7 @@ class PlanProvider extends ChangeNotifier {
         final shown = mixesLinked ? _sortedByStartTime(next) : next;
         _itinerary = shown;
         _activities = List<Activity>.from(shown);
+        await _loadActivityWarnings(planId, token);
         notifyListeners();
       }
       await _reloadPlan(planId, token);
@@ -1830,6 +1873,7 @@ class PlanProvider extends ChangeNotifier {
             : next;
         _itinerary = shown;
         _activities = List<Activity>.from(shown);
+        await _loadActivityWarnings(planId, token);
         notifyListeners();
       }
       if (planId.isNotEmpty) await _reloadPlan(planId, token);
@@ -2343,6 +2387,7 @@ class PlanProvider extends ChangeNotifier {
         if (_currentPlanId == planId) {
           _itinerary = [];
           _activities = [];
+          _activityWarnings = [];
           _itineraryError = null;
           _currentPlanId = null;
         }
@@ -2388,6 +2433,7 @@ class PlanProvider extends ChangeNotifier {
           if (activity.id != activityId) activity,
       ];
       _activities = List<Activity>.from(_itinerary);
+      await _loadActivityWarnings(planId, token);
       notifyListeners();
       if (planId.isNotEmpty) await _reloadPlan(planId, token);
       return 200;

@@ -17,7 +17,6 @@ import '../providers/user_provider.dart';
 import '../utils/ai_command_history.dart';
 import '../utils/activity_chain.dart';
 import '../utils/activity_time.dart';
-import '../utils/itinerary_warning.dart';
 import '../utils/logger.dart';
 import '../utils/place_suggestion_fill.dart';
 import '../utils/plus_upgrade.dart';
@@ -2102,31 +2101,20 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
   }
 
   Widget _itineraryWarnings(Activity activity) {
-    final rows = <Widget>[];
-    if (activity.overlap) {
-      rows.add(
-        _itineraryWarningButton(
-          icon: Icons.warning_amber_outlined,
-          label: overlapWarningText(),
-          detail: overlapWarningDetail(activity.name),
-        ),
-      );
-    }
-    if (activity.tightTravel) {
-      rows.add(
-        _itineraryWarningButton(
-          icon: Icons.schedule,
-          label: tightTravelWarningText(activity.travelMinutes),
-          detail: tightTravelWarningDetail(activity.travelMinutes),
-        ),
-      );
-    }
-    if (rows.isEmpty) return const SizedBox.shrink();
+    final warnings = Provider.of<PlanProvider>(context).warningsFor(activity.id);
+    if (warnings.isEmpty) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(top: 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: rows,
+        children: [
+          for (final warning in warnings)
+            _itineraryWarningButton(
+              icon: Icons.warning_amber_outlined,
+              label: warning.message,
+              detail: warning.message,
+            ),
+        ],
       ),
     );
   }
