@@ -239,6 +239,7 @@ class Activity {
   final bool overlap;
   final bool tightTravel;
   final int? travelMinutes;
+  final bool poll;
 
   Activity({
     this.id,
@@ -281,7 +282,54 @@ class Activity {
     this.overlap = false,
     this.tightTravel = false,
     this.travelMinutes,
+    this.poll = false,
   });
+
+  Activity withPoll(bool value) {
+    return Activity(
+      id: id,
+      planId: planId,
+      name: name,
+      location: location,
+      googlePlaceId: googlePlaceId,
+      type: type,
+      typeLabel: typeLabel,
+      cost: cost,
+      costType: costType,
+      startTime: startTime,
+      duration: duration,
+      endTime: endTime,
+      activityNum: activityNum,
+      status: status,
+      missingFields: missingFields,
+      subActivities: subActivities,
+      urlLinks: urlLinks,
+      details: details,
+      gate: gate,
+      baggageClaim: baggageClaim,
+      roomNumber: roomNumber,
+      originTimeZone: originTimeZone,
+      destinationTimeZone: destinationTimeZone,
+      timeZone: timeZone,
+      startTimeZone: startTimeZone,
+      endTimeZone: endTimeZone,
+      customType: customType,
+      serviceProvider: serviceProvider,
+      bookingReference: bookingReference,
+      origin: origin,
+      originCountry: originCountry,
+      destination: destination,
+      confirmation: confirmation,
+      legs: legs,
+      extras: extras,
+      createdAt: createdAt,
+      linked: linked,
+      overlap: overlap,
+      tightTravel: tightTravel,
+      travelMinutes: travelMinutes,
+      poll: value,
+    );
+  }
 
   // NEW: Getters for effective times (Cases 1-3)
   DateTime? get effectiveStartTime {
@@ -396,6 +444,7 @@ class Activity {
       travelMinutes: json['travelMinutes'] is num
           ? (json['travelMinutes'] as num).round()
           : null,
+      poll: json['poll'] == true,
     );
   }
 

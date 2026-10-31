@@ -10,6 +10,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../config/constants.dart';
 import '../models/activity.dart';
+import '../models/activity_reaction.dart';
 import '../models/plan.dart';
 import '../models/plan_member.dart';
 import '../models/plan_role_label.dart';
@@ -1253,6 +1254,7 @@ class PlanDetailScreen extends StatefulWidget {
 class _PlanDetailScreenState extends State<PlanDetailScreen> {
   bool _loaded = false;
   int? _status;
+  final Set<String> _reactionBusy = <String>{};
   late Plan _plan;
   Plan? _linkedSource;
   List<PlanMember> _linkedPlanners = const [];
@@ -2037,6 +2039,21 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                           icon: const Icon(Icons.history),
                           onPressed: () => _openActivityHistory(activity),
                         ),
+                        if (canChange && !activity.linked && !activity.poll)
+                          PopupMenuButton<String>(
+                            tooltip: 'Poll',
+                            padding: EdgeInsets.zero,
+                            icon: const Icon(Icons.poll),
+                            onSelected: (value) {
+                              if (value == 'poll') _startPoll(activity);
+                            },
+                            itemBuilder: (context) => const [
+                              PopupMenuItem(
+                                value: 'poll',
+                                child: Text('Poll'),
+                              ),
+                            ],
+                          ),
                       ],
                       if (canChange &&
                           !activity.linked &&
@@ -2141,6 +2158,11 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                 ),
                 _editingHint(activityId),
                 _itineraryWarnings(activity),
+                if (activityId != null && activityId.isNotEmpty)
+                  _activityReactionRow(
+                    activity,
+                    canChange: canChange,
+                  ),
                 if (cardLines.above.isNotEmpty)
                   Wrap(
                     spacing: 8,
@@ -2162,6 +2184,193 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Future<void> _finishReactionResult(
+    ActivityReactionResult result,
+    ScaffoldMessengerState messenger,
+    UserProvider userProvider,
+    PlanProvider planProvider,
+    NavigatorState navigator,
+  ) async {
+    if (!mounted) return;
+    if (result.status == 401) {
+      await _endSession(userProvider, planProvider, navigator);
+      return;
+    }
+    if (result.status != 200) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(result.error ?? 'Could not save the vote')),
+      );
+    }
+  }
+
+  Future<void> _vote(Activity activity, String type) async {
+    final activityId = activity.id;
+    if (activityId == null || activityId.isEmpty) return;
+    if (_reactionBusy.contains(activityId)) return;
+    setState(() => _reactionBusy.add(activityId));
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final mine = planProvider.reactionsFor(activityId).mine(type);
+    final result = mine
+        ? await planProvider.clearActivityReaction(
+            activityId: activityId,
+            type: type,
+            token: userProvider.token,
+          )
+        : await planProvider.setActivityReaction(
+            activityId: activityId,
+            type: type,
+            token: userProvider.token,
+          );
+    if (!mounted) return;
+    setState(() => _reactionBusy.remove(activityId));
+    await _finishReactionResult(
+      result,
+      messenger,
+      userProvider,
+      planProvider,
+      navigator,
+    );
+  }
+
+  Future<void> _startPoll(Activity activity) async {
+    final activityId = activity.id;
+    if (activityId == null || activityId.isEmpty) return;
+    if (activity.poll || activity.linked) return;
+    if (_reactionBusy.contains(activityId)) return;
+    setState(() => _reactionBusy.add(activityId));
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final result = await planProvider.startActivityPoll(
+      activityId: activityId,
+      token: userProvider.token,
+    );
+    if (!mounted) return;
+    setState(() => _reactionBusy.remove(activityId));
+    await _finishReactionResult(
+      result,
+      messenger,
+      userProvider,
+      planProvider,
+      navigator,
+    );
+  }
+
+  Widget _activityReactionRow(Activity activity, {required bool canChange}) {
+    final activityId = activity.id ?? '';
+    final summary = Provider.of<PlanProvider>(context).reactionsFor(activityId);
+    final busy = _reactionBusy.contains(activityId);
+    final poll = activity.poll;
+    final canStartPoll = canChange && !activity.linked && !poll;
+    final buttons = poll
+        ? [
+            _reactionButton(
+              activity: activity,
+              type: 'yes',
+              tooltip: 'Yes',
+              label: 'Yes',
+              count: summary.count('yes'),
+              mine: summary.mine('yes'),
+              busy: busy,
+            ),
+            _reactionButton(
+              activity: activity,
+              type: 'no',
+              tooltip: 'No',
+              label: 'No',
+              count: summary.count('no'),
+              mine: summary.mine('no'),
+              busy: busy,
+            ),
+            _reactionButton(
+              activity: activity,
+              type: 'maybe',
+              tooltip: 'Maybe',
+              label: 'Maybe',
+              count: summary.count('maybe'),
+              mine: summary.mine('maybe'),
+              busy: busy,
+            ),
+          ]
+        : [
+            _reactionButton(
+              activity: activity,
+              type: 'up',
+              tooltip: 'Thumbs up',
+              icon: summary.mine('up')
+                  ? Icons.thumb_up
+                  : Icons.thumb_up_outlined,
+              count: summary.count('up'),
+              mine: summary.mine('up'),
+              busy: busy,
+              onLongPress: canStartPoll ? () => _startPoll(activity) : null,
+            ),
+            _reactionButton(
+              activity: activity,
+              type: 'down',
+              tooltip: 'Thumbs down',
+              icon: summary.mine('down')
+                  ? Icons.thumb_down
+                  : Icons.thumb_down_outlined,
+              count: summary.count('down'),
+              mine: summary.mine('down'),
+              busy: busy,
+              onLongPress: canStartPoll ? () => _startPoll(activity) : null,
+            ),
+          ];
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: GestureDetector(
+        onLongPress: canStartPoll ? () => _startPoll(activity) : null,
+        child: Wrap(spacing: 4, runSpacing: 4, children: buttons),
+      ),
+    );
+  }
+
+  Widget _reactionButton({
+    required Activity activity,
+    required String type,
+    required String tooltip,
+    required int count,
+    required bool mine,
+    required bool busy,
+    IconData? icon,
+    String? label,
+    VoidCallback? onLongPress,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: mine ? '$tooltip, your vote, $count' : '$tooltip, $count',
+      child: TextButton(
+        style: TextButton.styleFrom(
+          visualDensity: VisualDensity.compact,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          minimumSize: Size.zero,
+          backgroundColor: mine ? scheme.primaryContainer : null,
+          foregroundColor: mine ? scheme.onPrimaryContainer : scheme.onSurface,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        ),
+        onPressed: busy ? null : () => _vote(activity, type),
+        onLongPress: busy ? null : onLongPress,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) Icon(icon, size: 16),
+            if (icon != null) const SizedBox(width: 4),
+            if (label != null) Text(label),
+            if (label != null) const SizedBox(width: 4),
+            Text('$count'),
+          ],
+        ),
+      ),
     );
   }
 

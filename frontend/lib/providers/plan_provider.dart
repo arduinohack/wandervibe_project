@@ -13,6 +13,7 @@ import '../models/plan_template.dart';
 import '../models/plan_member.dart';
 import '../models/activity.dart';
 import '../models/activity_warning.dart';
+import '../models/activity_reaction.dart';
 import '../models/activity_attachment.dart';
 import '../models/activity_type.dart';
 import '../models/user.dart'; // Your User model
@@ -656,6 +657,7 @@ class PlanProvider extends ChangeNotifier {
       if (ordered == null) return response.statusCode;
       _storeItinerary(ordered);
       await _loadActivityWarnings(planId, token);
+      await _loadActivityReactions(token);
       notifyListeners();
       return 200;
     } catch (e) {
@@ -671,6 +673,7 @@ class PlanProvider extends ChangeNotifier {
     _itinerary = [];
     _itineraryError = null;
     _activityWarnings = [];
+    _activityReactions = {};
     _planMembers = [];
     notifyListeners();
 
@@ -711,12 +714,14 @@ class PlanProvider extends ChangeNotifier {
       }
       _storeItinerary(ordered);
       await _loadActivityWarnings(planId, token);
+      await _loadActivityReactions(token);
       logger.i('Fetched ${_itinerary.length} activities for plan $planId');
       return 200;
     } catch (e) {
       logger.e('Error fetching itinerary: $e');
       _itinerary = [];
       _activityWarnings = [];
+      _activityReactions = {};
       _itineraryError = 'Could not load activities';
       return null;
     } finally {
@@ -731,6 +736,7 @@ class PlanProvider extends ChangeNotifier {
   String? _upgradeTierName;
   List<Activity> _itinerary = [];
   List<ActivityWarning> _activityWarnings = [];
+  Map<String, ActivityReactions> _activityReactions = {};
   String? _itineraryError;
 
   String? get plansError => _plansError;
@@ -783,6 +789,170 @@ class PlanProvider extends ChangeNotifier {
       ];
     } catch (e) {
       logger.e('Error fetching activity warnings: $e');
+    }
+  }
+
+  /// Counts and this person's votes. Empty until the itinerary has loaded them.
+  ActivityReactions reactionsFor(String? activityId) {
+    final id = activityId?.trim() ?? '';
+    if (id.isEmpty) return ActivityReactions.empty;
+    return _activityReactions[id] ?? ActivityReactions.empty;
+  }
+
+  Future<void> _loadActivityReactions(String? token) async {
+    if (token == null || token.isEmpty) {
+      _activityReactions = {};
+      return;
+    }
+    final ids = <String>[
+      for (final activity in _itinerary)
+        if (activity.id != null && activity.id!.isNotEmpty) activity.id!,
+    ];
+    if (ids.isEmpty) {
+      _activityReactions = {};
+      return;
+    }
+    try {
+      final loaded = await Future.wait([
+        for (final id in ids) _fetchActivityReactions(id, token),
+      ]);
+      final next = <String, ActivityReactions>{};
+      for (var index = 0; index < ids.length; index++) {
+        final summary = loaded[index];
+        if (summary != null) next[ids[index]] = summary;
+      }
+      _activityReactions = next;
+    } catch (e) {
+      logger.e('Error fetching activity reactions: $e');
+    }
+  }
+
+  Future<ActivityReactions?> _fetchActivityReactions(
+    String activityId,
+    String token,
+  ) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$backendBaseUrl$apiActivities/$activityId/reactions'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+      if (response.statusCode != 200) return null;
+      final data = json.decode(response.body);
+      if (data is! Map) return null;
+      return ActivityReactions.fromJson(Map<String, dynamic>.from(data));
+    } catch (e) {
+      logger.e('Error fetching reactions for $activityId: $e');
+      return null;
+    }
+  }
+
+  void _storeReactionSummary(String activityId, String body) {
+    final data = json.decode(body);
+    if (data is! Map) return;
+    _activityReactions = {
+      ..._activityReactions,
+      activityId: ActivityReactions.fromJson(Map<String, dynamic>.from(data)),
+    };
+    notifyListeners();
+  }
+
+  Future<ActivityReactionResult> _sendActivityReaction({
+    required String activityId,
+    required String type,
+    required String? token,
+    required bool remove,
+  }) async {
+    try {
+      if (token == null || token.isEmpty) {
+        return const ActivityReactionResult(status: 401);
+      }
+      final uri = Uri.parse('$backendBaseUrl$apiActivities/$activityId/react');
+      final headers = {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      };
+      final body = json.encode({'type': type});
+      final response = remove
+          ? await http.delete(uri, headers: headers, body: body)
+          : await http.post(uri, headers: headers, body: body);
+      if (response.statusCode != 200) {
+        return ActivityReactionResult(
+          status: response.statusCode,
+          error: _apiErrorMessage(response.body),
+        );
+      }
+      _storeReactionSummary(activityId, response.body);
+      return const ActivityReactionResult(status: 200);
+    } catch (e) {
+      logger.e('Error saving an activity reaction: $e');
+      return const ActivityReactionResult();
+    }
+  }
+
+  /// POST /api/activities/:id/react. A second vote of the same type replaces it.
+  Future<ActivityReactionResult> setActivityReaction({
+    required String activityId,
+    required String type,
+    required String? token,
+  }) {
+    return _sendActivityReaction(
+      activityId: activityId,
+      type: type,
+      token: token,
+      remove: false,
+    );
+  }
+
+  /// DELETE /api/activities/:id/react. Clears this person's vote of that type.
+  Future<ActivityReactionResult> clearActivityReaction({
+    required String activityId,
+    required String type,
+    required String? token,
+  }) {
+    return _sendActivityReaction(
+      activityId: activityId,
+      type: type,
+      token: token,
+      remove: true,
+    );
+  }
+
+  /// POST /api/activities/:id/poll. Owner or Collaborator. Does not add an activity.
+  Future<ActivityReactionResult> startActivityPoll({
+    required String activityId,
+    required String? token,
+  }) async {
+    try {
+      if (token == null || token.isEmpty) {
+        return const ActivityReactionResult(status: 401);
+      }
+      final response = await http.post(
+        Uri.parse('$backendBaseUrl$apiActivities/$activityId/poll'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: '{}',
+      );
+      if (response.statusCode != 200) {
+        return ActivityReactionResult(
+          status: response.statusCode,
+          error: _apiErrorMessage(response.body),
+        );
+      }
+      _itinerary = [
+        for (final activity in _itinerary)
+          if (activity.id == activityId) activity.withPoll(true) else activity,
+      ];
+      _activities = List<Activity>.from(_itinerary);
+      notifyListeners();
+      return const ActivityReactionResult(status: 200);
+    } catch (e) {
+      logger.e('Error starting an activity poll: $e');
+      return const ActivityReactionResult();
     }
   }
 
@@ -1772,6 +1942,7 @@ class PlanProvider extends ChangeNotifier {
         _itinerary = shown;
         _activities = List<Activity>.from(shown);
         await _loadActivityWarnings(planId, token);
+        await _loadActivityReactions(token);
         notifyListeners();
       }
       await _reloadPlan(planId, token);
@@ -1874,6 +2045,7 @@ class PlanProvider extends ChangeNotifier {
         _itinerary = shown;
         _activities = List<Activity>.from(shown);
         await _loadActivityWarnings(planId, token);
+        await _loadActivityReactions(token);
         notifyListeners();
       }
       if (planId.isNotEmpty) await _reloadPlan(planId, token);
@@ -2434,6 +2606,7 @@ class PlanProvider extends ChangeNotifier {
       ];
       _activities = List<Activity>.from(_itinerary);
       await _loadActivityWarnings(planId, token);
+      await _loadActivityReactions(token);
       notifyListeners();
       if (planId.isNotEmpty) await _reloadPlan(planId, token);
       return 200;
