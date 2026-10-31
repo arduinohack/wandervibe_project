@@ -62,6 +62,8 @@ const eventSchema = new mongoose.Schema({
   destination: { type: String },
   confirmation: { type: String },
   legs: { type: [flightLegSchema], default: [] },
+  // Yes / No / Maybe replaces the thumbs on this activity. Votes live in activityReactions.
+  poll: { type: Boolean, default: false },
   // Add more as types evolve (Mongoose ignores unused)
 }, { timestamps: true, collection: 'activities' });  // Auto createdAt/updatedAt. Collection name is activities; the model name stays Event.
 
@@ -106,6 +108,9 @@ eventSchema.virtual('id').get(function () {
 // Include virtuals in JSON responses
 eventSchema.set('toJSON', { virtuals: true });
 eventSchema.set('toObject', { virtuals: true });
+
+// Itinerary and activity lists filter by plan and then start time.
+eventSchema.index({ planId: 1, startTime: 1 });
 
 // Guard against redefinition
 const Event = mongoose.models.Event || mongoose.model('Event', eventSchema);

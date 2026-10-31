@@ -8,6 +8,10 @@ const ActivityRevision = require('../models/ActivityRevision');
 const SupportLog = require('../models/SupportLog');
 const { logSupport } = require('../utils/logSupport');
 const { recordActivityRevision } = require('../utils/recordActivityRevision');
+const {
+  removeActivityReactions,
+  removePlanReactions,
+} = require('../utils/activityReactions');
 const { syncPlanDates } = require('../utils/syncPlanDates');
 const { add: addAiCredits } = require('../utils/aiCredits');
 
@@ -213,6 +217,7 @@ router.delete('/plans/:planId', async (req, res) => {
     }
 
     await Event.deleteMany({ planId });
+    await removePlanReactions(planId);
     await ActivityRevision.deleteMany({ planId });
     await Invitation.deleteMany({ planId });
     await SupportLog.deleteMany({ planId });
@@ -276,6 +281,7 @@ router.delete('/activities/:activityId', async (req, res) => {
     const callerId = String((req.user && (req.user.userId || req.user.id)) || '');
     const planId = activity.planId;
     await Event.findByIdAndDelete(activityId);
+    await removeActivityReactions(activityId);
     await recordActivityRevision(activity, 'delete', callerId);
     await syncPlanDates(planId);
     res.json({ message: 'Activity deleted' });
@@ -419,6 +425,7 @@ router.delete('/users/:userId', async (req, res) => {
     }
     if (removable.length) {
       await Event.deleteMany({ planId: { $in: removable } });
+      await removePlanReactions(removable);
       await ActivityRevision.deleteMany({ planId: { $in: removable } });
       await Invitation.deleteMany({ planId: { $in: removable } });
       await SupportLog.deleteMany({ planId: { $in: removable } });

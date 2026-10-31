@@ -8,5 +8,7 @@ const planUserSchema = new mongoose.Schema({
 
 // Unique index for multiple roles per plan
 planUserSchema.index({ planId: 1, userId: 1 }, { unique: true });
+// Plan list loads memberships by user. The unique index above leads with planId.
+planUserSchema.index({ userId: 1, planId: 1 });
 
 module.exports = mongoose.model('PlanUser', planUserSchema);

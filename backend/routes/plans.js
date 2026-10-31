@@ -6,6 +6,7 @@ const Invitation = require('../models/Invitation');
 const ActivityRevision = require('../models/ActivityRevision');
 const SupportLog = require('../models/SupportLog');
 const { Event } = require('../models/Event');
+const { removePlanReactions } = require('../utils/activityReactions');
 const { compareStoredOrder } = require('../utils/activityTimes');
 const authMiddleware = require('../middleware/auth.js');  // Add this line for token verification
 const { checkPermission } = require('../utils/permissions');
@@ -1720,6 +1721,7 @@ router.delete('/:planId', authMiddleware, async (req, res) => {
     }
 
     await Event.deleteMany({ planId });
+    await removePlanReactions(planId);
     await ActivityRevision.deleteMany({ planId });
     await Invitation.deleteMany({ planId });
     await SupportLog.deleteMany({ planId });

@@ -5,6 +5,7 @@ const PlanUser = require('../models/PlanUser');
 const { Event } = require('../models/Event');
 const Attachment = require('../models/Attachment');
 const AiUsage = require('../models/AiUsage');
+const ActivityReaction = require('../models/ActivityReaction');
 const Invitation = require('../models/Invitation');
 const { ensureHotIndexes } = require('../utils/ensureHotIndexes');
 
@@ -33,6 +34,7 @@ test('hot query indexes are created and the unused ones are skipped', async () =
     'Activity { planId: 1, startTime: 1 }',
     'Attachment { activityId: 1, createdAt: 1 }',
     'AiUsage { userId: 1, createdAt: -1 }',
+    'ActivityReaction { activityId: 1, userId: 1, type: 1 } unique',
   ]);
   expect(report.skipped).toEqual([
     'PlanUser { planId: 1, status: 1 }: PlanUser has no status field',
@@ -51,6 +53,13 @@ test('hot query indexes are created and the unused ones are skipped', async () =
   expect(indexKeys(await AiUsage.collection.indexes())).toEqual(
     expect.arrayContaining([{ userId: 1, createdAt: -1 }]),
   );
+  const reactionIndexes = await ActivityReaction.collection.indexes();
+  expect(reactionIndexes).toEqual(expect.arrayContaining([
+    expect.objectContaining({
+      key: { activityId: 1, userId: 1, type: 1 },
+      unique: true,
+    }),
+  ]));
 
   const planUserFields = PlanUser.schema.indexes().map((entry) => entry[0]);
   expect(planUserFields).toEqual(expect.arrayContaining([

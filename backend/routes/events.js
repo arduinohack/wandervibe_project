@@ -23,6 +23,13 @@ const { confirmationFieldsFromModel } = require('../utils/xaiConfirmation');
 const { getAiClient } = require('../utils/aiProvider');
 const { prepareEdit, prepareAi } = require('../utils/planAccess');
 const { archivedMemberResult } = require('../utils/planArchive');
+const {
+  readReactionType,
+  reactionSummary,
+  setReaction,
+  clearReaction,
+  removeActivityReactions,
+} = require('../utils/activityReactions');
 
 function applySchedule(target, schedule) {
   if (schedule.startTime) target.startTime = schedule.startTime;
@@ -323,6 +330,93 @@ router.post('/parse-confirmation', authMiddleware, async (req, res) => {
   }
 });
 
+async function loadActivityForMember(activityId, callerId) {
+  const event = await Event.findById(activityId).select('planId').lean();
+  if (!event) return { status: 404, body: { message: 'Activity not found' } };
+  const archived = await archivedMemberResult(event.planId, callerId);
+  if (archived) return archived;
+  const role = await membershipRole(event.planId, callerId);
+  if (!role) {
+    return { status: 403, body: { message: 'Only plan members can react' } };
+  }
+  return { status: 200, event, role };
+}
+
+// Any plan member, including a Guest. One vote per type; a second vote replaces it.
+router.post('/:id/react', authMiddleware, async (req, res) => {
+  try {
+    const callerId = req.user.userId || req.user.id;
+    const typeResult = readReactionType(req.body);
+    if (typeResult.error) return res.status(400).json({ message: typeResult.error });
+    const loaded = await loadActivityForMember(req.params.id, callerId);
+    if (loaded.status !== 200) return res.status(loaded.status).json(loaded.body);
+    const activityId = String(loaded.event._id);
+    await setReaction({
+      activityId,
+      planId: String(loaded.event.planId),
+      userId: callerId,
+      type: typeResult.type,
+    });
+    return res.json(await reactionSummary(activityId, callerId));
+  } catch (error) {
+    console.error('Activity react error:', error);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.delete('/:id/react', authMiddleware, async (req, res) => {
+  try {
+    const callerId = req.user.userId || req.user.id;
+    const typeResult = readReactionType(req.body);
+    if (typeResult.error) return res.status(400).json({ message: typeResult.error });
+    const loaded = await loadActivityForMember(req.params.id, callerId);
+    if (loaded.status !== 200) return res.status(loaded.status).json(loaded.body);
+    const activityId = String(loaded.event._id);
+    await clearReaction({
+      activityId,
+      userId: callerId,
+      type: typeResult.type,
+    });
+    return res.json(await reactionSummary(activityId, callerId));
+  } catch (error) {
+    console.error('Activity react delete error:', error);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.get('/:id/reactions', authMiddleware, async (req, res) => {
+  try {
+    const callerId = req.user.userId || req.user.id;
+    const loaded = await loadActivityForMember(req.params.id, callerId);
+    if (loaded.status !== 200) return res.status(loaded.status).json(loaded.body);
+    return res.json(await reactionSummary(String(loaded.event._id), callerId));
+  } catch (error) {
+    console.error('Activity reactions error:', error);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Owner or Collaborator marks the activity as a Yes / No / Maybe poll. No new activity.
+router.post('/:id/poll', authMiddleware, async (req, res) => {
+  try {
+    const callerId = req.user.userId || req.user.id;
+    const loaded = await loadActivityForMember(req.params.id, callerId);
+    if (loaded.status !== 200) return res.status(loaded.status).json(loaded.body);
+    if (loaded.role !== 'Owner' && loaded.role !== 'Collaborator') {
+      return res.status(403).json({
+        message: 'Only Owner or Collaborator can add a poll',
+      });
+    }
+    const blocked = await editGate(callerId);
+    if (blocked) return res.status(blocked.status).json(blocked.body);
+    await Event.updateOne({ _id: loaded.event._id }, { $set: { poll: true } });
+    return res.json({ poll: true });
+  } catch (error) {
+    console.error('Activity poll error:', error);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // Declared before /:id so a later GET /:id cannot swallow history.
 router.get('/:id/history', authMiddleware, async (req, res) => {
   try {
@@ -579,6 +673,7 @@ async function deleteActivity(callerId, activityId) {
 
     const planId = event.planId;
     await Event.findByIdAndDelete(activityId);
+    await removeActivityReactions(activityId);
     await recordActivityRevision(event, 'delete', callerId);
     await syncPlanDates(planId);
     return { status: 200, body: { message: 'Event deleted successfully' } };
