@@ -8,10 +8,12 @@ import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../config/constants.dart';
 import '../models/activity.dart';
 import '../models/plan.dart';
 import '../models/plan_member.dart';
 import '../models/plan_role_label.dart';
+import '../presence/plan_presence.dart';
 import '../providers/plan_provider.dart';
 import '../providers/user_provider.dart';
 import '../utils/ai_command_history.dart';
@@ -1255,6 +1257,10 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
   Plan? _linkedSource;
   List<PlanMember> _linkedPlanners = const [];
   int? _itineraryDay;
+  bool _presenceStarted = false;
+  PlanPresenceConnection? _presence;
+  List<PlanViewer> _viewers = const [];
+  String? _selfId;
 
   @override
   void initState() {
@@ -1263,8 +1269,35 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
+  @override
+  void dispose() {
+    _presence?.close();
+    _presence = null;
+    super.dispose();
+  }
+
+  void _startPresence(String? token) {
+    if (_presenceStarted) return;
+    if (token == null || token.isEmpty) return;
+    _presenceStarted = true;
+    _selfId = userIdFromToken(token);
+    final connection = PlanPresenceConnection(
+      onUsers: (users) {
+        if (!mounted) return;
+        setState(() => _viewers = users);
+      },
+    );
+    _presence = connection;
+    connection.connect(
+      baseUrl: backendBaseUrl,
+      token: token,
+      planId: widget.plan.id,
+    );
+  }
+
   Future<void> _load() async {
     final userProvider = Provider.of<UserProvider>(context, listen: false);
+    _startPresence(userProvider.token);
     final planProvider = Provider.of<PlanProvider>(context, listen: false);
     final navigator = Navigator.of(context);
     await userProvider.loadPlanAccess();
@@ -1573,26 +1606,31 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
       final prior = drawn[drawnIndex - 1];
       aboveInstant = prior.endTime ?? prior.startTime;
     }
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => _ActivityFormDialog(
-          title: 'Edit activity',
-          actionLabel: 'Save',
-          activity: activity,
-          planId: widget.plan.id,
-          planTimeZone: _shownPlan(planProvider).timeZone,
-          planDestination: _shownPlan(planProvider).destination,
-          chainStart: chainStart,
-          aboveInstant: aboveInstant,
-          fallbackStart: defaultChainStart(
-            existingStarts: [
-              for (final row in activities) row.startTime ?? row.endTime,
-            ],
+    _presence?.editing(widget.plan.id, activityId);
+    try {
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => _ActivityFormDialog(
+            title: 'Edit activity',
+            actionLabel: 'Save',
+            activity: activity,
+            planId: widget.plan.id,
             planTimeZone: _shownPlan(planProvider).timeZone,
+            planDestination: _shownPlan(planProvider).destination,
+            chainStart: chainStart,
+            aboveInstant: aboveInstant,
+            fallbackStart: defaultChainStart(
+              existingStarts: [
+                for (final row in activities) row.startTime ?? row.endTime,
+              ],
+              planTimeZone: _shownPlan(planProvider).timeZone,
+            ),
           ),
         ),
-      ),
-    );
+      );
+    } finally {
+      _presence?.idle(widget.plan.id);
+    }
   }
 
   bool _applyingOrder = false;
@@ -1903,6 +1941,32 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     );
   }
 
+  Widget _editingHint(String? activityId) {
+    if (activityId == null || activityId.isEmpty) return const SizedBox.shrink();
+    final self =
+        Provider.of<UserProvider>(context, listen: false).currentUserId ??
+        _selfId;
+    final names = <String>[
+      for (final user in _viewers)
+        if (user.userId != self && user.activityId == activityId) user.name,
+    ];
+    if (names.isEmpty) return const SizedBox.shrink();
+    final label = names.length == 1
+        ? '${names.first} is editing'
+        : '${names.join(', ')} are editing';
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 12,
+          fontStyle: FontStyle.italic,
+          color: Theme.of(context).colorScheme.primary,
+        ),
+      ),
+    );
+  }
+
   Widget _activityBlock({
     required Key blockKey,
     required Activity activity,
@@ -2075,6 +2139,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                     );
                   },
                 ),
+                _editingHint(activityId),
                 _itineraryWarnings(activity),
                 if (cardLines.above.isNotEmpty)
                   Wrap(
@@ -2614,6 +2679,11 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
             activities,
             planTimeZone: shown.timeZone,
           );
+          final selfId = viewer.currentUserId ?? _selfId;
+          final others = [
+            for (final user in _viewers)
+              if (selfId == null || user.userId != selfId) user,
+          ];
 
           return ListView(
             padding: const EdgeInsets.all(16),
@@ -2652,6 +2722,16 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                             ),
                         ],
                       ),
+                      if (others.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          'Also viewing: ${others.map((user) => user.name).join(', ')}',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 8),
                       if (trialLabel != null) ...[
                         Text(trialLabel),
